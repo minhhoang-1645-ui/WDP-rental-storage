@@ -12,8 +12,8 @@ export function OperationsLink({ to, ...props }: LinkProps) {
   const workspace = useContext(OperationsWorkspace);
   const path = typeof to === 'string' ? to : to.pathname ?? '';
   const match = /^\/manager\/(?:operations\/)?([^/?]+)/.exec(path);
-  if (match && user?.role === 'STAFF' && !isStaffWorkflow(match[1]) && match[1] !== 'rentals') return props.className?.includes('button') ? null : <span>{props.children}</span>;
-  if (match && user?.role === 'MANAGER' && !isManagerDestination(match[1]) && !isManagerReviewWorkflow(match[1])) return props.className?.includes('button') ? null : <span>{props.children}</span>;
+  if (match && user?.role === 'FACILITY_STAFF' && !isStaffWorkflow(match[1]) && match[1] !== 'rentals') return props.className?.includes('button') ? null : <span>{props.children}</span>;
+  if (match && user?.role === 'FACILITY_MANAGER' && !isManagerDestination(match[1]) && !isManagerReviewWorkflow(match[1])) return props.className?.includes('button') ? null : <span>{props.children}</span>;
   const resolve = (path: string) => {
     const result = workspace ? path.replace(/^\/manager(?=\/|\?|#|$)/, workspace) : operationPath(user?.role, path);
     return workspace === '/staff' ? result.replace(/^\/staff\/operations\//, '/staff/') : result;

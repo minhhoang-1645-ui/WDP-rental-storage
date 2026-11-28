@@ -1,3 +1,6 @@
+import { DispatchModule } from './modules/dispatch/dispatch.module.js';
+import { OperationsModule } from './modules/operations/operations.module.js';
+import { FacilityAccessModule } from './modules/facility-access/facility-access.module.js';
 import { Module } from '@nestjs/common';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { DamageClaimsModule } from './modules/claims/damage-claims.module.js';
@@ -17,7 +20,6 @@ import { HealthModule } from './modules/health/health.module.js';
 import { ManagerModule } from './modules/manager/manager.module.js';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module.js';
 import { PricingModule } from './modules/pricing/pricing.module.js';
-import { RentalsModule } from './modules/rentals/rentals.module.js';
 import { RenewalsModule } from './modules/renewals/renewals.module.js';
 import { ReturnsModule } from './modules/returns/returns.module.js';
 import { StorageModule } from './modules/storage/storage.module.js';
@@ -28,19 +30,19 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { GuestBookingModule } from './modules/guest-booking/guest-booking.module.js';
 import { AdditionalServicesModule } from './modules/additional-services/additional-services.module.js';
 import { StockMovementsModule } from './modules/stock-movements/stock-movements.module.js';
-import { UnitStaffModule } from './modules/unit-staff/unit-staff.module.js';
 
 @Module({
   imports: [
+    FacilityAccessModule,
+    DispatchModule,
+    OperationsModule,
     DamageClaimsModule,
     BusinessPolicyModule,
     DocumentsModule,
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     AuditModule,
-    NotificationsModule,
-    UnitStaffModule,
-    HealthModule,
+    NotificationsModule,    HealthModule,
     ManagerModule,
     MaintenanceModule,
     PricingModule,
@@ -58,9 +60,7 @@ import { UnitStaffModule } from './modules/unit-staff/unit-staff.module.js';
     FacilitiesModule,
     StorageModule,
     SupportModule,
-    TransfersModule,
-    RentalsModule,
-    RenewalsModule,
+    TransfersModule,    RenewalsModule,
     ReturnsModule,
   ],
 })

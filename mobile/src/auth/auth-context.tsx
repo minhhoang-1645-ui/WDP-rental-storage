@@ -55,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authStorage.getToken()
       .then(async (token) => token ? apiRequest<PublicUser>('/auth/me', { expectedToken: token }) : null)
       .then((currentUser) => {
-        if (currentUser && (!currentUser.id || !['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].includes(currentUser.role))) throw new Error('Phiên đăng nhập không hợp lệ.');
+        if (currentUser && (!currentUser.id || !['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'].includes(currentUser.role))) throw new Error('Phiên đăng nhập không hợp lệ.');
         if (active && version === revision.current) setUser(currentUser);
       })
       .catch(error => {
@@ -74,7 +74,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({ email: email.trim().toLowerCase(), password, rememberMe }),
       authenticated: false,
     });
-    if (!session?.token || !session.user?.id || !['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].includes(session.user.role)) throw new Error('Thông tin phiên đăng nhập không hợp lệ.');
+    if (!session?.token || !session.user?.id || !['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'].includes(session.user.role)) throw new Error('Thông tin phiên đăng nhập không hợp lệ.');
+    if(session.user.role!=='STORAGE_CUSTOMER')throw new Error('Ứng dụng dành cho khách thuê kho. Tài khoản nhân sự vui lòng dùng Web.');
     if (version !== revision.current) throw new Error('Phiên đăng nhập đã thay đổi. Vui lòng thử lại.');
     await authStorage.setToken(session.token);
     setUser(session.user);
@@ -88,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearLocalSession]);
 
   const acceptSession = useCallback(async (session: AuthSession) => {
-    if (!session?.token || !session.user?.id || session.user.role !== 'CUSTOMER') throw new Error('Phiên khách hàng không hợp lệ.');
+    if (!session?.token || !session.user?.id || session.user.role !== 'STORAGE_CUSTOMER') throw new Error('Phiên khách hàng không hợp lệ.');
     revision.current++;
     await authStorage.setToken(session.token);
     setSessionError(''); setUser(session.user); setLoading(false);
@@ -101,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!token || !user) throw new Error('Vui lòng đăng nhập lại để cập nhật thông tin.');
     const updated = await apiRequest<PublicUser>('/auth/me', { method: 'PATCH', expectedToken: token, body: JSON.stringify(input) });
     if (version !== revision.current || await authStorage.getToken() !== token) throw new Error('Phiên đăng nhập đã thay đổi. Vui lòng kiểm tra lại thông tin.');
-    if (updated?.id !== user.id || !['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].includes(updated.role)) throw new Error('Thông tin tài khoản trả về không hợp lệ. Vui lòng tải lại.');
+    if (updated?.id !== user.id || !['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'].includes(updated.role)) throw new Error('Thông tin tài khoản trả về không hợp lệ. Vui lòng tải lại.');
     setUser(updated);
     return updated;
   }, [user]);

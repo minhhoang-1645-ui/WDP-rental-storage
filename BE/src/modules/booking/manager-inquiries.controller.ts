@@ -10,19 +10,19 @@ import { BookingService } from './booking.service.js';
 @Controller(['manager/inquiries', 'staff/management/inquiries'])
 @StaffWorkflow()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER')
+@Roles('FACILITY_STAFF', 'FACILITY_MANAGER')
 @ApiTags('Manager Inquiry')
 @ApiBearerAuth('bearerAuth')
 export class ManagerInquiriesController {
   constructor(private readonly bookingService: BookingService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách yêu cầu cho Manager', description: 'STAFF. Theo contract hiện tại, danh sách gồm cả Contact Inquiry và Reservation, phân biệt bằng requestType.' })
+  @ApiOperation({ summary: 'Danh sách yêu cầu cho Manager', description: 'FACILITY_STAFF. Theo contract hiện tại, danh sách gồm cả Contact Inquiry và Reservation, phân biệt bằng requestType.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiOkResponse({ description: 'Danh sách có phân trang.', schema: { example: { page: 1, limit: 20, total: 1, items: [{ id: 'WDPQ-2026-AB12CD34', reference: 'WDPQ-2026-AB12CD34', requestType: 'INQUIRY', customer: { fullName: 'Nguyen Van A', email: 'customer@example.test', phone: '0900000000' }, product: { id: 'sm-b12', name: 'Kho nhỏ B12' }, quantity: 1, startDate: '2026-11-01', endDateExclusive: '2027-02-01', status: 'PENDING_CONTACT', quote: { status: 'QUOTE_REQUIRED', grandTotal: null } }] } } })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ STAFF được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ FACILITY_STAFF được phép.' })
   list(@Req() request: AuthenticatedRequest, @Query('page') pageInput = '1', @Query('limit') limitInput = '20') {
     const page = Number(pageInput);
     const limit = Number(limitInput);
@@ -33,24 +33,24 @@ export class ManagerInquiriesController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Chi tiết yêu cầu cho Manager', description: 'STAFF. Nhận Contact Inquiry hoặc Reservation reference.' })
+  @ApiOperation({ summary: 'Chi tiết yêu cầu cho Manager', description: 'FACILITY_STAFF. Nhận Contact Inquiry hoặc Reservation reference.' })
   @ApiParam({ name: 'id', example: 'WDPQ-2026-AB12CD34' })
   @ApiOkResponse({ description: 'Yêu cầu, snapshot availability/quote, ghi chú và trạng thái xử lý.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ STAFF được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ FACILITY_STAFF được phép.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy yêu cầu.' })
   get(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.bookingService.getManagerInquiry(id, request.user);
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Cập nhật trạng thái xử lý', description: 'STAFF. Dùng tập status tương ứng requestType; optional internalNotes được lưu làm ghi chú nội bộ.' })
+  @ApiOperation({ summary: 'Cập nhật trạng thái xử lý', description: 'FACILITY_STAFF. Dùng tập status tương ứng requestType; optional internalNotes được lưu làm ghi chú nội bộ.' })
   @ApiParam({ name: 'id', example: 'WDPQ-2026-AB12CD34' })
   @ApiBody({ type: ManagerInquiryUpdateRequestDto, examples: { contacted: { summary: 'Đã liên hệ Inquiry', value: { status: 'CONTACTED', internalNotes: 'Đã gọi khách, chờ xác nhận ngày bắt đầu.' } }, cancelReservation: { summary: 'Hủy Reservation', value: { status: 'CANCELLED', internalNotes: 'Khách yêu cầu hủy.' } } } })
   @ApiOkResponse({ description: 'Yêu cầu đã cập nhật.' })
   @ApiBadRequestResponse({ description: 'Status không hợp lệ cho loại yêu cầu.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ STAFF được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ FACILITY_STAFF được phép.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy yêu cầu.' })
   update(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
     return this.bookingService.updateManagerInquiry(id, body, request.user!);

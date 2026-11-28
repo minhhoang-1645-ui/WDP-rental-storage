@@ -1,4 +1,5 @@
-import { LogIn, Menu, Moon, Sun, Warehouse, X } from "lucide-react";
+import { PublicBrandMark } from './PublicBrandMark'
+import { LogIn, Menu, Moon, Sun, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
@@ -10,7 +11,8 @@ const links = [
   ["Kho lưu trữ", "/storage"],
   ["So sánh kho", "/size-guide"],
   ["Cách thuê", "/#how-it-works"],
-  ["Cơ sở", "/#facility"],
+  ["Cơ sở", "/facilities"],
+  ["Hỗ trợ", "/#faq"],
 ];
 
 export function Header({ appearance }: { appearance: { theme: WorkspaceTheme; toggleTheme: () => void } }) {
@@ -24,10 +26,7 @@ export function Header({ appearance }: { appearance: { theme: WorkspaceTheme; to
   }, [open]);
   const { user } = useAuth();
   const location = useLocation();
-  const isInternalUser =
-    user?.role === "MANAGER" ||
-    user?.role === "STAFF" ||
-    user?.role === "ADMIN";
+  const isInternalUser = user && user.role !== "STORAGE_CUSTOMER";
   const accountPath = !user
     ? "/account/login"
     : isInternalUser
@@ -36,10 +35,11 @@ export function Header({ appearance }: { appearance: { theme: WorkspaceTheme; to
   const accountLabel = !user
     ? "Đăng nhập"
     : {
-        STAFF: "Khu nhân viên",
-        MANAGER: "Khu quản lý",
-        ADMIN: "Khu quản trị",
-        CUSTOMER: "Khu vực của tôi",
+        FACILITY_STAFF: "Khu nhân viên",
+        FACILITY_MANAGER: "Khu quản lý",
+        BUSINESS_OPERATIONS_MANAGER: "Điều hành kinh doanh",
+        SYSTEM_ADMINISTRATOR: "Khu quản trị",
+        STORAGE_CUSTOMER: "Khu vực của tôi",
       }[user.role];
   const actionPath = isInternalUser ? accountPath : "/booking?mode=quick";
   const actionLabel = isInternalUser ? "Mở khu vực làm việc" : "Đặt kho nhanh";
@@ -51,10 +51,7 @@ export function Header({ appearance }: { appearance: { theme: WorkspaceTheme; to
           className="public-brand flex items-center gap-2 text-lg font-bold tracking-tight"
           aria-label="NestBox Storage - Trang chủ"
         >
-          <span className="grid size-9 place-items-center rounded-lg bg-navy text-white">
-            <Warehouse size={19} />
-          </span>
-          <span className="public-wordmark">NestBox <em>Storage</em></span>
+          <PublicBrandMark />
         </Link>
         <nav
           className="hidden items-center gap-6 lg:flex"

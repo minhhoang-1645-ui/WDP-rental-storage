@@ -8,10 +8,11 @@ datasource db {
 }
 
 enum UserRole {
-  CUSTOMER
-  STAFF
-  MANAGER
-  ADMIN
+  STORAGE_CUSTOMER
+  FACILITY_STAFF
+  FACILITY_MANAGER
+  BUSINESS_OPERATIONS_MANAGER
+  SYSTEM_ADMINISTRATOR
 }
 
 enum AccountStatus {
@@ -49,6 +50,8 @@ enum AuditOutcome {
 
 // Immutable snapshots: deleting/changing an account must not erase its audit evidence.
 model AuditEvent {
+  metadata Json?
+
   id           String        @id @default(cuid())
   category     AuditCategory
   action       String        @db.VarChar(80)
@@ -56,7 +59,7 @@ model AuditEvent {
   actorId      String?       @db.VarChar(120)
   actorName    String?       @db.VarChar(120)
   actorEmail   String?       @db.VarChar(254)
-  actorRole    UserRole?
+  actorRole    String?
   resource     String        @db.VarChar(60)
   resourceId   String?       @db.VarChar(120)
   method       String        @db.VarChar(10)
@@ -148,6 +151,7 @@ enum PaymentMethod {
   BANK_TRANSFER
   CASH
   VNPAY
+  PAYOS
 }
 
 enum GuestBookingStatus {
@@ -160,6 +164,7 @@ enum GuestBookingStatus {
 
 enum PaymentProvider {
   VNPAY
+  PAYOS
 }
 
 enum OnlinePaymentStatus {
@@ -266,6 +271,9 @@ enum MaintenanceSource {
 }
 
 enum MaintenanceCategory {
+  ACCESS_CREDENTIAL
+  UTILITIES
+  SECURITY
   UNIT_DAMAGE
   CLEANING
   LOCK_OR_ACCESS
@@ -274,6 +282,7 @@ enum MaintenanceCategory {
 }
 
 enum MaintenancePriority {
+  URGENT
   LOW
   MEDIUM
   HIGH
@@ -327,6 +336,8 @@ enum StockMovementStatus {
 }
 
 model AdditionalService {
+  facilityId String?
+  facility Facility? @relation(fields:[facilityId],references:[id],onDelete:Restrict)
   id            String                       @id @default(cuid())
   code          String                       @unique
   name          String
@@ -334,17 +345,36 @@ model AdditionalService {
   kind          AdditionalServiceKind
   billingUnit   AdditionalServiceBillingUnit
   physicalUnit  String?
+  minimumRentalMonths Int?
   unitPrice     BigInt?
   imageUrl      String?
   imageAlt      String?
   isActive      Boolean                      @default(true)
   reservations  ReservationService[]
   guestBookings GuestBookingService[]
-  inventory     AdditionalServiceInventory?
+  inventory     AdditionalServiceInventory? // Legacy unallocated stock; retained as historical evidence.
+  offerings     FacilityServiceOffering[]
   createdAt     DateTime                     @default(now())
   updatedAt     DateTime                     @updatedAt
 
   @@index([isActive, name])
+}
+
+model FacilityServiceOffering {
+  id String @id @default(cuid())
+  additionalServiceId String
+  additionalService AdditionalService @relation(fields:[additionalServiceId],references:[id],onDelete:Restrict)
+  facilityId String
+  facility Facility @relation(fields:[facilityId],references:[id],onDelete:Restrict)
+  unitPrice BigInt?
+  isActive Boolean @default(false)
+  stockOnHand Int?
+  rentalCapacity Int?
+  configurationReview Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([additionalServiceId,facilityId])
+  @@index([facilityId,isActive])
 }
 
 model AdditionalServiceInventory {
@@ -358,6 +388,8 @@ model AdditionalServiceInventory {
 }
 
 model User {
+  staffShifts StaffShift[]
+  facilityAccess FacilityAccess[]
   notificationReceipts NotificationReceipt[]
   assignedHandoverAppointments HandoverAppointment[] @relation("AppointmentAssignee")
   delegatedHandoverAppointments HandoverAppointment[] @relation("AppointmentAssigner")
@@ -372,7 +404,7 @@ model User {
   passwordHash                String
   fullName                    String
   phone                       String?
-  role                        UserRole                   @default(CUSTOMER)
+  role                        UserRole                   @default(STORAGE_CUSTOMER)
   accountStatus               AccountStatus              @default(ACTIVE)
   inquiries                   ContactInquiry[]           @relation("InquiryCustomer")
   processedInquiries          ContactInquiry[]           @relation("InquiryProcessor")
@@ -406,6 +438,7 @@ model User {
   reportedMaintenanceRequests MaintenanceRequest[]       @relation("MaintenanceReporter")
   assignedMaintenanceRequests MaintenanceRequest[]       @relation("MaintenanceAssignee")
   verifiedMaintenanceRequests MaintenanceRequest[]       @relation("MaintenanceVerifier")
+  confirmedMaintenanceCosts   MaintenanceRequest[]       @relation("MaintenanceCostConfirmer")
   customerSupportRequests     SupportRequest[]           @relation("SupportCustomer")
   assignedSupportRequests     SupportRequest[]           @relation("SupportAssignee")
   escalatedSupportRequests    SupportRequest[]           @relation("SupportEscalator")
@@ -420,15 +453,42 @@ model User {
 }
 
 model AuthSession {
-  tokenHash String   @id
-  userId    String
-  expiresAt DateTime
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash        String    @id
+  id               String    @unique @default(dbgenerated("gen_random_uuid()::text"))
+  userId           String
+  expiresAt        DateTime
+  createdAt        DateTime? @default(now())
+  revokedAt        DateTime?
+  revokedById      String?
+  revocationReason String?
+  device           String?
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
+  @@index([userId, createdAt, id])
 }
 
 model Facility {
+  photo String?
+  serviceCommitments ReservationService[]
+  financialInvoices Invoice[]
+  serviceSchedule Json @default("[]")
+  staffShifts StaffShift[]
+  commonAreaMaintenance MaintenanceRequest[]
+  additionalServices AdditionalService[] // Legacy ownership only; new availability uses offerings.
+  serviceOfferings FacilityServiceOffering[]
+  businessRules BusinessRule[]
+  facilityAccess FacilityAccess[]
+  bookingEnabled Boolean @default(true)
+  operationalStatus String @default("OPEN")
+  closurePlanId String?
+  closureMode String?
+  closureReason String?
+  closureStartedAt DateTime?
+  closureExpectedAt DateTime? @db.Date
+  closureStartedById String?
+  officeHours String @default("")
+  accessHours String @default("")
   id                   String                @id @default(cuid())
   code                 String                @unique
   name                 String
@@ -442,6 +502,7 @@ model Facility {
 }
 
 model StorageType {
+  businessRules BusinessRule[]
   id                   String                @id
   facilityId           String
   facility             Facility              @relation(fields: [facilityId], references: [id])
@@ -452,6 +513,7 @@ model StorageType {
   kicker               String
   condition            StorageCondition
   catalogStatus        CatalogStatus         @default(AVAILABLE)
+  bookingEnabled       Boolean               @default(true)
   widthCm              Int
   lengthCm             Int
   heightCm             Int
@@ -478,7 +540,16 @@ model StorageType {
   @@index([facilityId, sizeId, condition])
 }
 
+// StorageType codes are globally unique and immutable in the Manager API.
+// Keep issued numbers even if all units for a prefix are removed.
+model StorageUnitCodeCounter {
+  prefix     String  @id
+  lastIssued Decimal @db.Decimal(50, 0)
+}
+
 model StorageUnit {
+  bookingSafetyVersion Int @default(0)
+  incidentBlocks IncidentUnitBlock[]
   staffAssignments    UnitStaffAssignment[]
   id                  String               @id @default(cuid())
   storageTypeId       String
@@ -502,6 +573,7 @@ model StorageUnit {
   @@index([storageTypeId, row, position])
 }
 
+/// Historical archive only. Application authorization and new assignments never use this table.
 model UnitStaffAssignment {
   id               String      @id @default(cuid())
   storageUnitId    String
@@ -588,6 +660,7 @@ model GuestBookingRequest {
 }
 
 model Reservation {
+  paidCancellation Json?
   id                   String                @id @default(cuid())
   reservationCode      String                @unique
   customerId           String
@@ -628,6 +701,8 @@ model Reservation {
 }
 
 model ReservationService {
+  serviceFacilityId String?
+  serviceFacility Facility? @relation(fields: [serviceFacilityId], references: [id], onDelete: Restrict)
   id                  String                              @id @default(cuid())
   reservationId       String
   reservation         Reservation                         @relation(fields: [reservationId], references: [id], onDelete: Restrict)
@@ -648,6 +723,7 @@ model ReservationService {
   @@unique([reservationId, additionalServiceId])
   @@index([reservationId, createdAt])
   @@index([additionalServiceId])
+  @@index([serviceFacilityId, additionalServiceId])
 }
 
 model GuestBookingService {
@@ -681,7 +757,7 @@ model ReservationUnit {
   outgoingTransfers TransferRequest[] @relation("TransferSourceAllocation")
   incomingTransfer  TransferRequest?  @relation("TransferDestinationAllocation")
 
-  @@unique([reservationId, storageUnitId])
+  // Live pair uniqueness is a partial index in 20261124000400_live_reservation_unit_uniqueness.
   @@index([storageUnitId, plannedStartDate, plannedEndDate])
 }
 
@@ -886,6 +962,7 @@ model StockMovementLine {
 }
 
 model ReturnRequest {
+  overdueSettlement Json?
   earlyReturnCloseout    Json?
   rentRefundApprovedAt   DateTime?
   rentRefundApprovedById String?
@@ -900,6 +977,7 @@ model ReturnRequest {
   requestedByUserId      String
   requestedBy            User               @relation("ReturnRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
   requestedAt            DateTime           @default(now())
+  expectedReturnDate     DateTime?          @db.Date
   inspectionStartedAt    DateTime?
   inspectionStartedById  String?
   inspectionStartedBy    User?              @relation("ReturnInspectionStarter", fields: [inspectionStartedById], references: [id], onDelete: Restrict)
@@ -923,6 +1001,8 @@ model ReturnRequest {
   assignedStaff User? @relation("ReturnAssignee", fields: [assignedStaffUserId], references: [id], onDelete: Restrict)
 
   @@index([assignedStaffUserId, status])
+  inspectionScheduledAt DateTime?
+  @@index([inspectionScheduledAt])
 }
 
 model ReturnInspection {
@@ -937,6 +1017,8 @@ model ReturnInspection {
   issueType          InspectionIssueType?
   conditionNote      String?
   issueNote          String?
+  inspectionPhotos   Json?
+  evidenceSubmissions StaffEvidenceSubmission[]
   inspectedByUserId  String?
   inspectedBy        User?                   @relation("ReturnInspector", fields: [inspectedByUserId], references: [id], onDelete: Restrict)
   inspectedAt        DateTime?
@@ -951,11 +1033,56 @@ model ReturnInspection {
   @@index([rentalContractId])
 }
 
+model StaffEvidenceSubmission {
+  id                   String @id @default(cuid())
+  returnInspectionId   String?
+  returnInspection     ReturnInspection? @relation(fields: [returnInspectionId], references: [id], onDelete: Cascade)
+  maintenanceRequestId String?
+  maintenanceRequest   MaintenanceRequest? @relation(fields: [maintenanceRequestId], references: [id], onDelete: Cascade)
+  staffUserId          String
+  staffName            String
+  note                 String?
+  photos               Json
+  recordedAt          DateTime
+  maintenanceSubmissionKey String? @unique
+  maintenanceCostVnd   Decimal? @db.Decimal(18, 0)
+  maintenanceCostLinks String[] @default([])
+  maintenanceRejectedAt DateTime?
+  maintenanceRejectionReason String?
+  repairAttachments    MaintenanceRepairAttachment[]
+
+  @@index([returnInspectionId, staffUserId])
+  @@index([maintenanceRequestId, staffUserId])
+}
+
+model MaintenanceRepairAttachment {
+  id           String                  @id @default(cuid())
+  submissionId String
+  submission   StaffEvidenceSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  kind         String
+  fileName     String
+  mimeType     String
+  bytes        Bytes
+  position     Int
+
+  @@unique([submissionId, kind, position], map: "MaintenanceRepairAttachment_submission_kind_position_key")
+}
+
 model MaintenanceRequest {
+  /// Historical automatic-assignment readiness.
+  dispatchReadyAt DateTime?
+  rentalImpact             IncidentRentalImpact?
+  reportedAffectedUnitIds  String[]            @default([])
+  incidentBlocks           IncidentUnitBlock[]
   id                       String              @id @default(cuid())
   maintenanceCode          String              @unique
-  storageUnitId            String
-  storageUnit              StorageUnit         @relation(fields: [storageUnitId], references: [id], onDelete: Restrict)
+  storageUnitId            String?
+  storageUnit              StorageUnit?        @relation(fields: [storageUnitId], references: [id], onDelete: Restrict)
+  commonAreaFacilityId     String?
+  commonAreaFacility       Facility?           @relation(fields: [commonAreaFacilityId], references: [id], onDelete: Restrict)
+  commonArea               String?
+  locationNote             String?
+  photos                   MaintenancePhoto[]
   source                   MaintenanceSource
   returnInspectionId       String?             @unique
   returnInspection         ReturnInspection?   @relation(fields: [returnInspectionId], references: [id], onDelete: Restrict)
@@ -970,10 +1097,25 @@ model MaintenanceRequest {
   startedAt                DateTime?
   workCompletedAt          DateTime?
   workNote                 String?
+  workPhotos               Json?
+  evidenceSubmissions      StaffEvidenceSubmission[]
   verificationNote         String?
   verifiedByUserId         String?
   verifiedBy               User?               @relation("MaintenanceVerifier", fields: [verifiedByUserId], references: [id], onDelete: Restrict)
   verifiedAt               DateTime?
+  surveyResult             String?
+  repairMethod             String?
+  repairPlan               String?
+  /// Retained for historical reporting records only.
+  estimatedCostVnd         Decimal?            @db.Decimal(18, 0) @ignore
+  actualCostVnd            Decimal?            @db.Decimal(18, 0)
+  costEvidenceLinks        String[]            @default([])
+  /// Retained for historical reporting records only.
+  costVarianceReason       String?             @ignore
+  costConfirmedAt          DateTime?
+  costConfirmedByUserId    String?
+  confirmedCostSubmissionIds String[]         @default([])
+  costConfirmedBy          User?               @relation("MaintenanceCostConfirmer", fields: [costConfirmedByUserId], references: [id], onDelete: Restrict, map: "MaintenanceRequest_cost_confirmer_fkey")
   activeKey                String?             @unique
   createIdempotencyKey     String              @unique
   lastAction               String?
@@ -984,9 +1126,43 @@ model MaintenanceRequest {
   @@index([status, priority, createdAt])
   @@index([storageUnitId, createdAt])
   @@index([assignedStaffUserId, status])
+  @@index([commonAreaFacilityId, createdAt])
+}
+
+enum IncidentRentalImpact {
+  NO_IMPACT
+  AFFECTED
+  UNKNOWN
+}
+
+model IncidentUnitBlock {
+  id                   String             @id @default(cuid())
+  maintenanceRequestId String
+  maintenanceRequest   MaintenanceRequest @relation(fields: [maintenanceRequestId], references: [id], onDelete: Restrict)
+  storageUnitId         String
+  storageUnit           StorageUnit        @relation(fields: [storageUnitId], references: [id], onDelete: Restrict)
+  createdAt             DateTime           @default(now())
+  releasedAt            DateTime?
+
+  @@index([storageUnitId, releasedAt])
+  @@index([maintenanceRequestId, releasedAt])
+}
+
+model MaintenancePhoto {
+  id                   String             @id @default(cuid())
+  maintenanceRequestId String
+  maintenanceRequest   MaintenanceRequest @relation(fields: [maintenanceRequestId], references: [id], onDelete: Cascade)
+  mimeType              String
+  bytes                 Bytes
+  digest                String
+  position              Int
+
+  @@unique([maintenanceRequestId, position])
 }
 
 model Invoice {
+  facilityIdSnapshot String?
+  financialFacility Facility? @relation(fields: [facilityIdSnapshot], references: [id], onDelete: Restrict)
   voidReason String?
   voidedAt DateTime?
   pricingSnapshot Json?
@@ -1032,9 +1208,12 @@ model Invoice {
   @@index([type, dueAt])
   @@index([renewalRequestId, status])
   @@index([depositSettlementId, status])
+  @@index([facilityIdSnapshot])
 }
 
 model SupportRequest {
+  closurePlanId String?
+  customerWaitReason String?
   earlyReturnFinancialReview Json?
   transferRequestedStartAt DateTime?
   transferRequestedEndAt   DateTime?
@@ -1064,6 +1243,7 @@ model SupportRequest {
   escalationReason         String?
   resolutionType           SupportResolutionType?
   resolutionNote           String?
+  resolutionPhotos         Json?
   resolvedByUserId         String?
   resolvedBy               User?                  @relation("SupportResolver", fields: [resolvedByUserId], references: [id], onDelete: Restrict)
   resolvedAt               DateTime?
@@ -1079,9 +1259,20 @@ model SupportRequest {
   @@index([assignedStaffUserId, status])
   @@index([reservationId, createdAt])
   @@index([storageUnitId, status])
+  @@index([closurePlanId, rentalContractId])
 }
 
 model TransferRequest {
+  commercialSettlement Json?
+  serviceHandling Json?
+  closurePlanId String?
+  receivingStaffId String?
+  consentEvidence Json?
+  sourceHandover Json?
+  destinationDecision Json?
+  destinationHandover Json?
+  relocationException String?
+  safetyEvidence Json?
   rejectionReason String?
   handoverReport Json?
   commercialSnapshot Json?
@@ -1127,9 +1318,13 @@ model TransferRequest {
   assignedStaff User? @relation("TransferAssignee", fields: [assignedStaffUserId], references: [id], onDelete: Restrict)
 
   @@index([assignedStaffUserId, status])
+  @@index([closurePlanId, status])
+  @@index([receivingStaffId, status])
 }
 
 model DepositSettlement {
+  refundDueOn          DateTime?                @db.Date
+  refundPolicyVersion  Int?
   id                   String                   @id @default(cuid())
   settlementCode       String                   @unique
   returnRequestId      String                   @unique
@@ -1250,6 +1445,7 @@ model Payment {
 }
 
 model PaymentSubmission {
+  reconciliation OnlinePaymentReconciliation?
   id                String                  @id @default(cuid())
   submissionCode    String                  @unique
   invoiceId         String
@@ -1278,6 +1474,12 @@ model PaymentSubmission {
 }
 
 model OnlinePaymentTransaction {
+  payosOrderCode        BigInt?             @unique
+  payosLinkId           String?             @unique
+  checkoutUrl           String?
+  expiresAt             DateTime?
+  providerCheckedAt     DateTime?
+  payosReceipts         PayosReceipt[]
   id                    String              @id @default(cuid())
   invoiceId             String
   invoice               Invoice             @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
@@ -1303,10 +1505,15 @@ model OnlinePaymentTransaction {
 }
 
 model OnlinePaymentReconciliation {
+  payosReceiptId String? @unique
+  payosReceipt PayosReceipt? @relation(fields: [payosReceiptId], references: [id], onDelete: Restrict)
+  paymentSubmissionId String? @unique
+  paymentSubmission PaymentSubmission? @relation(fields:[paymentSubmissionId],references:[id],onDelete:Restrict)
+  externalReferenceKey String? @unique
   id                        String                          @id @default(cuid())
   reconciliationCode        String                          @unique
-  onlinePaymentTransactionId String                         @unique
-  onlinePaymentTransaction  OnlinePaymentTransaction        @relation(fields: [onlinePaymentTransactionId], references: [id], onDelete: Restrict)
+  onlinePaymentTransactionId String?                        @unique
+  onlinePaymentTransaction  OnlinePaymentTransaction?       @relation(fields: [onlinePaymentTransactionId], references: [id], onDelete: Restrict)
   status                    OnlinePaymentReconciliationStatus @default(PENDING_REVIEW)
   reason                    String
   providerTransactionId     String?
@@ -1322,7 +1529,23 @@ model OnlinePaymentReconciliation {
   @@index([reviewedByUserId, reviewedAt])
 }
 
+model PayosReceipt {
+  id            String @id @default(cuid())
+  orderCode     BigInt
+  paymentLinkId String
+  reference     String @unique
+  amount        BigInt
+  receivedAt    DateTime
+  transactionId String?
+  transaction   OnlinePaymentTransaction? @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  reconciliation OnlinePaymentReconciliation?
+
+  @@index([transactionId])
+}
+
 model HandoverAppointment {
+  handoverLeadDays Int?
+
   assignedStaffUserId String?
   assignedStaff User? @relation("AppointmentAssignee", fields: [assignedStaffUserId], references: [id], onDelete: Restrict)
   assignedByUserId String?
@@ -1365,4 +1588,61 @@ model NotificationReceipt {
   user   User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@id([userId, token])
+}
+
+model FacilityAccess {
+  id String @id @default(cuid())
+  userId String
+  facilityId String
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  facility Facility @relation(fields: [facilityId], references: [id], onDelete: Restrict)
+  activeKey String? @unique
+  grantedById String
+  grantedAt DateTime @default(now())
+  revokedById String?
+  revokedAt DateTime?
+  @@index([userId, revokedAt])
+}
+model BusinessRule {
+  facility Facility? @relation(fields:[facilityId],references:[id],onDelete:Restrict)
+  storageType StorageType? @relation(fields:[storageTypeId],references:[id],onDelete:Restrict)
+  id String @id @default(cuid())
+  key String
+  facilityId String?
+  storageTypeId String?
+  version Int
+  value Json
+  effectiveFrom DateTime
+  effectiveTo DateTime?
+  createdById String
+  createdAt DateTime @default(now())
+  @@index([key, facilityId, storageTypeId, effectiveFrom])
+}
+
+enum StaffShiftStatus {
+  SCHEDULED
+  CANCELLED
+  ON_LEAVE
+  ABSENT
+}
+
+/// Historical shift records. The application no longer schedules or assigns work from shifts.
+model StaffShift {
+  id           String           @id @default(cuid())
+  facilityId   String
+  staffUserId  String
+  startsAt     DateTime
+  endsAt       DateTime
+  status       StaffShiftStatus @default(SCHEDULED)
+  checkedInAt  DateTime?
+  checkedOutAt DateTime?
+  breakStartedAt DateTime?
+  reason       String?
+  revision     Int              @default(0)
+  createdAt    DateTime         @default(now())
+  facility     Facility         @relation(fields: [facilityId], references: [id], onDelete: Restrict)
+  staff        User             @relation(fields: [staffUserId], references: [id], onDelete: Restrict)
+
+  @@index([facilityId, startsAt])
+  @@index([staffUserId, status, startsAt])
 }

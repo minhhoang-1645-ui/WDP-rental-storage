@@ -3,6 +3,7 @@ import { safeLocalStorage, safeSessionStorage } from '../services/browser-storag
 export const SESSION_ENDED_EVENT = 'wdp-session-ended';
 const legacyNoticeKey = 'wdp-session-expired';
 const notice = {
+  FACILITY_ACCESS_REVOKED: 'Quyền truy cập cơ sở đã thay đổi. Vui lòng đăng nhập lại để tiếp tục.',
   ACCOUNT_DISABLED: 'Tài khoản đã bị vô hiệu hóa.',
   SESSION_EXPIRED: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.',
   SESSION_INVALID: 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.',
@@ -11,7 +12,7 @@ export type SessionEndReason = keyof typeof notice;
 
 export function sessionEndReason(payload: unknown): SessionEndReason {
   if (payload && typeof payload === 'object') {
-    if ('code' in payload && (payload.code === 'ACCOUNT_DISABLED' || payload.code === 'SESSION_EXPIRED' || payload.code === 'SESSION_INVALID')) return payload.code;
+    if ('code' in payload && (payload.code === 'ACCOUNT_DISABLED' || payload.code === 'SESSION_EXPIRED' || payload.code === 'SESSION_INVALID' || payload.code === 'FACILITY_ACCESS_REVOKED')) return payload.code;
     if ('message' in payload && typeof payload.message === 'string' && /^Tài khoản (?:của bạn )?đã bị vô hiệu hóa[.!]?$/iu.test(payload.message.trim())) return 'ACCOUNT_DISABLED';
   }
   return 'SESSION_INVALID';
@@ -37,7 +38,7 @@ export function clearSessionEndNotice() {
 
 export function readSessionEndNotice() {
   const reason = safeSessionStorage.getItem(SESSION_ENDED_EVENT);
-  if (reason === 'ACCOUNT_DISABLED' || reason === 'SESSION_EXPIRED' || reason === 'SESSION_INVALID') return notice[reason];
+  if (reason === 'ACCOUNT_DISABLED' || reason === 'SESSION_EXPIRED' || reason === 'SESSION_INVALID' || reason === 'FACILITY_ACCESS_REVOKED') return notice[reason];
   const legacy = safeSessionStorage.getItem(legacyNoticeKey);
   return legacy === 'ACCOUNT_DISABLED' ? notice.ACCOUNT_DISABLED : legacy ? notice.SESSION_INVALID : '';
 }

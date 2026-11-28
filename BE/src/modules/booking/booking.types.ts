@@ -2,7 +2,7 @@ import type { PublicUser } from '../auth/auth.types.js';
 import type { PaymentPlan, PricingQuote } from '../pricing/pricing.types.js';
 import type { BookingProduct } from './booking.catalog.js';
 
-export const approvedDurations = [1, 3, 6, 12] as const;
+export const suggestedRentalMonths = [1, 3, 6, 12] as const;
 export type PeriodMode = 'duration' | 'dates';
 export type PaymentChoice = 'pay-later' | 'pay-now';
 
@@ -33,6 +33,7 @@ export interface ReservationDraft {
 export type QuoteSnapshot = PricingQuote;
 
 export interface AvailabilityResult {
+  serviceQuoteVersion?: string;
   available: boolean;
   availableQuantity: number;
   startDate: string;
@@ -44,6 +45,7 @@ export interface AvailabilityResult {
 }
 
 export interface PendingReservation extends ReservationDraft {
+  paidCancellation?: { state: string; total: number; refundDueOn?: string };
   rentalSummary?: {
     rentalPeriod: ReturnType<typeof import('../billing/rental-account-summary.js').rentalAccountSummary>['rentalPeriod'];
     paymentDetails: ReturnType<typeof import('../billing/rental-account-summary.js').rentalAccountSummary>['paymentDetails'];

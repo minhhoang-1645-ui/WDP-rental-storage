@@ -35,11 +35,15 @@ export function useApiResource<T>(path: string | null, identity = '', refreshOnF
         ? { ...previous, revision, error, status }
         : { key, revision, data, error, status })
     }
-    apiRequest<T>(path, { signal: controller.signal })
-      .then(data => publish(data, '', null))
-      .catch(caught => {
-        publish(null, caught instanceof Error ? caught.message : 'Không thể tải dữ liệu.', caught instanceof ApiError ? caught.status : null)
-      })
+    // Wait until setup settles so a disposed effect never starts a request.
+    queueMicrotask(() => {
+      if (controller.signal.aborted) return
+      apiRequest<T>(path, { signal: controller.signal })
+        .then(data => publish(data, '', null))
+        .catch(caught => {
+          publish(null, caught instanceof Error ? caught.message : 'Không thể tải dữ liệu.', caught instanceof ApiError ? caught.status : null)
+        })
+    })
     return () => { controller.abort(); draftObserver?.disconnect() }
   }, [path, key, revision, protectDraft, refresh])
   const current = path && result?.key === key ? result : null

@@ -5,9 +5,9 @@ import { TransfersService } from './transfers.service.js';
 import { parseTransferProposal } from './transfer-schedule.js';
 import { snapshotHash } from '../contracts/signature.js';
 
-const customer = { id: 'customer', role: 'CUSTOMER' } as PublicUser;
-const manager = { id: 'manager', role: 'MANAGER' } as PublicUser;
-const staff = { id: 'staff', role: 'STAFF' } as PublicUser;
+const customer = { id: 'customer', role: 'STORAGE_CUSTOMER' } as PublicUser;
+const manager = { id: 'manager', role: 'FACILITY_MANAGER' } as PublicUser;
+const staff = { id: 'staff', role: 'FACILITY_STAFF' } as PublicUser;
 const now = new Date('2026-10-01'), endDate = new Date('2099-10-01');
 const source = { id: 'source', unitNumber: 'A101', status: 'OCCUPIED', storageTypeId: 'type' };
 const contract = { id: 'contract', status: 'ACTIVE', startDate: now, endDate, reservationId: 'rental', reservationUnitId: 'old', reservationUnit: { storageUnitId: 'source', releasedAt: null, storageUnit: source } };

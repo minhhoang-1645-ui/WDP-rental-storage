@@ -1,5 +1,6 @@
 import { isEarlyReturnRequest } from './early-return';
 import { isCustomerTransferSubject } from './transfer-request';
+import { transferProblem } from './transfer-problem';
 
 type WorkRow = Record<string, unknown>;
 
@@ -8,11 +9,6 @@ export const staffWorkGroups = [
     resource: "appointments",
     title: "Lịch bàn giao",
     description: "Xác nhận lịch khách đề xuất và bàn giao đúng giờ.",
-  },
-  {
-    resource: "stock-movements",
-    title: "Nhập – xuất hàng",
-    description: "Kiểm đếm phiếu được giao; tồn chỉ đổi sau khi hoàn tất.",
   },
   {
     resource: "transfers",
@@ -46,7 +42,6 @@ function assignee(row: WorkRow) {
 const assignableStates: Record<string, readonly string[]> = {
   'support-requests': ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'ESCALATED'],
   maintenance: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'],
-  'stock-movements': ['REQUESTED', 'ASSIGNED'],
   appointments: ['REQUESTED', 'CONFIRMED'],
   returns: ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'],
   transfers: ['APPROVED'],
@@ -62,10 +57,29 @@ export function canAssignWork(resource: string, row: WorkRow) {
     Boolean(assignableStates[resource]?.includes(String(row.status)));
 }
 
+export function assignmentRequiresRepairPlan(resource: string, row: WorkRow) {
+  return resource === 'maintenance' && row.repairPlanReady !== true;
+}
+
 export function isAssignedStaffWork(resource: string, row: WorkRow, userId: string) {
+  if (resource === 'appointments' && row.canRecordCancellationRecovery === true && row.recoveryStaffId === userId && userId) return true;
   return Boolean(userId && assignee(row) === userId) &&
     !(resource === 'support-requests' && isEarlyReturnRequest(row)) &&
-    (resource !== 'transfers' || ['APPROVED', 'COMPLETED'].includes(String(row.status)));
+    (resource !== 'transfers' || ['APPROVED', 'COMPLETED'].includes(String(row.status))
+      || row.status === 'REJECTED' && transferProblem(row).review.decision === 'CANCEL');
+}
+
+export function staffRecordedAt(resource: string, row: WorkRow, userId: string): string {
+  const evidenceDates = (record: WorkRow) => (Array.isArray(record.evidenceSubmissions) ? record.evidenceSubmissions : [])
+    .filter(item => item?.staffUserId === userId && typeof item.recordedAt === 'string')
+    .map(item => item.recordedAt as string);
+  if (resource === 'maintenance') return [...evidenceDates(row),
+    row.source === 'MANUAL' && (row.reportedBy as WorkRow | undefined)?.id === userId ? String(row.createdAt ?? '') : '',
+  ].sort().at(-1) ?? '';
+  if (resource === 'returns' && Array.isArray(row.inspections)) return row.inspections
+    .flatMap(item => [...evidenceDates(item), item?.inspectedBy?.id === userId ? String(item.inspectedAt ?? '') : ''])
+    .sort().at(-1) ?? '';
+  return '';
 }
 
 /** Receiving a request does not grant an employee authority to assign it. */
@@ -83,15 +97,14 @@ export function staffNeedsAction(
         ["PENDING_CONTACT", "CONTACTED", "IN_REVIEW"].includes(status)
       );
     case "appointments":
-      return ["REQUESTED", "CONFIRMED"].includes(status) && assignee(row) === userId && row.bookingReady !== false;
+      if (row.canRecordCancellationRecovery === true && row.recoveryStaffId) return row.recoveryStaffId === userId;
+      return ["REQUESTED", "CONFIRMED"].includes(status) && assignee(row) === userId && row.bookingReady !== false && row.cancellationPending !== true;
     case "transfers":
       return status === "APPROVED";
     case "returns":
       return ["REQUESTED", "INSPECTION_IN_PROGRESS", "ISSUE_FOUND"].includes(
         status,
       );
-    case "stock-movements":
-      return status === "ASSIGNED";
     case "support-requests":
       return ["ASSIGNED", "IN_PROGRESS"].includes(status);
     case "maintenance":
@@ -112,7 +125,7 @@ export function assignmentNeedsAttention(resource: string, row: WorkRow) {
     || resource === 'damage-claims' && Boolean(row.staffFacts)) return false;
   if (awaitingAssignment(resource, row)) return true;
   const person = row.assignedStaff;
-  const disabled = person && typeof person === "object" && ((person as WorkRow).accountStatus === "DISABLED" || ((person as WorkRow).role && (person as WorkRow).role !== 'STAFF'));
+  const disabled = person && typeof person === "object" && ((person as WorkRow).accountStatus === "DISABLED" || ((person as WorkRow).role && (person as WorkRow).role !== 'FACILITY_STAFF'));
   return Boolean(disabled && canAssignWork(resource, row));
 }
 
@@ -122,13 +135,14 @@ export function hasLinkedTransfer(row: WorkRow) {
 }
 
 export function managerNeedsAction(resource: string, row: WorkRow) {
+  if ((resource === 'appointments' || resource === 'returns') && row.waitingForManager === true) return true;
   if (resource === 'support-requests' && isCustomerTransferSubject(row.subject)) {
     return row.status !== 'RESOLVED' && (!Array.isArray(row.transfers) || row.transfers.length === 0);
   }
   return assignmentNeedsAttention(resource, row)
     || resource === "support-requests" && row.status === "ESCALATED" && !isEarlyReturnRequest(row)
     || resource === "maintenance" && row.status === "AWAITING_VERIFICATION"
-    || resource === "transfers" && row.status === "REQUESTED"
+    || resource === "transfers" && (row.status === "REQUESTED" || transferProblem(row).pending)
     || resource === "renewals" && row.status === "PENDING"
     || resource === "deposit-settlements" && (row.status === "PENDING_REVIEW" ||
       (row.status === "APPROVED" && typeof row.refundAmount === "number" && row.refundAmount > 0 &&

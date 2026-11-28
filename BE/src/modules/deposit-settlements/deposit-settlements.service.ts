@@ -1,8 +1,15 @@
+import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
+import { returnTaskScope, taskFacilityId } from '../facility-access/task-access.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
-import { earlyReturnSettlementPending } from '../returns/return-period-closeout.js';
+import { earlyReturnSettlementPending, rentRefundView } from '../returns/return-period-closeout.js';
+import { businessDate, businessToday, isIsoCalendarDate } from '../../business-date.js';
+import { depositRefundDebtClause } from '../documents/document-policy.js';
+import { DEPOSIT_REFUND_DAYS } from '../policies/pricing-policy.js';
+import { depositRefundLedger, returnInvoiceFields } from '../returns/contract-return-finance.js';
+import { signedDocument } from '../signing/signing-otp.service.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 type SettlementStatus = 'PENDING_REVIEW' | 'APPROVED' | 'AWAITING_OUTSTANDING_PAYMENT' | 'SETTLED';
@@ -16,6 +23,13 @@ export interface SettlementListQuery {
 }
 
 type ReviewedIssue = { inspectionId: string; issueType: IssueType; approvedChargeAmount: bigint; reason: string | null };
+
+function appliedCloseout(value: Prisma.JsonValue) {
+  return value && typeof value === 'object' && !Array.isArray(value) && typeof value.appliedAt === 'string' &&
+    typeof value.refundAmount === 'number' && Number.isSafeInteger(value.refundAmount) && value.refundAmount >= 0
+    ? { appliedAt: value.appliedAt, refundAmount: value.refundAmount, adjustedInvoices: value.adjustedInvoices }
+    : null;
+}
 
 @Injectable()
 export class DepositSettlementsService {
@@ -34,8 +48,9 @@ export class DepositSettlementsService {
     return this.toSettlement(record, false);
   }
 
-  listManager(query: SettlementListQuery) {
-    const filters: Prisma.DepositSettlementWhereInput[] = [];
+  listManager(query: SettlementListQuery, actor: PublicUser) {
+    managerReservationScope(actor);
+    const filters: Prisma.DepositSettlementWhereInput[] = [{returnRequest:returnTaskScope(actor)}];
     if (query.status) filters.push({ status: query.status });
     if (query.search) filters.push({ OR: [
       { settlementCode: { contains: query.search, mode: 'insensitive' } },
@@ -48,8 +63,23 @@ export class DepositSettlementsService {
     return this.page(filters.length ? { AND: filters } : {}, query, true);
   }
 
-  async getManager(id: string) {
-    return this.toSettlement(await this.find(id, this.prisma), true);
+  async getManager(id: string, actor: PublicUser) {
+    const record=await this.find(id,this.prisma);
+    await assertManagerRecordAccess(this.prisma,actor,{returnRequestId:record.returnRequestId});
+    return this.managerView(record);
+  }
+
+  private managerView(record: Awaited<ReturnType<DepositSettlementsService['find']>>) {
+    const returned = record.returnRequest;
+    const closeout = returned.physicallyReturnedAt ? appliedCloseout(returned.earlyReturnCloseout) : null;
+    return {
+      ...this.toSettlement(record, true),
+      earlyReturnSettlement: closeout ? {
+        returnId: returned.id,
+        closeout,
+        rentRefund: rentRefundView(returned),
+      } : null,
+    };
   }
 
   async review(id: string, input: Record<string, unknown>, idempotencyKey: string | undefined, actor: PublicUser) {
@@ -60,6 +90,7 @@ export class DepositSettlementsService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "DepositSettlement" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.depositSettlement.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy quyết toán deposit.');
+      await assertManagerRecordAccess(tx,actor,{returnRequestId:current.returnRequestId});
       if (current.reviewIdempotencyKey !== null) {
         this.assertMatchingReviewRetry(current, parsed);
         return this.toSettlement(current, true);
@@ -91,6 +122,7 @@ export class DepositSettlementsService {
         await tx.invoice.create({ data: {
           invoiceCode: `${current.settlementCode}-I01`,
           reservationId: current.returnRequest.reservationId,
+          facilityIdSnapshot: await taskFacilityId(tx,{returnRequestId:current.returnRequestId}),
           type: 'SETTLEMENT',
           billingCycle: null,
           depositSettlementId: current.id,
@@ -129,6 +161,7 @@ export class DepositSettlementsService {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "DepositSettlement" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.depositSettlement.findUnique({ where: { id: identity.id }, include: this.include() });
       if (!current) throw new NotFoundException('Không tìm thấy quyết toán deposit.');
+      await assertManagerRecordAccess(tx,actor,{returnRequestId:current.returnRequestId});
       if (current.refundIdempotencyKey !== null) {
         this.assertMatchingRefundRetry(current, parsed);
         return this.toSettlement(current, true);
@@ -136,20 +169,115 @@ export class DepositSettlementsService {
       if (current.status !== 'APPROVED' || current.refundAmount <= 0n || current.outstandingAmount !== 0n || current.refundedAt !== null) {
         throw new ConflictException('Settlement chưa đủ điều kiện ghi nhận refund.');
       }
+      const refundState = this.refundDebtState(current);
+      this.assertRefundDebtCleared(refundState);
       const now = new Date();
-      await tx.depositSettlement.update({ where: { id: current.id }, data: {
-        status: 'SETTLED',
-        refundMethod: parsed.method,
-        refundReference: parsed.reference,
-        refundNote: parsed.note,
-        refundIdempotencyKey: parsed.idempotencyKey,
-        refundedAt: now,
-        settledByUserId: actor.id,
-        settledAt: now,
-      } });
+      await this.recordDepositRefund(tx, current.id, parsed, actor.id, now, refundState);
       await this.completeReturn(tx, current.returnRequestId, actor.id, now);
       return this.toSettlement(await this.find(current.id, tx), true);
     }, 'Refund vừa được ghi nhận bởi thao tác khác. Vui lòng tải lại.');
+  }
+
+  async confirmReturnRefund(id: string, input: Record<string, unknown>, key: string | undefined, actor: PublicUser) {
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được xác nhận hoàn tiền trả kho.');
+    const idempotencyKey = this.idempotencyKey(key);
+    const { depositAmount, rentAmount } = input;
+    if (typeof depositAmount !== 'number' || !Number.isSafeInteger(depositAmount) || depositAmount < 0 ||
+        typeof rentAmount !== 'number' || !Number.isSafeInteger(rentAmount) || rentAmount < 0) {
+      throw new BadRequestException('Số tiền hoàn phải là số nguyên VND không âm.');
+    }
+    if ((depositAmount > 0 || rentAmount > 0) && input.refundConfirmed !== true) {
+      throw new BadRequestException('Cần xác nhận đã chuyển tiền hoàn cho khách.');
+    }
+    const reference = this.optionalText(input.reference, 160, 'reference');
+    if ((depositAmount > 0 || rentAmount > 0) && (!reference || reference.length < 2)) {
+      throw new BadRequestException('Cần mã giao dịch chuyển khoản hoàn tiền.');
+    }
+    const identity = await this.identity(id);
+    return this.serializable(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "DepositSettlement" WHERE "id" = ${identity.id} FOR UPDATE`);
+      const current = await this.find(identity.id, tx);
+      await assertManagerRecordAccess(tx,actor,{returnRequestId:current.returnRequestId});
+      const returned = current.returnRequest;
+      const closeout = returned.physicallyReturnedAt ? appliedCloseout(returned.earlyReturnCloseout) : null;
+      if (!closeout) throw new ConflictException('Chưa có quyết toán trả kho trước hạn.');
+      const depositRefund = this.money(current.refundAmount);
+      const pendingDeposit = !current.refundedAt && current.status !== 'SETTLED' ? depositRefund : 0;
+      const pendingRent = returned.rentRefundedAt ? 0 : closeout.refundAmount;
+      if (current.status === 'SETTLED' && !earlyReturnSettlementPending(returned) &&
+          (depositAmount === 0 || current.refundedAt && depositAmount === depositRefund && current.refundReference === reference) &&
+          (rentAmount === 0 || returned.rentRefundedAt && rentAmount === closeout.refundAmount && returned.rentRefundReference === reference)) return this.managerView(current);
+      if (returned.status !== 'PENDING_SETTLEMENT' || current.outstandingAmount !== 0n ||
+          !(current.status === 'SETTLED' || current.status === 'APPROVED' && pendingDeposit > 0)) {
+        throw new ConflictException('Cần xử lý xong quyết toán cọc và khoản phải thu thêm trước khi xác nhận hoàn tiền.');
+      }
+      if (depositAmount !== pendingDeposit || rentAmount !== pendingRent) {
+        throw new ConflictException('Số tiền cần hoàn vừa thay đổi. Vui lòng tải lại hồ sơ.');
+      }
+
+      const now = new Date();
+      if (pendingDeposit > 0) {
+        const refundState = this.refundDebtState(current);
+        this.assertRefundDebtCleared(refundState);
+        await this.recordDepositRefund(tx, current.id, { method: 'BANK_TRANSFER', reference, note: null, idempotencyKey }, actor.id, now, refundState);
+      }
+      await tx.returnRequest.update({ where: { id: returned.id }, data: {
+        ...(!returned.rentRefundApprovedAt ? { rentRefundApprovedAt: now, rentRefundApprovedById: actor.id } : {}),
+        ...(pendingRent > 0 ? { rentRefundedAt: now, rentRefundedById: actor.id, rentRefundReference: reference } : {}),
+      } });
+      await this.completeReturn(tx, returned.id, actor.id, now);
+      return this.managerView(await this.find(current.id, tx));
+    }, 'Khoản hoàn vừa được cập nhật. Vui lòng tải lại hồ sơ.');
+  }
+
+  private refundDebtState(record: Awaited<ReturnType<DepositSettlementsService['find']>>) {
+    const { returnRequest } = record;
+    const contracts = returnRequest.inspections.map(inspection => inspection.rentalContract);
+    const applies = contracts.length > 0 && contracts.every(contract => {
+      const document = signedDocument(contract.signedSnapshot);
+      return Boolean(contract.termsAcceptedAt && Array.isArray(document?.clauses) && document.clauses.some(
+        (clause: { title?: string; text?: string } | null) =>
+          clause?.title === depositRefundDebtClause.title && clause.text === depositRefundDebtClause.text,
+      ));
+    });
+    const ledger = depositRefundLedger(returnRequest.reservation.invoices, contracts.map(contract => contract.id),
+      returnRequest.reservation.contracts.map(contract => contract.id));
+    const blockReason = applies && record.refundAmount > 0n && !record.refundedAt && ledger.outstandingBalance !== 0
+      ? ledger.outstandingBalance === null
+        ? 'Cần đối soát công nợ của hợp đồng trước khi hoàn cọc.'
+        : 'Khách cần thanh toán hết công nợ của hợp đồng trước khi hoàn cọc.'
+      : null;
+    let dueOn = record.refundDueOn;
+    if (applies && !record.refundedAt && returnRequest.physicallyReturnedAt && record.depositAmount > 0n) {
+      if (ledger.outstandingBalance !== 0) dueOn = null;
+      else {
+        const recorded = (returnRequest.overdueSettlement as { physicalReturnDate?: unknown } | null)?.physicalReturnDate;
+        const returned = typeof recorded === 'string' && isIsoCalendarDate(recorded)
+          ? new Date(recorded + 'T00:00:00.000Z')
+          : returnRequest.physicallyReturnedAt;
+        const clearance = ledger.latestClearance;
+        dueOn = businessToday(clearance && clearance > returned ? clearance : returned);
+        dueOn.setUTCDate(dueOn.getUTCDate() + DEPOSIT_REFUND_DAYS);
+      }
+    }
+    return { applies, outstandingBalance: ledger.outstandingBalance, blockReason, dueOn };
+  }
+
+  private assertRefundDebtCleared(state: ReturnType<DepositSettlementsService['refundDebtState']>) {
+    if (state.blockReason) throw new ConflictException({
+      code: 'DEPOSIT_REFUND_CONTRACT_DEBT',
+      message: state.blockReason,
+      outstandingBalance: state.outstandingBalance,
+    });
+  }
+
+  private recordDepositRefund(tx: Prisma.TransactionClient, id: string, refund: ReturnType<DepositSettlementsService['refundInput']>,
+    actorId: string, now: Date, state: ReturnType<DepositSettlementsService['refundDebtState']>) {
+    return tx.depositSettlement.update({ where: { id }, data: {
+      status: 'SETTLED', refundMethod: refund.method, refundReference: refund.reference, refundNote: refund.note,
+      refundIdempotencyKey: refund.idempotencyKey, refundedAt: now, settledByUserId: actorId, settledAt: now,
+      ...(state.applies && state.dueOn ? { refundDueOn: state.dueOn, refundPolicyVersion: 1 } : {}),
+    } });
   }
 
   private async completeReturn(tx: Prisma.TransactionClient, returnRequestId: string, actorId: string, now: Date) {
@@ -176,11 +304,16 @@ export class DepositSettlementsService {
       outstandingInvoice: { include: { payments: { select: { id: true, paymentCode: true, amount: true, method: true, receivedAt: true }, orderBy: { receivedAt: 'asc' as const } } } },
       returnRequest: { omit: { assignedStaffUserId: true }, include: {
         requestedBy: { select: { id: true, fullName: true } },
-        reservation: { include: {
+        reservation: { select: {
+          id: true, reservationCode: true,
           customer: { select: { id: true, fullName: true, email: true, phone: true } },
           storageType: { select: { id: true, code: true, name: true, condition: true } },
+          contracts: { select: { id: true } },
+          invoices: { select: { ...returnInvoiceFields, paidAt: true, voidedAt: true } },
         } },
-        inspections: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true } }, rentalContract: { select: { id: true, contractCode: true, status: true } } }, orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }] },
+        inspections: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true } },
+          rentalContract: { select: { id: true, contractCode: true, status: true, signedSnapshot: true, termsAcceptedAt: true } } },
+          orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }] },
       } },
     };
   }
@@ -193,7 +326,9 @@ export class DepositSettlementsService {
     return { page: query.page, limit: query.limit, total, items: records.map((record) => this.toSettlement(record, manager)) };
   }
 
-  private toSettlement(record: any, manager: boolean) {
+  private toSettlement(record: Awaited<ReturnType<DepositSettlementsService['find']>>, manager: boolean) {
+    const refundState = this.refundDebtState(record);
+    const refundDueOn = refundState.dueOn?.toISOString().slice(0, 10) ?? null;
     const issues = record.issues.map((issue: any) => ({
       inspectionId: issue.returnInspectionId,
       unit: { id: issue.returnInspection.storageUnit.id, unitCode: issue.returnInspection.storageUnit.unitNumber, status: issue.returnInspection.storageUnit.status },
@@ -225,6 +360,11 @@ export class DepositSettlementsService {
         unitCode: inspection.storageUnit.unitNumber, contractCode: inspection.rentalContract.contractCode,
       })),
       refundedAt: record.refundedAt?.toISOString() ?? null,
+      refundDueOn,
+      refundPolicyVersion: refundDueOn ? refundState.applies ? 1 : record.refundPolicyVersion : null,
+      refundOverdue: Boolean(refundDueOn && !record.refundedAt &&
+        (record.status === 'PENDING_REVIEW' || record.status === 'APPROVED' && record.refundAmount > 0n) &&
+        businessDate() > refundDueOn),
       settledAt: record.settledAt?.toISOString() ?? null,
       outstandingInvoice: record.outstandingInvoice ? {
         id: record.outstandingInvoice.id,
@@ -259,6 +399,9 @@ export class DepositSettlementsService {
     }
     return {
       ...base,
+      contractOutstandingBalance: refundState.outstandingBalance,
+      refundRequiresDebtClearance: refundState.applies,
+      refundBlockReason: refundState.blockReason,
       reviewNote: record.reviewNote,
       reviewedBy: record.reviewedBy,
       reviewedAt: record.reviewedAt?.toISOString() ?? null,
@@ -305,7 +448,8 @@ export class DepositSettlementsService {
     const method = input.method;
     if (method !== 'BANK_TRANSFER' && method !== 'CASH') throw new BadRequestException('method phải là BANK_TRANSFER hoặc CASH.');
     const reference = this.optionalText(input.reference, 200, 'reference');
-    if (reference && reference.length < 2) throw new BadRequestException('Mã giao dịch hoàn tiền phải có ít nhất 2 ký tự.');
+    if (!reference || reference.length < 2) throw new BadRequestException(method === 'BANK_TRANSFER'
+      ? 'Cần mã giao dịch chuyển khoản hoàn cọc.' : 'Cần số phiếu chi hoặc mã chứng từ hoàn cọc tiền mặt.');
     // Clients predating explicit confirmation sent a transaction reference after refunding.
     if (input.refundConfirmed !== true && (input.refundConfirmed !== undefined || !reference)) {
       throw new BadRequestException('Cần xác nhận đã hoàn tiền thực tế cho khách.');
@@ -339,7 +483,7 @@ export class DepositSettlementsService {
   }
 
   private assertManager(actor: PublicUser) {
-    if (!['MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được xử lý quyết toán deposit.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ Manager hoặc Admin được xử lý quyết toán deposit.');
   }
 
   private idempotencyKey(value: string | undefined) {

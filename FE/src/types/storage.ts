@@ -17,6 +17,7 @@ export interface StorageSize {
 }
 
 export interface StorageListing {
+  facilityId?: string
   id: string
   code: string
   name: string
@@ -37,6 +38,7 @@ export interface StorageListing {
 }
 
 export interface SearchCriteria {
+  facilityId: string
   size: StorageSizeId | 'all'
   type: StorageCondition | 'all'
   date: string

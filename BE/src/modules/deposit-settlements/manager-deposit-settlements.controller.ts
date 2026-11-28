@@ -10,7 +10,7 @@ const statuses = ['PENDING_REVIEW', 'APPROVED', 'AWAITING_OUTSTANDING_PAYMENT', 
 
 @Controller('manager/deposit-settlements')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('MANAGER')
+@Roles('FACILITY_MANAGER')
 @ApiTags('Manager Deposit Settlement')
 @ApiBearerAuth('bearerAuth')
 export class ManagerDepositSettlementsController {
@@ -23,15 +23,15 @@ export class ManagerDepositSettlementsController {
   @ApiQuery({ name: 'status', required: false, enum: statuses })
   @ApiOkResponse({ description: 'Stable pagination, customer, return, units, charges, refund và outstanding invoice.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER/STAFF không được phép.' })
-  list(@Query() input: Record<string, unknown>) { return this.settlements.listManager(this.query(input)); }
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER/FACILITY_STAFF không được phép.' })
+  list(@Query() input: Record<string, unknown>, @Req() foundationRequest: AuthenticatedRequest) { return this.settlements.listManager(this.query(input), foundationRequest.user!); }
 
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết quyết toán deposit' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-RT01-DS01' })
   @ApiOkResponse({ description: 'Physical inspections, approved resolutions, internal review và invoice liên quan.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy settlement.' })
-  get(@Param('id') id: string) { return this.settlements.getManager(id); }
+  get(@Param('id') id: string, @Req() foundationRequest: AuthenticatedRequest) { return this.settlements.getManager(id, foundationRequest.user!); }
 
   @Post(':id/review')
   @ApiOperation({ summary: 'Duyệt trách nhiệm và charge của inspection issues', description: 'Manager only. Staff observation không tự phát sinh deduction. Charges vượt deposit tạo đúng một SETTLEMENT Invoice.' })
@@ -53,12 +53,23 @@ export class ManagerDepositSettlementsController {
   @ApiOperation({ summary: 'Ghi nhận đã hoàn tiền deposit', description: 'Business record only; không gọi bank gateway. Chỉ APPROVED với refundAmount > 0 và outstandingAmount = 0.' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-RT01-DS01' })
   @ApiHeader({ name: 'Idempotency-Key', required: true, example: 'refund-20261009-001' })
-  @ApiBody({ type: RefundDepositRequestDto, examples: { bank: { value: { method: 'BANK_TRANSFER', refundConfirmed: true } } } })
+  @ApiBody({ type: RefundDepositRequestDto, examples: { bank: { value: { method: 'BANK_TRANSFER', refundConfirmed: true, reference: 'REFUND-20261009-001' } } } })
   @ApiCreatedResponse({ description: 'Settlement và ReturnRequest chuyển SETTLED/COMPLETED.' })
   @ApiBadRequestResponse({ description: 'Thiếu xác nhận đã hoàn hoặc thông tin ghi nhận không hợp lệ.' })
   @ApiConflictResponse({ description: 'Settlement chưa APPROVED, không có refund hoặc refund đã ghi.' })
   refund(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) {
     return this.settlements.refund(id, body, key, request.user!);
+  }
+
+  @Post(':id/confirm-return-refund')
+  @ApiOperation({ summary: 'Xác nhận hoàn tiền cọc, tiền thuê và dịch vụ khi trả trước hạn' })
+  @ApiHeader({ name: 'Idempotency-Key', required: true })
+  @ApiBody({ schema: { type: 'object', required: ['depositAmount', 'rentAmount'], properties: {
+    depositAmount: { type: 'integer', minimum: 0 }, rentAmount: { type: 'integer', minimum: 0 }, refundConfirmed: { type: 'boolean' },
+    reference: { type: 'string', minLength: 2, maxLength: 160, description: 'Mã giao dịch chuyển khoản bắt buộc khi số tiền hoàn lớn hơn 0.' },
+  } } })
+  confirmReturnRefund(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Headers('idempotency-key') key: string | undefined, @Body() body: Record<string, unknown>) {
+    return this.settlements.confirmReturnRefund(id, body ?? {}, key, request.user!);
   }
 
   private query(input: Record<string, unknown>): SettlementListQuery {

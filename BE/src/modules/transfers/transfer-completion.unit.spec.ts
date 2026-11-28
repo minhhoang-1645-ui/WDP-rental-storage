@@ -6,9 +6,9 @@ import type { PublicUser } from '../auth/auth.types.js';
 
 // No PrismaService instance, environment file or database connection is created.
 function setup(status = 'APPROVED', supportStatus = 'IN_PROGRESS') {
-  const actor = { id: 'staff-id', role: 'STAFF', fullName: 'Nhân viên', email: 'staff@example.test', phone: '' } satisfies PublicUser;
+  const actor = { id: 'staff-id', role: 'FACILITY_STAFF', fullName: 'Nhân viên', email: 'staff@example.test', phone: '' } satisfies PublicUser;
   const stamp = new Date('2026-10-27T13:00:00Z');
-  const storageType = { id: 'type', code: 'SM', name: 'Kho nhỏ' };
+  const storageType = { id: 'type', code: 'SM', name: 'Kho nhỏ', facilityId: 'facility' };
   const support = { id: 'support', reservationId: 'reservation', rentalContractId: 'contract', status: supportStatus, assignedStaffUserId: actor.id, subject: 'Yêu cầu chuyển kho', resolutionType: null as string | null, resolutionNote: null as string | null };
   const transfer = { id: 'transfer', transferCode: 'TRF-1', status, assignedStaffUserId: actor.id, supportRequestId: 'support' as string | null, reservationId: 'reservation', rentalContractId: 'contract', fromStorageUnitId: 'source', toStorageUnitId: 'destination', fromReservationUnitId: 'allocation-old', toReservationUnitId: 'allocation-new',
     fromStorageUnit: { id: 'source', unitNumber: 'A101', status: status === 'COMPLETED' ? 'MAINTENANCE' : 'OCCUPIED', storageType }, toStorageUnit: { id: 'destination', unitNumber: 'A102', status: 'RESERVED', storageType },
@@ -16,9 +16,16 @@ function setup(status = 'APPROVED', supportStatus = 'IN_PROGRESS') {
     requestedBy: actor, approvedBy: actor, completedBy: actor, createdAt: stamp, updatedAt: stamp, approvedAt: stamp, completedAt: status === 'COMPLETED' ? stamp : null as Date | null };
   const maintenance: Record<string, unknown>[] = [];
   const view = () => ({ ...transfer, fromStorageUnit: { ...transfer.fromStorageUnit, maintenanceRequests: maintenance.filter(item => item.activeKey) }, supportRequest: { id: support.id, supportCode: 'SUP-1', status: support.status, assignedStaffUserId: support.assignedStaffUserId, resolutionType: support.resolutionType } });
-  const tx = { storedItem: { count: vi.fn().mockResolvedValue(0) }, stockMovement: { count: vi.fn().mockResolvedValue(9) }, $queryRaw: vi.fn(async () => []), transferRequest: { findFirst: vi.fn(async () => ({ id: transfer.id })), findUniqueOrThrow: vi.fn(async () => view()), update: vi.fn(async (input: { data: Record<string, unknown> }) => { Object.assign(transfer, input.data); return view(); }) },
-    rentalContract: { update: vi.fn(async () => ({})) }, reservationUnit: { update: vi.fn(async () => ({})) }, storageUnit: { findUnique: vi.fn(async () => transfer.fromStorageUnit), update: vi.fn(async ({ where, data }: any) => { Object.assign(where.id === 'source' ? transfer.fromStorageUnit : transfer.toStorageUnit, data); return {}; }) },
-    maintenanceRequest: { findUnique: vi.fn(async ({ where }: any) => maintenance.find(item => Object.entries(where).every(([key, value]) => item[key] === value)) ?? null), create: vi.fn(async ({ data }: any) => { const item = { id: 'maintenance-created', ...data }; maintenance.push(item); return item; }) },
+  const tx = {
+    auditEvent: { create: vi.fn() },
+    $queryRawUnsafe: vi.fn().mockResolvedValue([]),
+    user: { findFirst: vi.fn(async ({ where }) => ({ id: where.id })) },
+    facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
+    reservation: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
+    storedItem: { count: vi.fn().mockResolvedValue(0) }, stockMovement: { count: vi.fn().mockResolvedValue(9) }, $queryRaw: vi.fn(async () => []), transferRequest: { findFirst: vi.fn(async () => ({ id: transfer.id })), findUniqueOrThrow: vi.fn(async () => view()), update: vi.fn(async (input: { data: Record<string, unknown> }) => { Object.assign(transfer, input.data); return view(); }) },
+    rentalContract: { update: vi.fn(async () => ({})) }, reservationUnit: { update: vi.fn(async () => ({})) }, storageUnit: { findUnique: vi.fn(async () => ({ ...transfer.fromStorageUnit, storageType: { ...storageType, facilityId: 'facility' } })), update: vi.fn(async ({ where, data }: any) => { Object.assign(where.id === 'source' ? transfer.fromStorageUnit : transfer.toStorageUnit, data); return {}; }) },
+    maintenanceRequest: { count: vi.fn().mockResolvedValue(0), findUnique: vi.fn(async ({ where }: any) => maintenance.find(item => Object.entries(where).every(([key, value]) => item[key] === value)) ?? null), create: vi.fn(async ({ data }: any) => { const item = { id: 'maintenance-created', ...data }; maintenance.push(item); return item; }) },
+    incidentUnitBlock: { count: vi.fn().mockResolvedValue(0) },
     supportRequest: { findUnique: vi.fn(async () => support), updateMany: vi.fn(async (input: { data: Record<string, unknown> }) => { Object.assign(support, input.data); return { count: 1 }; }) } };
   const prisma = { $transaction: vi.fn(async (operation: (value: typeof tx) => Promise<unknown>) => operation(tx)) };
   return { actor, support, transfer, maintenance, tx, prisma, service: new TransfersService(prisma as unknown as PrismaService) };
@@ -33,7 +40,7 @@ describe('Transfer completion and linked customer request, with memory-only depe
     const reads = new TransfersService({ transferRequest: { findFirst } } as never);
     await expect(reads.getForStaff('transfer', app.actor)).rejects.toThrow('Không tìm thấy');
     expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ assignedStaffUserId: app.actor.id, status: { in: ['APPROVED', 'COMPLETED'] } }),
+      where: expect.objectContaining({ assignedStaffUserId: app.actor.id, status: { in: ['APPROVED', 'COMPLETED', 'REJECTED'] } }),
     }));
   });
 
@@ -51,14 +58,14 @@ describe('Transfer completion and linked customer request, with memory-only depe
     });
   });
 
-  it('returns the positive inventory count to the assigned Staff', async () => {
+  it('does not expose personal inventory counts to the assigned Staff', async () => {
     const app = setup();
     const findFirst = vi.fn().mockResolvedValue({ ...app.transfer, rentalContract: {
       ...app.transfer.rentalContract, _count: { storedItems: 2 },
     } });
     const service = new TransfersService({ transferRequest: { findFirst } } as never);
     const result = await service.getForStaff('transfer', app.actor);
-    expect(result.storedItemCount).toBe(2);
+    expect(result).not.toHaveProperty('storedItemCount');
   });
 
   it('searches the assigned transfer list by customer name and returns only the name', async () => {
@@ -89,7 +96,7 @@ describe('Transfer completion and linked customer request, with memory-only depe
   });
   it('completes physical movement and resolves the linked request in the same transaction', async () => {
     const app = setup(); const result = await app.service.complete('transfer', app.actor, handover);
-    expect(result.status).toBe('COMPLETED'); expect(result.supportRequest.status).toBe('RESOLVED');
+    expect(result.status).toBe('COMPLETED'); expect(result.supportRequest!.status).toBe('RESOLVED');
     expect(app.support.resolutionNote).toContain('A101 sang A102'); expect(app.support.resolutionNote).toContain('CON-1');
     expect(app.tx.supportRequest.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ reservationId: 'reservation' }), data: expect.objectContaining({ resolvedByUserId: app.actor.id, resolutionType: 'ON_SITE_RESOLVED' }) }));
     expect(app.prisma.$transaction).toHaveBeenCalledTimes(1); expect(app.tx.storageUnit.update).toHaveBeenCalledTimes(2);
@@ -120,14 +127,16 @@ describe('Transfer completion and linked customer request, with memory-only depe
   it('does not finish an unapproved transfer', async () => {
     const app = setup('REQUESTED'); await expect(app.service.complete('transfer', app.actor, handover)).rejects.toThrow('APPROVED'); expect(app.tx.storageUnit.update).not.toHaveBeenCalled(); expect(app.tx.supportRequest.updateMany).not.toHaveBeenCalled();
   });
-  it('rejects completion by another Staff account and blocks when goods are still in stock', async () => {
+  it('requires assigned Staff to verify the source is empty without consulting legacy inventory', async () => {
     const app = setup();
     await expect(app.service.complete('transfer', { ...app.actor, id: 'other-staff' }, handover)).rejects.toThrow('Chỉ nhân viên được giao');
     app.tx.storedItem.count.mockResolvedValue(1);
-    await expect(app.service.complete('transfer', app.actor, handover)).rejects.toThrow('Kho nguồn còn 1 mặt hàng');
-    expect(app.tx.storedItem.count).toHaveBeenCalledWith({ where: { rentalContractId: 'contract', balance: { gt: 0 } } });
+    await expect(app.service.complete('transfer', app.actor, { ...handover, goodsMoved: false })).rejects.toThrow('kho cũ đã trống');
     expect(app.tx.storageUnit.update).not.toHaveBeenCalled();
     expect(app.tx.rentalContract.update).not.toHaveBeenCalled();
+    expect((await app.service.complete('transfer', app.actor, handover)).status).toBe('COMPLETED');
+    expect(app.tx.storedItem.count).not.toHaveBeenCalled();
+    expect(app.tx.stockMovement.count).not.toHaveBeenCalled();
   });
   it('supports transfers without a linked customer request', async () => {
     const app = setup(); app.transfer.supportRequestId = null; expect((await app.service.complete('transfer', app.actor, handover)).status).toBe('COMPLETED'); expect(app.tx.supportRequest.findUnique).not.toHaveBeenCalled();
@@ -151,16 +160,19 @@ describe('Transfer completion and linked customer request, with memory-only depe
   });
 });
 
-const handover = { oldKeysReturned: true, newKeysDelivered: true, goodsMoved: true, recipientName: 'Khách kiểm thử', returnedKeyCount: 1, deliveredKeyCount: 2, note: '' };
+const handover = { destinationReady: true, oldKeysReturned: true, newKeysDelivered: true, goodsMoved: true, recipientName: 'Khách kiểm thử', returnedKeyCount: 1, deliveredKeyCount: 2, note: '' };
 describe('Transfer keys are required before a new physical completion', () => {
   it('rejects missing confirmations before changing occupancy', async () => {
     const app = setup();
-    await expect(app.service.complete('transfer', app.actor)).rejects.toThrow('bàn giao quyền truy cập kho mới');
+    await expect(app.service.complete('transfer', app.actor, { destinationReady: true })).rejects.toThrow('bàn giao quyền truy cập kho mới');
     expect(app.tx.rentalContract.update).not.toHaveBeenCalled();
     expect(app.tx.storageUnit.update).not.toHaveBeenCalled();
   });
   it('stores the key exchange with the completed transfer', async () => {
-    const app = setup(); const result = await app.service.complete('transfer', app.actor, handover);
+    const app = setup();
+    const photos = ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jR1sAAAAASUVORK5CYII='];
+    const result = await app.service.complete('transfer', app.actor, { ...handover, photos });
+    expect(result.handoverReport.photos).toEqual(photos);
     expect(result.handoverReport).toMatchObject({ returnedKeyCount: 1, deliveredKeyCount: 2, recipientName: 'Khách kiểm thử', oldKeysReturned: true, newKeysDelivered: true });
     expect(result.handoverReport.recordedByUserId).toBe(app.actor.id);
   });

@@ -1,7 +1,7 @@
 import { Text, View } from 'react-native';
 import type { ReactNode } from 'react';
 import { at, codeOf, idOf, label, object, rows, text, type Row } from '@/operations/model';
-import { Facts, Navigation, Panel, money } from '@/operations/ui';
+import { Navigation, Panel, money } from '@/operations/ui';
 import { RecordView } from '@/operations/record-view';
 import { staffStyles as s, StaffStatusBadge } from './staff-ui';
 import { formatDate } from '@/utils/format';
@@ -14,10 +14,9 @@ const essentials: Record<string, Field[]> = {
   inquiries: [['Nhu cầu tư vấn', 'customerNotes|note|subject'], ['Loại kho quan tâm', 'product.name|storageType.name']],
   appointments: [['Lịch bàn giao', 'scheduledAt'], ['Điều kiện sử dụng', 'usageStatus']],
   'support-requests': [['Vấn đề', 'subject'], ['Nhân viên phụ trách', 'assignedStaff.fullName'], ['Mức ưu tiên', 'priority']],
-  'stock-movements': [['Loại phiếu', 'type'], ['Lịch dự kiến', 'scheduledAt'], ['Nhân viên kiểm đếm', 'assignedStaff.fullName']],
   renewals: [['Hạn hiện tại', 'previousEndDate'], ['Hạn mới đề nghị', 'requestedEndDate'], ['Kế hoạch thanh toán', 'paymentPlan']],
   transfers: [['Kho nguồn', 'fromUnit.unitCode'], ['Kho đích', 'toUnit.unitCode'], ['Chuyển thực tế lúc', 'completedAt']],
-  returns: [['Tiếp nhận trả lúc', 'physicallyReturnedAt'], ['Loại hàng còn trong kho', 'inventory.remainingItemTypes'], ['Phiếu nhập/xuất chưa xong', 'inventory.pendingMovements'], ['Kết quả', 'completionNote|note']],
+  returns: [['Tiếp nhận trả lúc', 'physicallyReturnedAt'], ['Kết quả', 'completionNote|note']],
   maintenance: [['Vấn đề', 'description'], ['Nhân viên phụ trách', 'assignedStaff.fullName'], ['Kết quả', 'completionNote|workNote|resolutionNote']],
 };
 const categories: [string, string[]][] = [
@@ -26,7 +25,6 @@ const categories: [string, string[]][] = [
   ['Giá và thanh toán', ['quote', 'quoteSnapshot', 'historicalPricing', 'billingSummary', 'financialSummary', 'invoices', 'payments', 'invoice', 'depositSettlement', 'settlement', 'outstandingInvoice', 'initialPaymentBreakdown', 'paymentPlan']],
   ['Hợp đồng và hồ sơ thuê', ['reservation', 'contract', 'rentalContract', 'contracts', 'appendix', 'renewalRequest', 'returnRequest']],
   ['Nội dung và phản hồi', ['description', 'customerNotes', 'internalNotes', 'note', 'resolutionNote', 'resolutionType', 'reason', 'conditionNote', 'escalationNote', 'escalationReason', 'completionNote', 'workNote', 'response', 'responses', 'supportRequest', 'transfers']],
-  ['Hàng hóa và kiểm đếm', ['lines']],
   ['Biên bản kiểm tra', ['inspections', 'physicalInspections', 'inspectionSummary']],
   ['Lịch sử xử lý', ['createdAt', 'updatedAt', 'requestedAt', 'contactedAt', 'startedAt', 'completedAt', 'assignedAt', 'approvedAt', 'rejectedAt', 'resolvedAt', 'escalatedAt', 'escalatedBy', 'confirmedAt', 'expiresAt', 'reviewedAt', 'events', 'history', 'timeline', 'assignedStaff', 'assignedBy', 'processedBy', 'reviewedBy', 'completedBy', 'resolvedBy']],
 ];
@@ -60,7 +58,7 @@ export function StaffRecordSections({ resource, row, section, actionArea }: { re
   const unit = text(row, 'unit.unitCode', 'storageUnit.unitCode', 'fromUnit.unitCode');
   const summary = pick(row, essentials[resource] ?? []);
   const technical = technicalIdentifiers(row);
-  if (['support-requests', 'maintenance', 'stock-movements'].includes(resource) && !hasStaffValue(row.assignedStaff)) summary.values.push(['Nhân viên phụ trách', 'Chưa phân công']);
+  if (['support-requests', 'maintenance'].includes(resource) && !hasStaffValue(row.assignedStaff)) summary.values.push(['Nhân viên phụ trách', 'Chưa phân công']);
   const remainder: Row = { ...row };
   for (const key of ['id', 'reference', 'status', 'requestType', 'databaseId']) delete remainder[key];
   for (const path of summary.used) {
@@ -91,7 +89,6 @@ export function StaffRecordSections({ resource, row, section, actionArea }: { re
     </View>
     {summary.values.length > 0 && <Panel title={resource === 'inquiries' ? 'Nhu cầu tư vấn' : resource === 'reservations' ? 'Thông tin thuê' : 'Thông tin cần xử lý'}><StaffInfoGrid values={summary.values} /></Panel>}
     {resource === 'returns' && rows(row.inspections).length > 0 && <Panel title="Kết quả kiểm tra kho">{rows(row.inspections).map((inspection, index) => <View key={idOf(inspection) + ':' + index} style={{ gap: 4 }}><Text style={s.body}>{text(inspection, 'unit.unitCode', 'storageUnit.unitCode') || 'Kho ' + (index + 1)}</Text><StaffStatusBadge status={text(inspection, 'result')} /></View>)}</Panel>}
-    {resource === 'stock-movements' && rows(row.lines).length > 0 && <Panel title="Đối chiếu số lượng">{rows(row.lines).map((line, index) => <Facts key={idOf(line) + ':' + index} values={[[text(line, 'storedItem.name') || 'Hàng ' + (index + 1), 'Yêu cầu: ' + String(line.requestedQty ?? '—') + ' · Thực tế: ' + String(line.actualQty ?? 'Chưa kiểm đếm')]]} />)}</Panel>}
     {actionArea}
     {sections.filter(section => Object.keys(section.data).length > 0).map(({ title, data }) => title === 'Hợp đồng và hồ sơ thuê' ? <Panel key={title} title={title}><RentalRecordSummaries data={data} resource={resource} id={idOf(row)} /></Panel> : <Navigation compact key={title} title={title} path={`/staff/record-section?resource=${encodeURIComponent(resource)}&id=${encodeURIComponent(idOf(row))}&section=${encodeURIComponent(title)}`} />)}
     {(Object.keys(remainder).length > 0 || technical.length > 0) && <Navigation compact title="Chi tiết kỹ thuật" path={`/staff/record-section?resource=${encodeURIComponent(resource)}&id=${encodeURIComponent(idOf(row))}&section=${encodeURIComponent('Chi tiết kỹ thuật')}`} />}
@@ -113,7 +110,7 @@ function RentalRecordSummaries({ data, resource, id }: { data: Row; resource: st
 
 function StaffSectionContent({ data }: { data: Row }) {
   return <View style={{ gap: 12 }}>{Object.entries(data).map(([key, value]) => <View key={key} style={{ gap: 8 }}>
-    {key === 'lines' ? rows(value).map((line, index) => <Panel key={idOf(line) + ':' + index} title={text(line, 'storedItem.name') || 'Mặt hàng'}><Facts values={[["Mã hàng", text(line, 'storedItem.itemCode')], ['Đơn vị', text(line, 'storedItem.unit')], ['Yêu cầu', line.requestedQty], ['Thực tế', line.actualQty], ['Tồn hiện tại', at(line, 'storedItem.balance')], ['Ghi chú', line.note]]} /></Panel>) :
+    {
     typeof value !== 'object' ? <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 4 }}><Text style={[s.secondary, { flex: 1 }]}>{fieldNames[key] ?? label(key)}</Text><Text selectable style={[s.body, { flex: 1, textAlign: 'right' }]}>{String(shownValue(key, value) ?? '')}</Text></View> : Array.isArray(value) ? rows(value).map((item, index) => <RecordView key={idOf(item) + ':' + index} row={item} root="/staff" />) : <RecordView row={object(value)} root="/staff" />}
   </View>)}</View>;
 }

@@ -2,7 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma/client.js';
 
 export const invoiceContractInclude = {
-  reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true, storageTypeId: true, storageType: { select: { name: true } } } } } },
+  reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, status: true, storageTypeId: true, storageType: { select: { name: true, facilityId: true } } } } } },
 } satisfies Prisma.RentalContractInclude;
 
 type InvoiceUnit = {

@@ -10,7 +10,7 @@ export function WorkspaceNotFound() {
       <p>Đường dẫn này không có trong khu vực của bạn.</p>
       <Link
         className="button-primary"
-        to={user ? portalDestination(user.role) : "/portal/login"}
+        to={user ? portalDestination(user.role) : "/account/login"}
       >
         Về tổng quan
       </Link>

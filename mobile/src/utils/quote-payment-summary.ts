@@ -1,3 +1,5 @@
+import { rentalEndDate } from './rental-period';
+
 /** Presentation only: amounts come from the quote, never reconstruct an invoice or a price policy. */
 type QuoteSource = { estimatedInitialAmountDue?: unknown; quotedTotalAmount?: unknown; grandTotal?: unknown; initialPaymentBreakdown?: unknown; paymentPlan?: unknown; billingMode?: unknown; termMonths?: unknown; addOnTotalAmount?: unknown };
 const amount = (value: unknown): number | null => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
@@ -20,4 +22,53 @@ export function quotePeriod(start: unknown, endExclusive: unknown) {
   if (!Number.isFinite(first.getTime()) || !Number.isFinite(end.getTime()) || end <= first || first.toISOString().slice(0,10)!==start || end.toISOString().slice(0,10)!==endExclusive) return '';
   const format = (date: Date) => date.toLocaleDateString('vi-VN', {timeZone:'UTC'});
   return `${format(first)} – hết ${format(new Date(end.getTime()-86400000))}`;
+}
+
+type MonthlyPaymentGroup = { from: number; to: number; equipment: number; total: number };
+
+/** Project the saved quote using the same billing-cycle boundaries as the invoices. */
+export function quoteMonthlyPayments(quote: QuoteSource & {
+  startDate?: unknown; endDate?: unknown; services?: unknown;
+}, monthlyRent: number | null): MonthlyPaymentGroup[] | null {
+  const { monthly, remaining } = quotePaymentSummary(quote);
+  const { startDate, endDate, termMonths } = quote;
+  if (!monthly || remaining === null || monthlyRent === null || typeof termMonths !== 'number' ||
+    !Number.isSafeInteger(termMonths) || termMonths < 2 || typeof startDate !== 'string' ||
+    typeof endDate !== 'string' || rentalEndDate(startDate, termMonths) !== endDate || !Array.isArray(quote.services)) return null;
+
+  const boundaries = [startDate, ...Array.from({ length: termMonths }, (_, index) => rentalEndDate(startDate, index + 1))];
+  const equipment = Array<number>(termMonths).fill(0);
+  for (const line of quote.services) {
+    if (!line || typeof line !== 'object') return null;
+    if (line.billingUnit === 'ONE_TIME') continue;
+    const { serviceStartDate: start, serviceEndDate: end, billingUnit } = line;
+    const price = amount(line.unitPrice), quantity = amount(line.quantity);
+    if (typeof start !== 'string' || typeof end !== 'string' || !quotePeriod(start, end) ||
+      start < startDate || end > endDate || price === null || quantity === null || !quantity) return null;
+    const charge = price * quantity;
+    if (billingUnit === 'MONTH') {
+      let cycle = 0;
+      for (let cursor = start, offset = 1; cursor && cursor < end; cursor = rentalEndDate(start, offset++)) {
+        while (boundaries[cycle + 1] <= cursor) cycle++;
+        equipment[cycle] += charge;
+      }
+    } else if (billingUnit === 'DAY') {
+      for (let cycle = 0; cycle < termMonths; cycle++) {
+        const from = boundaries[cycle] > start ? boundaries[cycle] : start;
+        const to = boundaries[cycle + 1] < end ? boundaries[cycle + 1] : end;
+        if (to > from) equipment[cycle] += charge * ((Date.parse(to) - Date.parse(from)) / 86400000);
+      }
+    } else return null;
+  }
+
+  const initial = quote.initialPaymentBreakdown as { rentalAddOnAmount?: unknown } | undefined;
+  if (equipment[0] !== initial?.rentalAddOnAmount ||
+    equipment.slice(1).reduce((total, fee) => total + monthlyRent + fee, 0) !== remaining) return null;
+  const groups: MonthlyPaymentGroup[] = [];
+  equipment.slice(1).forEach((fee, index) => {
+    const month = index + 2, previous = groups.at(-1);
+    if (previous?.equipment === fee) previous.to = month;
+    else groups.push({ from: month, to: month, equipment: fee, total: monthlyRent + fee });
+  });
+  return groups;
 }

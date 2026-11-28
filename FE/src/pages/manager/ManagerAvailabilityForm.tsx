@@ -1,19 +1,18 @@
+import { DatePicker } from '../../components/workspace/DateTimeFields';
 import { useRef, useState, type FormEvent } from "react";
 import { apiRequest } from "../../services/api";
 import { date, first, type Row } from "../../components/manager/portal-data";
 import { Facts } from "../../components/manager/PortalUi";
+import { vietnamCalendarDate, wholeRentalMonths } from "../../utils/business-date";
 
 export function ManagerAvailabilityForm({ products }: { products: Row[] }) {
   const [result, setResult] = useState<Row>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [start, setStart] = useState('');
   const lock = useRef(false);
-  const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Bangkok",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  const today = vietnamCalendarDate();
+  const earliestEnd = start && start >= today ? new Date(Date.parse(start) + 86_400_000).toISOString().slice(0, 10) : today;
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (lock.current) return;
@@ -26,6 +25,7 @@ export function ManagerAvailabilityForm({ products }: { products: Row[] }) {
       setError("Ngày kết thúc phải sau ngày bắt đầu.");
       return;
     }
+    const durationMonths = wholeRentalMonths(startDate, endDate);
     lock.current = true;
     setBusy(true);
     try {
@@ -36,12 +36,13 @@ export function ManagerAvailabilityForm({ products }: { products: Row[] }) {
             productId: form.get("productId"),
             startDate,
             endDate,
-            periodMode: "dates",
+            periodMode: durationMonths ? "duration" : "dates",
+            ...(durationMonths ? { durationMonths } : {}),
             quantity: Number(form.get("quantity")),
             adjacencyPreference: false,
             addonIds: [],
             paymentChoice: "pay-later",
-            paymentPlan: "PAY_MONTHLY",
+            paymentPlan: durationMonths ? "PAY_MONTHLY" : "PREPAID",
           }),
         }),
       );
@@ -83,14 +84,10 @@ export function ManagerAvailabilityForm({ products }: { products: Row[] }) {
               ))}
             </select>
           </label>
-          <label className="field-label">
-            Ngày bắt đầu kiểm tra
-            <input name="startDate" type="date" min={today} required />
-          </label>
-          <label className="field-label">
-            Ngày kết thúc kiểm tra
-            <input name="endDate" type="date" min={today} required />
-          </label>
+          <DatePicker label="Ngày bắt đầu kiểm tra" name="startDate" min={today} required value={start}
+            onChange={value => { setStart(value); setResult(undefined); setError(''); }} />
+          <DatePicker label="Ngày kết thúc kiểm tra" name="endDate" min={earliestEnd} required
+            onChange={() => { setResult(undefined); setError(''); }} />
           <label className="field-label">
             Số kho cần kiểm tra
             <input

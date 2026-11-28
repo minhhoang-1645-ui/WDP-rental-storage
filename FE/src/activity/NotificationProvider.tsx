@@ -1,3 +1,4 @@
+import { roleNamespace } from '../role-names';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/auth-context';
@@ -20,21 +21,14 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 function NotificationSession({ children, userId, role }: { children: ReactNode; userId: string; role: NotificationRole }) {
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
-  const root = '/' + role.toLowerCase();
+  const root = '/' + roleNamespace(role);
   const inbox = workspaceInboxPath(role);
   const query = pathname === inbox ? noticeQuery(search) : { view: 'all', page: 1, limit: DEFAULT_PAGE_SIZE, kind: '', search: '' };
-  const isPreviewPage = query.view === 'all' && query.page === 1 && query.limit === DEFAULT_PAGE_SIZE && !query.kind && !query.search;
-  const [previewOpen, setPreviewOpen] = useState(false);
   const params = new URLSearchParams({ view: query.view, page: String(query.page), limit: String(query.limit) });
   if (query.kind) params.set('kind', query.kind);
   if (query.search) params.set('search', query.search);
   const feed = useApiResource<NotificationPage>((pathname === root || pathname.startsWith(root + '/')) ? '/notifications?' + params : null, userId);
-  const preview = useApiResource<NotificationPage>(
-    previewOpen && !isPreviewPage ? `/notifications?view=all&page=1&limit=${DEFAULT_PAGE_SIZE}` : null, userId,
-  );
-  const { refresh: refreshFeed } = feed;
-  const { refresh: refreshPreview } = preview;
-  const refresh = useCallback(() => { refreshFeed(); refreshPreview(); }, [refreshFeed, refreshPreview]);
+  const { refresh } = feed;
   const [lastPage, setLastPage] = useState<NotificationPage | null>(null);
   const [operationError, setOperationError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -93,8 +87,8 @@ function NotificationSession({ children, userId, role }: { children: ReactNode; 
 
   const summary = feed.error ? null : feed.data ?? lastPage;
   return <NotificationContext.Provider value={{
-    data: feed.data, recent: (isPreviewPage ? summary?.items : preview.data?.items) ?? summary?.recent ?? [],
-    setPreviewOpen, kinds: summary?.kinds ?? [], unread: summary?.unreadTotal ?? null,
+    data: feed.data, recent: summary?.recent ?? [],
+    setPreviewOpen: open => { if (open) retry(); }, kinds: summary?.kinds ?? [], unread: summary?.unreadTotal ?? null,
     loading: feed.loading, updating: feed.refreshing, error: feed.error, operationError, busy, refresh: retry,
     mark: notice => change(`${notice.token}/read`), markAll: () => change('read-all'),
     open: (notice: Notice) => change(`${notice.token}/open`, true),

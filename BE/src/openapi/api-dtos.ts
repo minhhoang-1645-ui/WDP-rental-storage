@@ -10,7 +10,7 @@ export class RegisterRequestDto {
   @ApiProperty({ example: '0900000000', description: 'Số điện thoại 8-25 ký tự.' })
   phone!: string;
 
-  @ApiProperty({ format: 'password', example: 'your-password-here', description: 'Thay bằng mật khẩu của bạn. Public registration luôn tạo role CUSTOMER.' })
+  @ApiProperty({ format: 'password', example: 'your-password-here', description: 'Thay bằng mật khẩu của bạn. Public registration luôn tạo role STORAGE_CUSTOMER.' })
   password!: string;
 }
 
@@ -30,7 +30,7 @@ export class CreateAdminUserDto {
   @ApiProperty({ example: 'staff.demo@example.test', format: 'email' }) email!: string;
   @ApiProperty({ example: '0900000011' }) phone!: string;
   @ApiProperty({ format: 'password', example: 'replace-with-secure-password', minLength: 8 }) password!: string;
-  @ApiProperty({ enum: ['STAFF', 'MANAGER'], example: 'STAFF' }) role!: 'STAFF' | 'MANAGER';
+  @ApiProperty({ enum: ['FACILITY_STAFF', 'FACILITY_MANAGER'], example: 'FACILITY_STAFF' }) role!: 'FACILITY_STAFF' | 'FACILITY_MANAGER';
 }
 
 export class UpdateAccountStatusDto {
@@ -48,6 +48,8 @@ export class UpdateAccountProfileDto {
 }
 
 export class BookingAvailabilityRequestDto {
+  @ApiPropertyOptional({ description: 'Khi gửi POST /reservations, dùng serviceQuoteVersion từ kết quả kiểm tra khả dụng.' })
+  expectedServiceQuoteVersion?: string;
   @ApiProperty({ example: 'sm-b12', description: 'ID sản phẩm trả về từ GET /api/booking/catalog hoặc GET /api/storage.' })
   productId!: string;
 
@@ -57,7 +59,7 @@ export class BookingAvailabilityRequestDto {
   @ApiProperty({ enum: ['duration', 'dates'], example: 'duration' })
   periodMode!: 'duration' | 'dates';
 
-  @ApiPropertyOptional({ enum: [1, 3, 6, 12], example: 3, description: 'Bắt buộc khi periodMode là duration.' })
+  @ApiPropertyOptional({ type: Number, minimum: 1, example: 5, description: 'Số nguyên dương. Bắt buộc khi thuê theo tháng.' })
   durationMonths?: number;
 
   @ApiPropertyOptional({ example: '2026-12-15', format: 'date', description: 'Bắt buộc khi periodMode là dates và phải sau startDate.' })
@@ -89,6 +91,8 @@ export class BookingAvailabilityRequestDto {
 }
 
 export class PricingQuoteRequestDto {
+  @ApiPropertyOptional({ enum: ['DAILY', 'MONTHLY'], description: 'Hình thức khách chọn để đối chiếu với cách tính giá của Backend.' })
+  expectedBillingMode?: 'DAILY' | 'MONTHLY';
   @ApiProperty({ example: 'sm-b12' })
   storageTypeId!: string;
 
@@ -120,6 +124,8 @@ export class GuestInquiryRequestDto extends BookingAvailabilityRequestDto {
 }
 
 export class CreateGuestBookingRequestDto {
+  @ApiPropertyOptional({ enum: ['duration', 'dates'], description: 'duration là thuê tháng, dates là thuê ngày.' }) periodMode?: 'duration' | 'dates';
+  @ApiPropertyOptional({ type: Number, minimum: 1, example: 5 }) durationMonths?: number;
   @ApiProperty({ example: 'Nguyen Van A', minLength: 2, maxLength: 120 }) fullName!: string;
   @ApiProperty({ example: 'customer@example.test', format: 'email' }) email!: string;
   @ApiProperty({ example: '0900000000', minLength: 8, maxLength: 25 }) phone!: string;
@@ -131,9 +137,26 @@ export class CreateGuestBookingRequestDto {
   @ApiPropertyOptional({ type: 'array', items: { type: 'object', properties: { serviceId: { type: 'string' }, quantity: { type: 'integer' }, serviceStartDate: { type: 'string', format: 'date' }, serviceEndDate: { type: 'string', format: 'date' } } }, example: [{ serviceId: 'shelf-id', quantity: 1, serviceStartDate: '2026-12-01', serviceEndDate: '2027-02-01' }, { serviceId: 'padlock-id', quantity: 1 }] }) services?: Array<Record<string, unknown>>;
 }
 
-export class CreateAdditionalServiceDto { @ApiPropertyOptional({ example: 'cái', description: 'Đơn vị vật lý, độc lập billingUnit; không tự chuyển đổi tồn kho.' }) physicalUnit?: string; @ApiProperty({ example: 'SHELF_STANDARD' }) code!: string; @ApiProperty({ example: 'Kệ tiêu chuẩn' }) name!: string; @ApiPropertyOptional({ example: 'Kệ tái sử dụng cho kho.' }) description?: string; @ApiProperty({ enum: ['PURCHASE', 'RENTAL'], example: 'RENTAL' }) kind!: string; @ApiProperty({ enum: ['ONE_TIME', 'DAY', 'MONTH'], example: 'MONTH', description: 'PURCHASE bắt buộc ONE_TIME; RENTAL dùng DAY hoặc MONTH.' }) billingUnit!: string; @ApiProperty({ example: 120000, minimum: 1 }) unitPrice!: number; @ApiPropertyOptional({ example: 'https://cdn.example.test/shelf.jpg' }) imageUrl?: string | null; @ApiPropertyOptional({ example: 'Storage Shelf - hình minh họa sản phẩm' }) imageAlt?: string | null; @ApiPropertyOptional({ example: true }) isActive?: boolean; }
-export class UpdateAdditionalServiceDto { @ApiPropertyOptional({ example: 'cái' }) physicalUnit?: string; @ApiPropertyOptional({ example: 'Kệ tiêu chuẩn' }) name?: string; @ApiPropertyOptional({ nullable: true }) description?: string | null; @ApiPropertyOptional({ enum: ['PURCHASE', 'RENTAL'] }) kind?: string; @ApiPropertyOptional({ enum: ['ONE_TIME', 'DAY', 'MONTH'] }) billingUnit?: string; @ApiPropertyOptional({ example: 120000, minimum: 1 }) unitPrice?: number; @ApiPropertyOptional({ nullable: true, example: 'https://cdn.example.test/shelf.jpg' }) imageUrl?: string | null; @ApiPropertyOptional({ nullable: true, example: 'Storage Shelf - hình minh họa sản phẩm' }) imageAlt?: string | null; @ApiPropertyOptional({ example: false }) isActive?: boolean; }
-export class UpdateAdditionalServiceInventoryDto { @ApiPropertyOptional({ example: 50, minimum: 0, description: 'Chỉ PURCHASE. Không được thấp hơn số lượng RESERVED.' }) stockOnHand?: number; @ApiPropertyOptional({ example: 6, minimum: 0, description: 'Chỉ RENTAL. Không được thấp hơn peak booking chồng lấp.' }) rentalCapacity?: number; }
+export class CreateAdditionalServiceDto { @ApiPropertyOptional({description:'Cơ sở cung cấp; bắt buộc chọn khi quản lý có nhiều cơ sở.'}) facilityId?:string; @ApiPropertyOptional({ example: 'cái', description: 'Đơn vị vật lý, độc lập billingUnit; không tự chuyển đổi tồn kho.' }) physicalUnit?: string; @ApiProperty({ example: 'SHELF_STANDARD' }) code!: string; @ApiProperty({ example: 'Kệ tiêu chuẩn' }) name!: string; @ApiPropertyOptional({ example: 'Kệ tái sử dụng cho kho.' }) description?: string; @ApiProperty({ enum: ['PURCHASE', 'RENTAL'], example: 'RENTAL' }) kind!: string; @ApiProperty({ enum: ['ONE_TIME', 'DAY', 'MONTH'], example: 'MONTH', description: 'PURCHASE bắt buộc ONE_TIME; RENTAL dùng DAY hoặc MONTH.' }) billingUnit!: string; @ApiProperty({ example: 120000, minimum: 1 }) unitPrice!: number; @ApiPropertyOptional({ example: 'https://cdn.example.test/shelf.jpg' }) imageUrl?: string | null; @ApiPropertyOptional({ example: 'Storage Shelf - hình minh họa sản phẩm' }) imageAlt?: string | null; @ApiPropertyOptional({ example: true }) isActive?: boolean; }
+export class UpdateAdditionalServiceDto {
+  @ApiPropertyOptional({ description: 'Cơ sở cung cấp.' }) facilityId?: string;
+  @ApiPropertyOptional({ minimum: 1, description: 'Giá VND của cơ sở, bắt buộc khi xác nhận rà soát.' }) unitPrice?: number;
+  @ApiPropertyOptional() isActive?: boolean;
+  @ApiPropertyOptional({ description: 'Phiên bản rà soát đang hiển thị trong biểu mẫu.' }) reviewRevision?: string;
+  @ApiPropertyOptional({ minimum: 0, description: 'Tồn kho xác nhận theo cấu hình mới của sản phẩm tiêu hao.' }) stockOnHand?: number;
+  @ApiPropertyOptional({ minimum: 0, description: 'Sức chứa xác nhận theo cấu hình mới của thiết bị cho thuê.' }) rentalCapacity?: number;
+}
+export class ConfigureServiceOfferingDto {
+  @ApiProperty() facilityId!: string;
+  @ApiProperty({ minimum: 1 }) unitPrice!: number;
+  @ApiPropertyOptional({ default: false }) isActive?: boolean;
+  @ApiPropertyOptional({ deprecated: true, description: 'Tương thích với biểu mẫu cũ. Ưu tiên header X-Catalog-Updated-At.' }) expectedCatalogUpdatedAt?: string;
+  @ApiPropertyOptional({ minimum: 0, description: 'Tồn kho ban đầu của sản phẩm tiêu hao.' }) stockOnHand?: number;
+  @ApiPropertyOptional({ minimum: 0, description: 'Sức chứa ban đầu của thiết bị cho thuê.' }) rentalCapacity?: number;
+}
+export class UpdateAdditionalServiceInventoryDto {
+  @ApiPropertyOptional({ nullable: true, description: 'Số lượng trước khi chỉnh sửa, null nếu chưa thiết lập.' }) expectedQuantity?: number | null;
+ @ApiPropertyOptional() facilityId?:string; @ApiPropertyOptional({ example: 50, minimum: 0, description: 'Chỉ PURCHASE. Không được thấp hơn số lượng RESERVED.' }) stockOnHand?: number; @ApiPropertyOptional({ example: 6, minimum: 0, description: 'Chỉ RENTAL. Không được thấp hơn peak booking chồng lấp.' }) rentalCapacity?: number; }
 
 export class VerifyGuestBookingDto {
   @ApiProperty({ example: 'one-time-token-from-email', description: 'Token bí mật từ secure claim link; không dùng bookingCode.' }) token!: string;
@@ -218,9 +241,15 @@ export class HandoverReportRequestDto {
   documentsDelivered?: boolean;
   @ApiPropertyOptional({ type: [HandoverUnitCheckRequestDto], description: 'Khi gửi, phải có đúng một kết quả cho mỗi kho vật lý trong lịch.' })
   unitChecks?: HandoverUnitCheckRequestDto[];
+  @ApiPropertyOptional({ type: [String], maxItems: 3, description: 'Ảnh JPG, PNG hoặc WebP dạng data URL, tối đa 400 KB mỗi ảnh.' })
+  photos?: string[];
+  @ApiPropertyOptional({ type: [String], maxItems: 3, description: 'Liên kết ảnh HTTPS.' })
+  photoLinks?: string[];
 }
 
 export class CompleteHandoverRequestDto {
+  @ApiPropertyOptional({ type: [String], description: 'ID các dòng sản phẩm đã thực sự bàn giao trong đơn.' })
+  deliveredPurchaseIds?: string[];
   @ApiPropertyOptional({ type: HandoverReportRequestDto, description: 'Biên bản được lưu dưới dạng dữ liệu có cấu trúc và văn bản.' })
   handoverReport?: HandoverReportRequestDto;
   @ApiPropertyOptional({ example: 'Đã bàn giao đầy đủ các kho cho khách hàng.', maxLength: 2000 })
@@ -253,6 +282,9 @@ export class CreateReturnRequestDto {
   @ApiPropertyOptional({ example: 'WDP-2026-AB12CD34-C01', description: 'ID hoặc mã hợp đồng. Bắt buộc với đơn có nhiều hợp đồng.' })
   rentalContractId?: string;
 
+  @ApiPropertyOptional({ example: '2026-12-15', description: 'Ngày dự kiến trả kho theo lịch Việt Nam (YYYY-MM-DD).' })
+  expectedReturnDate?: string;
+
   @ApiPropertyOptional({ example: 'Khách đã dọn hết đồ và sẵn sàng kiểm tra kho.', maxLength: 2000 })
   note?: string;
 }
@@ -269,6 +301,9 @@ export class UpdateReturnInspectionRequestDto {
 
   @ApiPropertyOptional({ example: 'Phát hiện hư hỏng cần Manager xử lý riêng.', maxLength: 2000, description: 'Bắt buộc khi result là ISSUE_FOUND.' })
   issueNote?: string;
+
+  @ApiPropertyOptional({ type: [String], maxItems: 3, description: 'Ảnh JPG, PNG hoặc WebP dạng data URL, tối đa 400 KB mỗi ảnh. Bỏ qua trường để giữ ảnh cũ.' })
+  inspectionPhotos?: string[];
 }
 
 export class DepositSettlementIssueReviewDto {
@@ -297,24 +332,42 @@ export class RefundDepositRequestDto {
   @ApiProperty({ enum: ['BANK_TRANSFER', 'CASH'], example: 'BANK_TRANSFER' })
   method!: 'BANK_TRANSFER' | 'CASH';
 
-  @ApiPropertyOptional({ example: true, description: 'Xác nhận tiền đã được hoàn thực tế. Bắt buộc khi không gửi mã giao dịch.' })
+  @ApiPropertyOptional({ example: true, description: 'Xác nhận tiền đã được hoàn thực tế.' })
   refundConfirmed?: boolean;
 
-  @ApiPropertyOptional({ example: 'REFUND-20261009-001', maxLength: 200, description: 'Mã giao dịch cũ nếu có.' })
-  reference?: string;
+  @ApiProperty({ example: 'REFUND-20261009-001', minLength: 2, maxLength: 200, description: 'Mã giao dịch ngân hàng hoặc mã chứng từ hoàn tiền mặt.' })
+  reference!: string;
 
   @ApiPropertyOptional({ example: 'Deposit refund completed.', maxLength: 2000 })
   note?: string;
 }
 
 export class CreateMaintenanceRequestDto {
-  @ApiProperty({ example: 'storage-unit-id', description: 'Database id của StorageUnit AVAILABLE.' })
-  storageUnitId!: string;
+  @ApiPropertyOptional({ example: 'storage-unit-id', description: 'Ô kho cụ thể, có thể ở bất kỳ trạng thái nào.' })
+  storageUnitId?: string;
 
-  @ApiProperty({ enum: ['UNIT_DAMAGE', 'CLEANING', 'LOCK_OR_ACCESS', 'FACILITY_EQUIPMENT', 'OTHER'], example: 'FACILITY_EQUIPMENT' })
+  @ApiPropertyOptional({ description: 'Bắt buộc khi báo sự cố khu vực chung.' })
+  facilityId?: string;
+
+  @ApiPropertyOptional({ enum: ['CORRIDOR', 'ENTRANCE', 'SECURITY', 'UTILITIES', 'OTHER'] })
+  commonArea?: string;
+
+  @ApiPropertyOptional({ enum: ['NO_IMPACT', 'AFFECTED', 'UNKNOWN'], description: 'Nếu bỏ trống, ô kho cụ thể được tạm chặn để xác minh.' })
+  rentalImpact?: string;
+
+  @ApiPropertyOptional({ type: [String], description: 'Các ô chịu ảnh hưởng của khu vực chung. Với multipart, gửi dưới dạng chuỗi JSON.' })
+  affectedUnitIds?: string[];
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  locationNote?: string;
+
+  @ApiPropertyOptional({ type: 'array', items: { type: 'string', format: 'binary' }, maxItems: 5, description: 'Ảnh JPG, PNG hoặc WebP gửi bằng multipart/form-data, tối đa 5 MB mỗi ảnh.' })
+  photos?: string[];
+
+  @ApiProperty({ enum: ['UNIT_DAMAGE', 'CLEANING', 'LOCK_OR_ACCESS', 'ACCESS_CREDENTIAL', 'FACILITY_EQUIPMENT', 'UTILITIES', 'SECURITY', 'OTHER'], example: 'FACILITY_EQUIPMENT' })
   category!: string;
 
-  @ApiPropertyOptional({ enum: ['LOW', 'MEDIUM', 'HIGH'], example: 'HIGH', default: 'MEDIUM' })
+  @ApiPropertyOptional({ enum: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'], example: 'HIGH', default: 'MEDIUM' })
   priority?: string;
 
   @ApiProperty({ example: 'Climate control is not functioning.', minLength: 3, maxLength: 4000 })
@@ -322,12 +375,12 @@ export class CreateMaintenanceRequestDto {
 }
 
 export class AssignMaintenanceRequestDto {
-  @ApiProperty({ example: 'staff-user-id', description: 'User tồn tại và có role STAFF.' })
+  @ApiProperty({ example: 'staff-user-id', description: 'User tồn tại và có role FACILITY_STAFF.' })
   staffUserId!: string;
 }
 
 export class UpdateMaintenancePriorityDto {
-  @ApiProperty({ enum: ['LOW', 'MEDIUM', 'HIGH'], example: 'HIGH' })
+  @ApiProperty({ enum: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'], example: 'HIGH' })
   priority!: string;
 }
 
@@ -362,6 +415,7 @@ export class UpdateSupportPriorityDto { @ApiProperty({ enum: ['LOW', 'MEDIUM', '
 export class ResolveSupportRequestDto {
   @ApiProperty({ enum: ['ON_SITE_RESOLVED', 'CUSTOMER_GUIDANCE', 'ACCESS_RESTORED', 'PAYMENT_GUIDANCE', 'MANAGER_RESOLVED', 'TRANSFER_RECOMMENDED', 'NO_ACTION_REQUIRED', 'OTHER'], example: 'ACCESS_RESTORED' }) resolutionType!: string;
   @ApiProperty({ example: 'Access credential was revalidated and tested successfully.', minLength: 3, maxLength: 4000 }) resolutionNote!: string;
+  @ApiPropertyOptional({ example: true, description: 'Staff xác nhận đã đối chiếu danh tính và quyền vào kho trước khi khôi phục truy cập.' }) identityVerified?: boolean;
 }
 export class EscalateSupportRequestDto { @ApiProperty({ example: 'Unit door cannot be secured safely. Manager review required.', minLength: 3, maxLength: 4000 }) reason!: string }
 

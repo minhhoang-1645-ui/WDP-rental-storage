@@ -11,8 +11,8 @@ describe('Authentication without a database', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('stores a hash, normalizes email, ignores supplied role and never exposes secrets', async () => {
-    const session = await service.register({ ...registration, email: ' CUSTOMER@example.com ', role: 'ADMIN' });
-    expect(session.user.role).toBe('CUSTOMER');
+    const session = await service.register({ ...registration, email: ' CUSTOMER@example.com ', role: 'SYSTEM_ADMINISTRATOR' });
+    expect(session.user.role).toBe('STORAGE_CUSTOMER');
     expect(session.user.email).toBe(registration.email);
     expect(session.user).not.toHaveProperty('passwordHash');
     const stored = await repository.findById(session.user.id);

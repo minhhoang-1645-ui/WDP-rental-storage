@@ -62,7 +62,7 @@ function ProfileSettings({ user }: { user: PublicUser }) {
   if (phone.trim() !== (user.phone ?? '')) changes.phone = phone.trim();
   const changed = Object.keys(changes).length > 0;
   const returnTo = params.get('returnTo');
-  const destination = returnTo && user.role === 'CUSTOMER' ? roleReturnPath(user.role, returnTo) : null;
+  const destination = returnTo && user.role === 'STORAGE_CUSTOMER' ? roleReturnPath(user.role, returnTo) : null;
   const initials = user.fullName.trim().split(/\s+/).filter(Boolean);
   const avatar = [initials[0], initials.length > 1 ? initials.at(-1) : '']
     .map(name => Array.from(name ?? '')[0] ?? '').join('').toLocaleUpperCase('vi');

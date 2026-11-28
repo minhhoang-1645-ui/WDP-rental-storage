@@ -26,6 +26,7 @@
   --workspace-primary: #0f766e;
   --workspace-primary-hover: #115e59;
   --workspace-on-primary: #fff;
+  --workspace-focus: var(--workspace-primary);
   --workspace-input: #fff;
   --workspace-table: #f1f5f9;
   --workspace-popover: #fff;
@@ -87,6 +88,94 @@
   --workspace-error-bg: #41272c;
   --workspace-info: #b8deff;
   --workspace-info-bg: #23384d;
+}
+
+/* The public Landing Page supplies the brand colors in both themes.
+   The application opts the public site and internal portals into these tokens. */
+:root[data-web-brand] {
+  --nestbox-brand-primary: #3454f5;
+  --nestbox-brand-secondary: #101b35;
+  --nestbox-brand-accent: #a1b7ff;
+  --nestbox-primary-hover: #2444dc;
+  --nestbox-primary-active: var(--nestbox-brand-secondary);
+  --nestbox-on-primary: var(--nestbox-surface);
+  --nestbox-background: #f6f8fc;
+  --nestbox-sidebar: #fff;
+  --nestbox-surface: #fff;
+  --nestbox-input: var(--nestbox-surface);
+  --nestbox-border-light: #e2e8f0;
+  --nestbox-border: var(--nestbox-border-light);
+  --nestbox-text: var(--nestbox-brand-secondary);
+  --nestbox-text-secondary: #536178;
+  --nestbox-text-muted: #526174;
+  --nestbox-selected: #eef4ff;
+  --nestbox-hover: #f0fdfa;
+  --nestbox-hero-tint: #edf2fd;
+  --nestbox-hero-glow: #3454f52b;
+  --nestbox-footer-text: #f1f5ff;
+  --nestbox-footer-secondary: #cbd7ee;
+  --nestbox-footer-border: #ffffff38;
+  --nestbox-focus: var(--nestbox-brand-primary);
+}
+
+:root[data-web-brand][data-workspace-theme="dark"] {
+  --nestbox-brand-primary: #a1b7ff;
+  --nestbox-brand-accent: #c7d3ff;
+  --nestbox-primary-hover: var(--nestbox-brand-accent);
+  --nestbox-primary-active: var(--nestbox-footer-text);
+  --nestbox-on-primary: var(--nestbox-brand-secondary);
+  --nestbox-background: #101726;
+  --nestbox-sidebar: #131d2e;
+  --nestbox-surface: #191f2a;
+  --nestbox-input: #101a2b;
+  --nestbox-border: #3a4a64;
+  --nestbox-text: var(--nestbox-footer-text);
+  --nestbox-text-secondary: #c6d1e6;
+  --nestbox-text-muted: #a8b6c7;
+  --nestbox-selected: #253758;
+  --nestbox-hover: #222e3b;
+  --nestbox-hero-tint: #18263e;
+}
+
+:is(:root[data-web-brand], :root[data-web-brand] .workspace-themed) {
+  --workspace-primary: var(--nestbox-brand-primary);
+  --workspace-primary-hover: var(--nestbox-primary-hover);
+  --workspace-primary-active: var(--nestbox-primary-active);
+  --workspace-on-primary: var(--nestbox-on-primary);
+  --workspace-background: var(--nestbox-background);
+  --workspace-sidebar: var(--nestbox-sidebar);
+  --workspace-surface: var(--nestbox-surface);
+  --workspace-input: var(--nestbox-input);
+  --workspace-border: var(--nestbox-border);
+  --workspace-text: var(--nestbox-text);
+  --workspace-secondary: var(--nestbox-text-secondary);
+  --workspace-muted: var(--nestbox-text-muted);
+  --workspace-selected: var(--nestbox-selected);
+  --workspace-hover: var(--nestbox-hover);
+  --workspace-focus: var(--nestbox-focus);
+  --workspace-skeleton: color-mix(in srgb, var(--workspace-muted) 18%, var(--workspace-surface));
+  --workspace-shadow: color-mix(in srgb, var(--nestbox-brand-secondary) 14%, transparent);
+}
+
+:root[data-web-brand] :is(.public-themed, .manager-shell.internal-web) .button-primary:active:not(:disabled) {
+  background: var(--workspace-primary-active);
+  border-color: var(--workspace-primary-active);
+}
+
+:root[data-web-brand] .workspace-themed :is(.notification-filters input, .notification-filters select, .rental-progress select, .entity-select-trigger):focus-visible {
+  outline-color: var(--workspace-focus);
+}
+:root[data-web-brand] .workspace-themed .portal-checkbox input {
+  accent-color: var(--workspace-primary);
+}
+:root[data-web-brand] .workspace-themed :is(.button-primary, .button-secondary):disabled {
+  background: var(--workspace-disabled-bg);
+  color: var(--workspace-muted);
+  border-color: var(--workspace-border);
+}
+:root[data-web-brand] .manager-shell.internal-web.workspace-themed .manager-status:is(.is-disabled, .is-inactive) {
+  color: var(--workspace-muted);
+  background: var(--workspace-disabled-bg);
 }
 
 :root[data-workspace-theme] :is(.customer-shell-loading, .manager-shell-loading, .staff-shell-loading) {
@@ -179,6 +268,10 @@
 .manager-shell.internal-web.workspace-themed :is(.portal-record-link,.portal-text-button,.manager-facts dd a,.activity-item-cta,.booking-back) {
   color: var(--workspace-primary);
 }
+.manager-shell.internal-web.workspace-themed .booking-back:focus-visible {
+  outline: 2px solid var(--workspace-primary);
+  outline-offset: 3px;
+}
 .manager-shell.internal-web.workspace-themed :is(.manager-status,.booking-alert,.portal-success,.workflow-hint) :is(strong,span,p) {
   color: inherit;
 }
@@ -188,3 +281,9 @@
 .manager-shell.internal-web.workspace-themed :is(.portal-mobile-nav,.portal-dialog)::backdrop {
   background: #0b111ccc;
 }
+
+.workspace-switch{display:grid;align-items:center;flex:none;width:48px;height:28px;padding:3px;border:1px solid var(--workspace-muted);border-radius:999px;background:var(--workspace-input);cursor:pointer}
+.workspace-switch::before{content:'';width:20px;height:20px;border-radius:50%;background:var(--workspace-muted)}
+.workspace-switch[aria-checked=true]{border-color:var(--workspace-primary);background:var(--workspace-primary)}
+.workspace-switch[aria-checked=true]::before{justify-self:end;background:var(--workspace-surface)}
+.workspace-switch:focus-visible{outline:2px solid var(--workspace-primary);outline-offset:3px}

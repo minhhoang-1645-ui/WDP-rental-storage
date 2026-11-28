@@ -1,3 +1,4 @@
+import {assertFoundationSchema} from './foundation-schema.js';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -6,6 +7,8 @@ import { networkInterfaces } from 'node:os';
 import { corsOrigins } from './cors-origins.js';
 
 async function bootstrap() {
+  // Run before Nest constructs providers or starts expiration/payment workers.
+  await assertFoundationSchema();
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useBodyParser('json', { limit: '2mb' });
   app.setGlobalPrefix('api');

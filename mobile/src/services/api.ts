@@ -15,7 +15,7 @@ async function verifiedRole(token: string) {
   let lookup = roleLookups.get(token);
   if (!lookup) {
     lookup = apiRequest<{ role: string }>('/auth/me', { expectedToken: token }).then(user => {
-      if (!['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'].includes(user.role)) throw new ApiError('Vai trò đăng nhập không hợp lệ. Vui lòng đăng nhập lại.', 502);
+      if (!['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'].includes(user.role)) throw new ApiError('Vai trò đăng nhập không hợp lệ. Vui lòng đăng nhập lại.', 502);
       return user.role;
     }).finally(() => roleLookups.delete(token));
     roleLookups.set(token, lookup);
@@ -55,7 +55,7 @@ function sessionCancellation(message: string) {
 export async function apiRequest<T>(path: string, options: RequestInit & { authenticated?: boolean; expectedToken?: string | null; responseType?: 'json' | 'bytes' } = {}): Promise<T> {
   const { authenticated = true, signal, expectedToken, responseType = 'json', ...request } = options;
   const token = authenticated ? await authStorage.getToken() : null;
-  if (authenticated && !token && /^\/(customer|manager|staff|admin|reservations|notifications|auth\/(me|logout))(\/|\?|$)/.test(path)) throw sessionCancellation('Phiên đăng nhập đã kết thúc.');
+  if (authenticated && !token && /^\/(customer|manager|staff|admin|reservations|relocations|notifications|auth\/(me|logout))(\/|\?|$)/.test(path)) throw sessionCancellation('Phiên đăng nhập đã kết thúc.');
   if (expectedToken !== undefined && token !== expectedToken) throw sessionCancellation('Phiên đăng nhập đã thay đổi.');
   const controller = new AbortController();
   let timedOut = false;
@@ -91,7 +91,12 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
   });
   if (!response.ok) {
     if (path === '/auth/login' && response.status === 404) throw new ApiError('Không tìm thấy API đăng nhập. Kiểm tra địa chỉ máy chủ và khởi động lại ứng dụng.', 404);
-    if (path === '/auth/login' && response.status === 401) throw new ApiError('Email hoặc mật khẩu không đúng.', 401);
+    if (path === '/auth/login' && response.status === 401) {
+      const message = payload?.code === 'ACCOUNT_DISABLED'
+        ? 'Tài khoản của bạn đã bị quản trị viên khóa. Vui lòng liên hệ bộ phận hỗ trợ NestBox.'
+        : 'Email hoặc mật khẩu không đúng.';
+      throw new ApiError(message, 401, payload);
+    }
     if (response.status === 401 && token && await authStorage.getToken() === token) onSessionExpired?.();
     const rawMessage = payload && typeof payload === 'object' && 'message' in payload
       ? (payload as { message?: unknown }).message
@@ -106,7 +111,7 @@ export async function apiRequest<T>(path: string, options: RequestInit & { authe
   if (token && await authStorage.getToken() !== token) throw sessionCancellation('Phiên đăng nhập đã thay đổi. Vui lòng đăng nhập lại và mở lại nội dung.');
   if (path === '/auth/me' && token && typeof payload?.role === 'string') rememberRole(token, payload.role);
   if (path === '/auth/login' && typeof payload?.token === 'string' && typeof payload?.user?.role === 'string') rememberRole(payload.token, payload.user.role);
-  if (/^(POST|PATCH|DELETE)$/i.test(request.method ?? '') && (/^\/(customer|manager|staff|admin|reservations|inquiries)(\/|$)/.test(path) || path === '/auth/me' && request.method === 'PATCH')) notifyDataChanged(path);
+  if (/^(POST|PATCH|DELETE)$/i.test(request.method ?? '') && (/^\/(customer|manager|staff|admin|reservations|relocations|inquiries)(\/|$)/.test(path) || path === '/auth/me' && request.method === 'PATCH')) notifyDataChanged(path);
   return payload as T;
   } finally {
     clearTimeout(timer);

@@ -1,10 +1,8 @@
 import 'dotenv/config';
-import { ConfigService } from '@nestjs/config';
 import { businessDate } from '../../business-date.js';
-import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { SupportService } from '../support/support.service.js';
 import { EARLY_RETURN_SUBJECT } from './early-return-classification.js';
-import { ConflictException, ExecutionContext, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ExecutionContext, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -23,6 +21,8 @@ import { ManagerReturnsController } from './manager-returns.controller.js';
 import { ReturnsService } from './returns.service.js';
 import { StaffReturnsController } from './staff-returns.controller.js';
 import { monthlyBoundary } from './return-period-closeout.js';
+import { pricingPolicyDefaults } from '../policies/pricing-policy.js';
+import { depositRefundDebtClause } from '../documents/document-policy.js';
 
 const runId = randomUUID().slice(0, 8);
 const facilityId = `return-facility-${runId}`;
@@ -39,24 +39,22 @@ const day = (offset: number) => {
   return value;
 };
 const dateText = (value: Date) => value.toISOString().slice(0, 10);
-
-describe('Return and Inspection V1', () => {
+describe.skipIf(process.env.NESTBOX_ISOLATED_TEST !== '1' || !/^postgres(?:ql)?:\/\/[^@]+@(?:localhost|127\.0\.0\.1):55439\//.test(process.env.DATABASE_URL ?? ''))('Return and Inspection V1', () => {
   let prisma: PrismaService;
   let returns: ReturnsService;
   let support: SupportService;
   let rentals: ActiveRentalsService;
   let booking: BookingService;
   const actor = (id: string, role: PublicUser['role']): PublicUser => ({ id, role, fullName: `${role} Test`, email: `${id}@example.test`, phone: '' });
-  const customer = actor(customerId, 'CUSTOMER');
-  const staff = actor(staffId, 'STAFF');
-  const manager = actor(managerId, 'MANAGER');
+  const customer = actor(customerId, 'STORAGE_CUSTOMER');
+  const staff = actor(staffId, 'FACILITY_STAFF');
+  const manager = actor(managerId, 'FACILITY_MANAGER');
 
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
-    const unitStaff = new UnitStaffService(prisma, new ConfigService({ UNIT_STAFF_ASSIGNMENTS_ENABLED: 'true' }));
-    returns = new ReturnsService(prisma, unitStaff);
-    support = new SupportService(prisma, unitStaff);
+    returns = new ReturnsService(prisma);
+    support = new SupportService(prisma);
     rentals = new ActiveRentalsService(prisma);
     booking = new BookingService(prisma);
     await prisma.facility.create({ data: { id: facilityId, code: `RETURN-${runId}`, name: 'Return test', address: 'Test only' } });
@@ -67,13 +65,16 @@ describe('Return and Inspection V1', () => {
     } });
     await prisma.storageUnit.createMany({ data: unitCodes.map((unitNumber, index) => ({ storageTypeId, unitNumber, floor: 'Ground', zone: 'R', row: 1, position: index + 1 })) });
     await prisma.user.createMany({ data: [
-      { id: customerId, email: `${customerId}@example.test`, fullName: 'Return Customer', role: 'CUSTOMER', passwordHash: 'secret-hash' },
-      { id: otherCustomerId, email: `${otherCustomerId}@example.test`, fullName: 'Other Customer', role: 'CUSTOMER', passwordHash: 'secret-hash' },
-      { id: managerId, email: `${managerId}@example.test`, fullName: 'Return Manager', role: 'MANAGER', passwordHash: 'secret-hash' },
-      { id: staffId, email: `${staffId}@example.test`, fullName: 'Return Staff', role: 'STAFF', passwordHash: 'secret-hash' },
-      { id: adminId, email: `${adminId}@example.test`, fullName: 'Return Admin', role: 'ADMIN', passwordHash: 'secret-hash' },
+      { id: customerId, email: `${customerId}@example.test`, fullName: 'Return Customer', role: 'STORAGE_CUSTOMER', passwordHash: 'secret-hash' },
+      { id: otherCustomerId, email: `${otherCustomerId}@example.test`, fullName: 'Other Customer', role: 'STORAGE_CUSTOMER', passwordHash: 'secret-hash' },
+      { id: managerId, email: `${managerId}@example.test`, fullName: 'Return Manager', role: 'FACILITY_MANAGER', passwordHash: 'secret-hash' },
+      { id: staffId, email: `${staffId}@example.test`, fullName: 'Return Staff', role: 'FACILITY_STAFF', passwordHash: 'secret-hash' },
+      { id: adminId, email: `${adminId}@example.test`, fullName: 'Return Admin', role: 'SYSTEM_ADMINISTRATOR', passwordHash: 'secret-hash' },
     ] });
-  });
+  await prisma.facilityAccess.createMany({data:[managerId,staffId].map(userId=>({userId,facilityId,grantedById:adminId}))});
+  await prisma.businessRule.create({ data: { id: randomUUID(), key: 'monthlyPriceRange:small', facilityId,
+    version: 1, value: { min: 1000000, max: 2000000 }, effectiveFrom: day(-1), createdById: adminId } });
+});
 
   afterEach(async () => {
     await prisma.stockMovement.deleteMany({ where: { rentalContract: { reservation: { storageTypeId } } } });
@@ -86,14 +87,13 @@ describe('Return and Inspection V1', () => {
     await prisma.returnRequest.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.renewalRequest.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.supportRequest.deleteMany({ where: { reservation: { storageTypeId } } });
-    await prisma.unitStaffAssignment.deleteMany({ where: { storageUnit: { storageTypeId } } });
+
     await prisma.rentalContract.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.reservationUnit.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.reservation.deleteMany({ where: { storageTypeId } });
     await prisma.storageUnit.updateMany({ where: { storageTypeId }, data: { status: 'AVAILABLE' } });
   });
-
-  afterAll(async () => {
+afterAll(async () => {
     await prisma.payment.deleteMany({ where: { invoice: { reservation: { storageTypeId } } } });
     await prisma.invoice.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.depositSettlement.deleteMany({ where: { returnRequest: { reservation: { storageTypeId } } } });
@@ -101,13 +101,15 @@ describe('Return and Inspection V1', () => {
     await prisma.returnRequest.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.renewalRequest.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.supportRequest.deleteMany({ where: { reservation: { storageTypeId } } });
-    await prisma.unitStaffAssignment.deleteMany({ where: { storageUnit: { storageTypeId } } });
+
     await prisma.rentalContract.deleteMany({ where: { reservation: { storageTypeId } } });
     await prisma.reservationUnit.deleteMany({ where: { storageUnit: { storageTypeId } } });
     await prisma.reservation.deleteMany({ where: { storageTypeId } });
     await prisma.storageUnit.deleteMany({ where: { storageTypeId } });
     await prisma.storageType.delete({ where: { id: storageTypeId } });
-    await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, managerId, staffId, adminId] } } });
+await prisma.businessRule.deleteMany({where:{createdById:adminId}});
+await prisma.facilityAccess.deleteMany({where:{facilityId}});
+await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, managerId, staffId, adminId] } } });
     await prisma.facility.delete({ where: { id: facilityId } });
     await prisma.$disconnect();
   });
@@ -131,11 +133,7 @@ describe('Return and Inspection V1', () => {
         status: 'ACTIVE', startDate, endDate: options.inconsistent && index === quantity - 1 ? day(1) : endDate, activatedAt: day(-40),
       } });
       await prisma.storageUnit.update({ where: { id: unit.id }, data: { status: 'OCCUPIED' } });
-      await prisma.unitStaffAssignment.upsert({
-        where: { id: `test-assignee-${unit.id}` },
-        create: { id: `test-assignee-${unit.id}`, storageUnitId: unit.id, staffUserId: staff.id, assignedByUserId: manager.id },
-        update: {},
-      });
+
     }
     const contracts = await prisma.rentalContract.findMany({ where: { reservationId: reservation.id }, include: invoiceContractInclude, orderBy: { contractCode: 'asc' } });
     const rentalAmount = 1500000n * BigInt(quantity);
@@ -151,10 +149,15 @@ describe('Return and Inspection V1', () => {
     return { reservation, units, quote, contracts, initial };
   }
 
-  const requestReturn = (reservationId: string, key = `return-key-${randomUUID()}`) =>
-    returns.createCustomerReturn(customer, { reservationId, note: 'Ready to inspect' }, key);
-  const requestContract = (reservationId: string, rentalContractId: string, key = `return-key-${randomUUID()}`) =>
-    returns.createCustomerReturn(customer, { reservationId, rentalContractId }, key);
+  const requestReturn = async (reservationId: string, key = `return-key-${randomUUID()}`) => {
+ const row=await returns.createCustomerReturn(customer,{reservationId,note:'Ready to inspect'},key);
+ return returns.assign(row.id,{staffUserId:staff.id},manager);
+};
+  const requestContract = async (reservationId: string, rentalContractId: string, key = `return-key-${randomUUID()}`) => {
+ const row=await returns.createCustomerReturn(customer,{reservationId,rentalContractId},key);
+ const existing = await returns.getManagerReturn(row.id, manager);
+ return returns.assign(row.id,{staffUserId:staff.id,expectedAssignedStaffUserId:existing.assignedStaff?.id ?? null},manager);
+};
 
   async function historicalReturn(rental: Awaited<ReturnType<typeof activeRental>>) {
     const { reservation, contracts, initial } = rental;
@@ -173,14 +176,14 @@ describe('Return and Inspection V1', () => {
     return returns.getStaffReturn(returnId, staff);
   }
 
-  it.each(['APPROVED', 'REJECTED'] as const)('keeps the early return %s decision with Manager and assigns eligible physical intake to the unit owner', async (decision) => {
+  it.each(['APPROVED', 'REJECTED'] as const)('keeps the early return %s decision with Manager and assigns eligible physical intake to the unit owner', async (decision: any) => {
     const { reservation } = await activeRental({ end: day(2) });
     const proposal = await support.createCustomer(customer, {
       reservationId: reservation.id, category: 'OTHER', subject: EARLY_RETURN_SUBJECT, description: 'Tôi muốn trả kho trước hạn.',
     }, `return-proposal-${randomUUID()}`);
     await expect(support.getStaff(proposal.id, staff)).rejects.toBeInstanceOf(NotFoundException);
     await expect(requestReturn(reservation.id)).rejects.toMatchObject({ response: { code: 'EARLY_RETURN_APPROVAL_REQUIRED' } });
-    const pending = (await returns.listEarlyReturnRequests(1, 20)).items.find(item => item.id === proposal.id)!;
+    const pending = (await returns.listEarlyReturnRequests(1, 20,manager)).items.find(item => item.id === proposal.id)!;
     expect(pending.decision).toBeNull();
     await expect(returns.decideEarlyReturn(proposal.id, {
       decision, note: 'Đã đối chiếu hợp đồng và tiền cọc.', financialReviewConfirmed: true,
@@ -236,15 +239,163 @@ describe('Return and Inspection V1', () => {
     await expect(requestReturn(renewal.reservation.id)).rejects.toMatchObject({ response: { code: 'UNRESOLVED_RENEWAL_EXISTS' } });
   });
 
+  it('accepts advance notice for the contract end, independently of the inspection appointment', async () => {
+    const { reservation, contracts: [contract] } = await activeRental({ end: day(7) });
+    const input = { reservationId: reservation.id, rentalContractId: contract.id, expectedReturnDate: dateText(contract.endDate) };
+    const key = 'planned-return-' + reservation.id;
+    const request = await returns.createCustomerReturn(customer, input, key);
+    expect(request).toMatchObject({ expectedReturnDate: input.expectedReturnDate, timing: 'ON_OR_AFTER_END', inspectionScheduledAt: null,
+      actualReturnDate: null, overdueDays: 0 });
+    await expect(returns.createCustomerReturn(customer, input, key)).resolves.toMatchObject({ id: request.id });
+    await expect(returns.createCustomerReturn(customer, { ...input, expectedReturnDate: dateText(day(8)) }, key)).rejects.toMatchObject({ status: 409 });
+    await expect(returns.createCustomerReturn(customer, { ...input, expectedReturnDate: dateText(day(6)) }, key + '-early'))
+      .rejects.toMatchObject({ response: { code: 'EARLY_RETURN_APPROVAL_REQUIRED' } });
+    await returns.assign(request.id, { staffUserId: staff.id, expectedAssignedStaffUserId: null }, manager);
+    await expect(returns.getStaffReturn(request.id, staff)).resolves.toMatchObject({
+      inspectionStartBlock: expect.stringContaining('Chưa đến hạn thuê'),
+    });
+    await expect(returns.startInspection(request.id, staff)).rejects.toMatchObject({
+      response: { code: 'RETURN_INSPECTION_WINDOW_NOT_OPEN' },
+    });
+    await expect(prisma.returnRequest.findUnique({ where: { id: request.id } })).resolves.toMatchObject({
+      status: 'REQUESTED', inspectionStartedAt: null, physicallyReturnedAt: null,
+    });
+  });
+
+  it('waits for the planned return day and the inspection appointment before starting', async () => {
+    const { reservation, contracts: [contract] } = await activeRental({ end: day(0) });
+    const request = await returns.createCustomerReturn(customer, {
+      reservationId: reservation.id, rentalContractId: contract.id, expectedReturnDate: dateText(day(1)),
+    }, 'return-window-' + reservation.id);
+    await returns.assign(request.id, { staffUserId: staff.id, expectedAssignedStaffUserId: null }, manager);
+    await expect(returns.startInspection(request.id, staff)).rejects.toThrow('Chưa đến ngày dự kiến trả kho');
+    await prisma.returnRequest.update({ where: { id: request.id }, data: {
+      expectedReturnDate: day(0), inspectionScheduledAt: new Date(Date.now() + 15 * 60_000),
+    } });
+    await expect(returns.getStaffReturn(request.id, staff)).resolves.toMatchObject({
+      inspectionStartBlock: 'Chưa đến giờ hẹn kiểm tra trả kho.',
+    });
+    await expect(returns.startInspection(request.id, staff)).rejects.toThrow('Chưa đến giờ hẹn');
+    await prisma.returnRequest.update({ where: { id: request.id }, data: {
+      inspectionScheduledAt: new Date(Date.now() - 60_000),
+    } });
+    await expect(returns.startInspection(request.id, staff)).resolves.toMatchObject({
+      status: 'INSPECTION_IN_PROGRESS', inspectionStartBlock: null,
+    });
+  });
+
+  it('counts the end date as zero overdue days for Manager and Staff', async () => {
+    const { reservation, contracts: [contract] } = await activeRental({ end: day(0) });
+    const request = await requestContract(reservation.id, contract.id);
+    const managerRows = await new OverstayController(prisma).list({ headers: {}, user: manager });
+    expect(managerRows.items.find(row => row.id === contract.id)?.overdueDays).toBe(0);
+    await expect(returns.getStaffReturn(request.id, staff)).resolves.toMatchObject({ overdueDays: 0 });
+    await expect(returns.getCustomerReturn(customerId, request.id)).resolves.toMatchObject({ overdueDays: 0 });
+  });
+
+  it('releases the physically returned unit while a separate open invoice remains payable', async () => {
+    const { reservation, contracts: [contract] } = await activeRental({ end: day(0) });
+    const invoice = await prisma.invoice.create({ data: {
+      invoiceCode: reservation.reservationCode + '-DUE', reservationId: reservation.id, type: 'RECURRING',
+      status: 'OPEN', billingCycle: 2, rentalAmount: 300000n, depositAmount: 0n, balanceDue: 300000n, totalAmount: 300000n,
+    } });
+    const request = await requestContract(reservation.id, contract.id);
+    await passAll(request.id);
+    await returns.finalize(request.id, staff, { unitsEmpty: true, accessRevoked: true });
+    await expect(prisma.storageUnit.findUnique({ where: { id: contract.reservationUnit.storageUnit.id } }))
+      .resolves.toMatchObject({ status: 'AVAILABLE' });
+    await expect(prisma.invoice.findUnique({ where: { id: invoice.id } })).resolves.toMatchObject({ status: 'OPEN', balanceDue: 300000n });
+    await expect(returns.getManagerReturn(request.id, manager)).resolves.toMatchObject({
+      physicallyReturnedAt: expect.any(String), settlementStatus: 'APPROVED', debtStatus: 'OUTSTANDING', outstandingBalance: 300000,
+    });
+  });
+
+  it.each(['new-with-deposit', 'old-with-deposit', 'new-without-deposit'] as const)(
+    'applies the signed deposit refund condition only where agreed (%s)', async scenario => {
+      const { reservation, contracts: [contract], initial, quote } = await activeRental({ end: day(0) });
+      const signedClause = scenario !== 'old-with-deposit';
+      const hasDeposit = scenario !== 'new-without-deposit';
+      await prisma.rentalContract.update({ where: { id: contract.id }, data: {
+        termsAcceptedAt: day(-30),
+        signedSnapshot: { envelopeVersion: 1, document: { clauses: signedClause ? [depositRefundDebtClause] : [{ title: '6. Trả kho', text: 'Quyết toán cọc sau khi nhận kho.' }] } },
+      } });
+      if (!hasDeposit) {
+        await prisma.reservation.update({ where: { id: reservation.id }, data: { quoteSnapshot: { ...quote, depositAmount: 0 } } });
+        await prisma.invoice.update({ where: { id: initial.id }, data: { pricingSnapshot: Prisma.DbNull,
+          depositAmount: 0n, totalAmount: initial.rentalAmount, amountPaid: initial.rentalAmount } });
+      }
+      const invoice = await prisma.invoice.create({ data: {
+        invoiceCode: reservation.reservationCode + '-DUE', reservationId: reservation.id, type: 'RECURRING', billingCycle: 2,
+        status: 'OPEN', rentalAmount: 300000n, depositAmount: 0n, balanceDue: 300000n, totalAmount: 300000n,
+      } });
+      const request = await requestContract(reservation.id, contract.id);
+      await passAll(request.id);
+      await returns.finalize(request.id, staff, { unitsEmpty: true, accessRevoked: true });
+      await expect(prisma.storageUnit.findUnique({ where: { id: contract.reservationUnit.storageUnit.id } }))
+        .resolves.toMatchObject({ status: 'AVAILABLE' });
+      const settlement = await prisma.depositSettlement.findUniqueOrThrow({ where: { returnRequestId: request.id } });
+      const deposits = new DepositSettlementsService(prisma);
+      const refund = { method: 'BANK_TRANSFER', reference: 'DEPOSIT-REFUND-' + settlement.id, refundConfirmed: true };
+      const key = 'refund-' + settlement.id;
+      const details = await deposits.getManager(settlement.id, manager);
+      expect(details).toMatchObject({ contractOutstandingBalance: 300000, refundRequiresDebtClearance: signedClause });
+      if (!hasDeposit) {
+        expect(details).toMatchObject({ status: 'SETTLED', refundAmount: 0, refundDueOn: null, refundBlockReason: null });
+        expect((await returns.getCustomerReturn(customerId, request.id)).status).toBe('COMPLETED');
+        return;
+      }
+      if (signedClause) {
+        expect(details).toMatchObject({ refundDueOn: null, refundBlockReason: expect.stringContaining('công nợ') });
+        await expect(deposits.refund(settlement.id, refund, key, manager)).rejects.toMatchObject({
+          response: { code: 'DEPOSIT_REFUND_CONTRACT_DEBT', outstandingBalance: 300000 },
+        });
+        await expect(prisma.depositSettlement.findUnique({ where: { id: settlement.id } })).resolves.toMatchObject({ refundedAt: null });
+        // Model a customer clearing the remaining debt a day after the physical return.
+        await prisma.returnRequest.update({ where: { id: request.id }, data: { physicallyReturnedAt: day(-1) } });
+        const billing = new BillingService(prisma);
+        await billing.recordPayment(invoice.id, { amount: 100000, method: 'CASH' }, 'partial-' + invoice.id, manager);
+        await expect(deposits.refund(settlement.id, refund, key, manager)).rejects.toMatchObject({
+          response: { code: 'DEPOSIT_REFUND_CONTRACT_DEBT', outstandingBalance: 200000 },
+        });
+        await billing.recordPayment(invoice.id, { amount: 200000, method: 'CASH' }, 'clear-' + invoice.id, manager);
+        await expect(deposits.getManager(settlement.id, manager)).resolves.toMatchObject({
+          contractOutstandingBalance: 0, refundBlockReason: null, refundDueOn: dateText(day(7)),
+        });
+      } else {
+        expect(details).toMatchObject({ refundBlockReason: null, refundDueOn: dateText(day(7)) });
+      }
+      await expect(deposits.refund(settlement.id, refund, key, manager)).resolves.toMatchObject({ status: 'SETTLED', deductionAmount: 0 });
+      await expect(prisma.invoice.findUnique({ where: { id: invoice.id } })).resolves.toMatchObject({
+        balanceDue: signedClause ? 0n : 300000n,
+      });
+    });
+
+  it.each(['earlyReturn', 'returnOverdue', 'paymentOverdue', 'cancellation'] as const)(
+    'rejects a stale booking quote after publishing a %s version', async policy => {
+      const draft = { productId: storageTypeId, startDate: dateText(day(2)), periodMode: 'duration', durationMonths: 1, quantity: 1,
+        adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY' };
+      const shown = await booking.checkAvailability(draft);
+      expect(shown.available).toBe(true);
+      const id = randomUUID();
+      await prisma.businessRule.create({ data: { id, key: policy, version: 1, value: pricingPolicyDefaults[policy],
+        effectiveFrom: new Date(), createdById: adminId } });
+      try {
+        await expect(booking.createReservation(customer, { ...draft, expectedServiceQuoteVersion: shown.serviceQuoteVersion }))
+          .rejects.toMatchObject({ response: { code: 'SERVICE_QUOTE_CHANGED' } });
+      } finally {
+        await prisma.businessRule.delete({ where: { id } });
+      }
+    });
+
   it('creates exactly one maintenance case per ISSUE_FOUND unit in a quantity-three return', async () => {
     const rental = await activeRental({ quantity: 3 });
     const { reservation } = rental;
     const requested = await historicalReturn(rental);
     const started = await returns.startInspection(requested.id, staff);
-    expect(started).toMatchObject({ status: 'INSPECTION_IN_PROGRESS', inspectionStartedBy: { id: staffId, role: 'STAFF' } });
+    expect(started).toMatchObject({ status: 'INSPECTION_IN_PROGRESS', inspectionStartedBy: { id: staffId, role: 'FACILITY_STAFF' } });
     const issue = await returns.updateInspection(requested.id, started.inspections[0].id, { result: 'ISSUE_FOUND', issueType: 'CUSTOMER_DAMAGE', conditionNote: 'Door dented', issueNote: 'Manager review required' }, staff);
     expect(issue).toMatchObject({ status: 'ISSUE_FOUND', inspectionSummary: { issues: 1 } });
-    expect(issue.inspections.find((inspection) => inspection.id === started.inspections[0].id)).toMatchObject({ result: 'ISSUE_FOUND', inspectedBy: { id: staffId } });
+    expect(issue.inspections.find((inspection: any) => inspection.id === started.inspections[0].id)).toMatchObject({ result: 'ISSUE_FOUND', inspectedBy: { id: staffId } });
     const customerView = await returns.getCustomerReturn(customerId, requested.id);
     expect(JSON.stringify(customerView)).not.toContain('Manager review required');
     expect(JSON.stringify(customerView)).not.toContain('Door dented');
@@ -252,7 +403,7 @@ describe('Return and Inspection V1', () => {
     await expect(returns.updateInspection(requested.id, started.inspections[0].id, { result: 'PASS' }, staff)).rejects.toBeInstanceOf(ConflictException);
     await returns.updateInspection(requested.id, started.inspections[1].id, { result: 'ISSUE_FOUND', issueType: 'CLEANING_REQUIRED', conditionNote: 'Cleaning required', issueNote: 'Deep cleaning required' }, staff);
     await returns.updateInspection(requested.id, started.inspections[2].id, { result: 'PASS', conditionNote: 'Good condition' }, staff);
-    const finalized = await returns.finalize(requested.id, staff);
+    const finalized = await returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true });
     expect(finalized).toMatchObject({ status: 'PENDING_SETTLEMENT', settlementStatus: 'PENDING_REVIEW', inspectionSummary: { issues: 2, passed: 1 } });
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'COMPLETED' } })).toBe(3);
     expect(await prisma.reservationUnit.count({ where: { reservationId: reservation.id, releasedAt: { not: null } } })).toBe(3);
@@ -269,11 +420,41 @@ describe('Return and Inspection V1', () => {
     expect(await prisma.maintenanceRequest.count({ where: { returnInspection: { returnRequestId: requested.id } } })).toBe(2);
   }, 60000);
 
+  it('stores inspection photos per unit and exposes them only in operational details', async () => {
+    const request = await historicalReturn(await activeRental({ quantity: 2 }));
+    const [first, second] = (await returns.startInspection(request.id, staff)).inspections;
+    const photos = ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jLZkAAAAASUVORK5CYII='];
+    const result = { result: 'PASS', conditionNote: 'Kho sạch' };
+    await returns.updateInspection(request.id, first.id, result, staff);
+    await expect(returns.updateInspection(request.id, first.id, { ...result, inspectionPhotos: ['data:image/png;base64,AAAA'] }, staff)).rejects.toBeInstanceOf(BadRequestException);
+    const evidenceLink = 'https://example.test/return.jpg';
+    await returns.updateInspection(request.id, first.id, { ...result, inspectionPhotos: photos, evidenceLink }, staff);
+    await returns.updateInspection(request.id, first.id, { ...result, conditionNote: 'Kho sạch, cửa đã đóng' }, staff);
+    const managerDetail = await returns.getManagerReturn(request.id, manager);
+    const recorded = expect.objectContaining({ staffUserId: staff.id, photos, note: expect.stringContaining(evidenceLink) });
+    expect(managerDetail.inspections).toEqual(expect.arrayContaining([expect.objectContaining({ id: first.id, inspectionPhotos: photos, evidenceSubmissions: [recorded] })]));
+    await expect(returns.getManagerReturn(request.id, actor('no-facility-grant', 'FACILITY_MANAGER'))).rejects.toBeInstanceOf(ForbiddenException);
+    expect(managerDetail.inspections.find((item: { id: string }) => item.id === second.id)).not.toHaveProperty('inspectionPhotos');
+    const customerDetail = await returns.getCustomerReturn(customerId, request.id);
+    expect(customerDetail.inspections.find((item: { id: string }) => item.id === first.id)).not.toHaveProperty('inspectionPhotos');
+    await returns.updateInspection(request.id, first.id, { ...result, inspectionPhotos: [] }, staff);
+    expect((await returns.getStaffReturn(request.id, staff)).inspections).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: first.id, inspectionPhotos: [], evidenceSubmissions: [recorded] })]),
+    );
+    await prisma.returnRequest.update({ where: { id: request.id }, data: { assignedStaffUserId: null } });
+    expect((await returns.getStaffReturn(request.id, staff)).inspections).toEqual([
+      expect.objectContaining({ id: first.id, evidenceSubmissions: [recorded] }),
+    ]);
+    expect((await returns.listStaffReturns({ page: 1, limit: 20 }, staff)).items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: request.id })]),
+    );
+  });
+
   it('rejects finalization while any inspection remains PENDING', async () => {
     const requested = await historicalReturn(await activeRental({ quantity: 2 }));
     const started = await returns.startInspection(requested.id, staff);
     await returns.updateInspection(requested.id, started.inspections[0].id, { result: 'PASS' }, staff);
-    await expect(returns.finalize(requested.id, staff)).rejects.toMatchObject({ response: { code: 'RETURN_INSPECTIONS_INCOMPLETE' } });
+    await expect(returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true })).rejects.toMatchObject({ response: { code: 'RETURN_INSPECTIONS_INCOMPLETE' } });
   });
 
   it('atomically finalizes quantity two, retains allocation history and removes the Active Rental read model', async () => {
@@ -282,8 +463,8 @@ describe('Return and Inspection V1', () => {
     const requested = await historicalReturn(historical);
     await expect(requestContract(reservation.id, a.id)).rejects.toMatchObject({ status: 409 });
     await passAll(requested.id);
-    const completed = await returns.finalize(requested.id, staff);
-    expect(completed).toMatchObject({ status: 'PENDING_SETTLEMENT', physicallyReturnedBy: { id: staffId, role: 'STAFF' }, settlementStatus: 'APPROVED', inspectionSummary: { passed: 2 } });
+    const completed = await returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true });
+    expect(completed).toMatchObject({ status: 'PENDING_SETTLEMENT', physicallyReturnedBy: { id: staffId, role: 'FACILITY_STAFF' }, settlementStatus: 'APPROVED', inspectionSummary: { passed: 2 } });
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'COMPLETED', completedAt: { not: null } } })).toBe(2);
     expect(await prisma.reservationUnit.count({ where: { reservationId: reservation.id, releasedAt: { not: null }, actualVacatedAt: { not: null } } })).toBe(2);
     expect(await prisma.storageUnit.count({ where: { reservationUnits: { some: { reservationId: reservation.id } }, status: 'AVAILABLE' } })).toBe(2);
@@ -300,7 +481,7 @@ describe('Return and Inspection V1', () => {
     const requested = await requestContract(reservation.id, a.id);
     const passed = await passAll(requested.id);
     await prisma.storageUnit.update({ where: { id: passed.inspections[0].unit.id }, data: { status: 'MAINTENANCE' } });
-    await expect(returns.finalize(requested.id, staff)).rejects.toBeInstanceOf(ConflictException);
+    await expect(returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true })).rejects.toBeInstanceOf(ConflictException);
     expect((await prisma.returnRequest.findUniqueOrThrow({ where: { id: requested.id } })).status).toBe('INSPECTION_IN_PROGRESS');
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'COMPLETED' } })).toBe(0);
     expect(await prisma.reservationUnit.count({ where: { reservationId: reservation.id, releasedAt: { not: null } } })).toBe(0);
@@ -311,11 +492,11 @@ describe('Return and Inspection V1', () => {
     const requested = await requestReturn(reservation.id);
     await passAll(requested.id);
     const attempts = await Promise.allSettled([
-      returns.finalize(requested.id, staff),
-      returns.finalize(requested.id, staff),
+      returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true }),
+      returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true }),
     ]);
     expect(attempts.some((attempt) => attempt.status === 'fulfilled')).toBe(true);
-    const retry = await returns.finalize(requested.id, staff);
+    const retry = await returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true });
     expect(retry.status).toBe('PENDING_SETTLEMENT');
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'COMPLETED' } })).toBe(1);
     expect(await prisma.reservationUnit.count({ where: { reservationId: reservation.id, releasedAt: { not: null } } })).toBe(1);
@@ -341,7 +522,7 @@ describe('Return and Inspection V1', () => {
     await expect(requestContract(reservation.id, b.id)).rejects.toMatchObject({ response: { code: 'RETURN_PENDING_TRANSFER' } });
     const request = await requestContract(reservation.id, a.id);
     await passAll(request.id);
-    await expect(returns.finalize(request.id, staff)).resolves.toMatchObject({ status: 'PENDING_SETTLEMENT' });
+    await expect(returns.finalize(request.id, staff, { unitsEmpty: true, accessRevoked: true })).resolves.toMatchObject({ status: 'PENDING_SETTLEMENT' });
     await expect(prisma.transferRequest.findFirst({ where: { rentalContractId: b.id } })).resolves.toMatchObject({ status: 'REQUESTED' });
   });
 
@@ -351,22 +532,22 @@ describe('Return and Inspection V1', () => {
     const boxA = await prisma.storedItem.create({ data: { rentalContractId: a.id, itemCode: 'BOX-A-' + runId, name: 'A', unit: 'thùng', customerUserId: customerId, balance: 2 } });
     const boxB = await prisma.storedItem.create({ data: { rentalContractId: b.id, itemCode: 'BOX-B-' + runId, name: 'B', unit: 'thùng', customerUserId: customerId, balance: 3 } });
     const outbound = await prisma.stockMovement.create({ data: { rentalContractId: a.id, movementCode: 'OUT-' + runId, customerUserId: customerId, type: 'OUT', idempotencyKey: 'stock-return-' + runId } });
-    await expect(requestContract(reservation.id, a.id)).rejects.toMatchObject({ response: { code: 'RETURN_PENDING_STOCK_MOVEMENTS' } });
-    await prisma.stockMovement.update({ where: { id: outbound.id }, data: { status: 'COMPLETED' } });
     const first = await requestContract(reservation.id, a.id);
-    const overdue = new OverstayController(prisma, new ConfigService({ UNIT_STAFF_ASSIGNMENTS_ENABLED: 'true' }));
+    const overdue = new OverstayController(prisma);
     for (const user of [manager, staff]) {
       const list = await overdue.list({ headers: {}, user });
       expect(list.items.find(item => item.id === a.id)?.returnRequest?.id).toBe(first.id);
-      expect(list.items.find(item => item.id === b.id)?.returnRequest).toBeNull();
+      expect(list.items.find(item => item.id === b.id)?.returnRequest).toBe(user === manager ? null : undefined);
     }
     await passAll(first.id);
-    await expect(returns.finalize(first.id, staff)).rejects.toMatchObject({ response: { code: 'RETURN_STORED_ITEMS_REMAIN' } });
-    await prisma.storedItem.update({ where: { id: boxA.id }, data: { balance: 0 } });
-    await expect(returns.finalize(first.id, staff)).resolves.toMatchObject({ status: 'PENDING_SETTLEMENT' });
-    await expect(returns.getManagerReturn(first.id)).resolves.toMatchObject({ remainingUnitCount: 1, settlement: { depositAmount: 1250000 } });
+    await expect(returns.finalize(first.id, staff, { unitsEmpty: true, accessRevoked: true })).resolves.toMatchObject({ status: 'PENDING_SETTLEMENT' });
+    await expect(prisma.storedItem.findUnique({ where: { id: boxA.id } })).resolves.toMatchObject({ balance: 2 });
+    await expect(prisma.stockMovement.findUnique({ where: { id: outbound.id } })).resolves.toMatchObject({ status: 'REQUESTED' });
+    await expect(returns.getManagerReturn(first.id,manager)).resolves.toMatchObject({ remainingUnitCount: 1, settlement: { depositAmount: 1250000 } });
     const firstDeposit = await prisma.depositSettlement.findUniqueOrThrow({ where: { returnRequestId: first.id } });
     await expect(deposits.refund(firstDeposit.id, { method: 'CASH', reference: 'receipt-a' }, 'refund-a-' + runId, staff)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(deposits.refund(firstDeposit.id, { method: 'CASH', refundConfirmed: true }, 'refund-a-' + runId, manager)).rejects.toThrow('mã chứng từ');
+    await expect(deposits.refund(firstDeposit.id, { method: 'BANK_TRANSFER', refundConfirmed: true }, 'refund-a-' + runId, manager)).rejects.toThrow('mã giao dịch');
     await deposits.refund(firstDeposit.id, { method: 'CASH', reference: 'receipt-a' }, 'refund-a-' + runId, manager);
     await expect(returns.getCustomerReturn(customerId, first.id)).resolves.toMatchObject({ status: 'COMPLETED' });
 
@@ -375,14 +556,13 @@ describe('Return and Inspection V1', () => {
     await expect(prisma.reservationUnit.findUnique({ where: { id: b.reservationUnit.id } })).resolves.toMatchObject({ releasedAt: null });
     await expect(prisma.storedItem.findUnique({ where: { id: boxB.id } })).resolves.toMatchObject({ balance: 3 });
     await expect(rentals.getCustomerRental(customerId, reservation.id)).resolves.toMatchObject({ unitCount: 1, quantity: 1, contracts: [{ id: b.id, status: 'ACTIVE' }] });
-    await expect(rentals.listManagerRentals({ page: 1, limit: 5, unitCode: units[0].unitNumber })).resolves.toMatchObject({ total: 0 });
-    await expect(rentals.listManagerRentals({ page: 1, limit: 5, unitCode: units[1].unitNumber })).resolves.toMatchObject({ total: 1, items: [{ unitCount: 1 }] });
+    await expect(rentals.listManagerRentals({ page: 1, limit: 5, unitCode: units[0].unitNumber }, manager)).resolves.toMatchObject({ total: 0 });
+    await expect(rentals.listManagerRentals({ page: 1, limit: 5, unitCode: units[1].unitNumber }, manager)).resolves.toMatchObject({ total: 1, items: [{ unitCount: 1 }] });
     await expect(prisma.reservation.findUnique({ where: { id: reservation.id } })).resolves.toMatchObject({ status: 'CONFIRMED' });
 
-    await prisma.storedItem.update({ where: { id: boxB.id }, data: { balance: 0 } });
     const second = await requestContract(reservation.id, b.id);
     await passAll(second.id);
-    await returns.finalize(second.id, staff);
+    await returns.finalize(second.id, staff, { unitsEmpty: true, accessRevoked: true });
     const secondDeposit = await prisma.depositSettlement.findUniqueOrThrow({ where: { returnRequestId: second.id } });
     expect(secondDeposit.depositAmount).toBe(1750000n);
     await deposits.refund(secondDeposit.id, { method: 'CASH', reference: 'receipt-b' }, 'refund-b-' + runId, manager);
@@ -411,7 +591,7 @@ describe('Return and Inspection V1', () => {
         })));
       },
     });
-    await expect(new ReturnsService(failingClient).finalize(request.id, staff)).rejects.toThrow('Forced storage update failure');
+    await expect(new ReturnsService(failingClient).finalize(request.id, staff, { unitsEmpty: true, accessRevoked: true })).rejects.toThrow('Forced storage update failure');
     await expect(prisma.rentalContract.findUnique({ where: { id: a.id } })).resolves.toMatchObject({ status: 'ACTIVE', completedAt: null });
     await expect(prisma.reservationUnit.findUnique({ where: { id: a.reservationUnit.id } })).resolves.toMatchObject({ releasedAt: null });
     await expect(prisma.storageUnit.findUnique({ where: { id: a.reservationUnit.storageUnit.id } })).resolves.toMatchObject({ status: 'OCCUPIED' });
@@ -432,7 +612,7 @@ describe('Return and Inspection V1', () => {
     const request = await requestContract(reservation.id, a.id);
     await expect(returns.getStaffReturn(request.id, staff)).resolves.toMatchObject({ assignedStaff: { id: staff.id } });
     await passAll(request.id);
-    await returns.finalize(request.id, staff, { accessRevoked: true });
+    await returns.finalize(request.id, staff, { unitsEmpty: true, accessRevoked: true });
     const billing = new BillingService(prisma);
     const recurring = await prisma.$transaction(tx => billing.ensureRecurringInvoices(tx, reservation.id));
     expect(recurring).toHaveLength(2);
@@ -440,13 +620,13 @@ describe('Return and Inspection V1', () => {
     await expect(prisma.invoice.findUnique({ where: { id: initial.id } })).resolves.toEqual(initial);
   });
 
-  it.each(['future-unpaid', 'prepaid', 'used-debt'] as const)('closes earlier rental with %s and keeps financial and physical records consistent', async scenario => {
+  it.each(['future-unpaid', 'prepaid', 'prepaid-combined', 'prepaid-combined-with-debt', 'used-debt'] as const)('closes earlier rental with %s and keeps financial and physical records consistent', async (scenario: any) => {
     const start = day(-40);
     const end = monthlyBoundary(start, 6);
     const { reservation, contracts: [contract], initial, quote } = await activeRental({ end });
-    const isPrepaid = scenario === 'prepaid';
+    const isPrepaid = scenario.startsWith('prepaid');
     const billing = new BillingService(prisma);
-    const service = new ReturnsService(prisma, undefined, undefined, billing);
+    const service = new ReturnsService(prisma, undefined, billing);
     const terms = { ...quote, termMonths: 6, paymentPlan: isPrepaid ? 'PREPAID' : 'PAY_MONTHLY' };
     await prisma.reservation.update({ where: { id: reservation.id }, data: { quoteSnapshot: terms } });
     const initialTotal = isPrepaid ? 10500000n : 3000000n;
@@ -485,8 +665,8 @@ describe('Return and Inspection V1', () => {
     await service.assign(requested.id, { staffUserId: staff.id }, manager);
     await passAll(requested.id);
     await expect(service.finalize(requested.id, staff)).rejects.toThrow('thu hồi');
-    await service.finalize(requested.id, staff, { accessRevoked: true });
-    await service.finalize(requested.id, staff, { accessRevoked: true });
+    await service.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true });
+    await service.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true });
     const refundAmount = isPrepaid ? 6000000 : 0;
     expect(await service.getCustomerReturn(customerId, requested.id)).toMatchObject({ status: 'PENDING_SETTLEMENT', earlyReturnCloseout: {
       rentalAmount: 3000000, outstandingAmount: scenario === 'used-debt' ? 1500000 : 0, refundAmount,
@@ -501,7 +681,42 @@ describe('Return and Inspection V1', () => {
     expect(await prisma.invoice.count({ where: { reservationId: reservation.id } })).toBe(isPrepaid ? 1 : 6);
     const deposit = await prisma.depositSettlement.findUniqueOrThrow({ where: { returnRequestId: requested.id } });
     expect(deposit).toMatchObject({ refundAmount: 1500000n, status: 'APPROVED' });
-    await new DepositSettlementsService(prisma).refund(deposit.id, { method: 'BANK_TRANSFER', reference: 'deposit-' + initial.id }, 'deposit-' + initial.id, manager);
+    const settlements = new DepositSettlementsService(prisma);
+    expect(await settlements.getManager(deposit.id, manager)).toMatchObject({ refundAmount: 1500000, earlyReturnSettlement: {
+      returnId: requested.id, closeout: { appliedAt: expect.any(String), refundAmount }, rentRefund: { approvedAt: null, refundedAt: null },
+    } });
+    expect(await settlements.getCustomer(customerId, deposit.id)).not.toHaveProperty('earlyReturnSettlement');
+    if (scenario === 'prepaid-combined' || scenario === 'prepaid-combined-with-debt') {
+      const key = 'combined-' + initial.id;
+      const body = { depositAmount: 1500000, rentAmount: refundAmount, refundConfirmed: true };
+      await expect(settlements.confirmReturnRefund(deposit.id, { ...body, refundConfirmed: false }, key, manager)).rejects.toThrow('xác nhận');
+      const reference = 'combined-transfer-' + initial.id;
+      await expect(settlements.confirmReturnRefund(deposit.id, { ...body, rentAmount: 1, reference }, key, manager)).rejects.toThrow('Số tiền cần hoàn vừa thay đổi');
+      await expect(settlements.confirmReturnRefund(deposit.id, body, key, manager)).rejects.toThrow('mã giao dịch');
+      if (scenario === 'prepaid-combined-with-debt') {
+        await prisma.rentalContract.update({ where: { id: contract.id }, data: {
+          termsAcceptedAt: start, signedSnapshot: { clauses: [depositRefundDebtClause] },
+        } });
+        const late = await prisma.invoice.create({ data: {
+          invoiceCode: initial.invoiceCode + '-LATE', reservationId: reservation.id, type: 'SETTLEMENT', status: 'OPEN',
+          billingCycle: null, rentalAmount: 0n, serviceAmount: 0n, depositAmount: 0n, chargeAmount: 50000n, totalAmount: 50000n, balanceDue: 50000n,
+          pricingSnapshot: { adjustment: 'PAYMENT_OVERDUE', sourceInvoiceId: initial.id },
+        } });
+        await expect(settlements.confirmReturnRefund(deposit.id, { ...body, reference }, key, manager)).rejects.toMatchObject({
+          response: { code: 'DEPOSIT_REFUND_CONTRACT_DEBT', outstandingBalance: 50000 },
+        });
+        await billing.recordPayment(late.id, { amount: 50000, method: 'CASH' }, 'late-' + late.id, manager);
+      }
+      const confirmed = await settlements.confirmReturnRefund(deposit.id, { ...body, reference }, key, manager);
+      expect(confirmed).toMatchObject({ status: 'SETTLED', refundReference: reference, refundedAt: expect.any(String),
+        earlyReturnSettlement: { rentRefund: { approvedAt: confirmed.refundedAt, refundedAt: confirmed.refundedAt, reference } } });
+      expect(await settlements.confirmReturnRefund(deposit.id, { ...body, reference }, key, manager)).toEqual(confirmed);
+      await expect(settlements.confirmReturnRefund(deposit.id, { ...body, reference: 'different-reference' }, key, manager))
+        .rejects.toMatchObject({ status: 409 });
+      expect(await prisma.returnRequest.findUnique({ where: { id: requested.id } })).toMatchObject({ status: 'COMPLETED', rentRefundedById: manager.id });
+      return;
+    }
+    await settlements.refund(deposit.id, { method: 'BANK_TRANSFER', reference: 'deposit-' + initial.id }, 'deposit-' + initial.id, manager);
     expect(await prisma.returnRequest.findUnique({ where: { id: requested.id } })).toMatchObject({ status: 'PENDING_SETTLEMENT' });
     const approved = await service.settleEarlyReturn(requested.id, { amount: refundAmount }, manager);
     expect(approved).toMatchObject({ approvedAt: expect.any(String), refundedAt: null });
@@ -509,10 +724,16 @@ describe('Return and Inspection V1', () => {
       const transfer = { amount: refundAmount, reference: 'rent-' + initial.id, transferredAt: new Date().toISOString() };
       expect(await prisma.returnRequest.findUnique({ where: { id: requested.id } })).toMatchObject({ status: 'PENDING_SETTLEMENT' });
       const confirmed = await service.settleEarlyReturn(requested.id, transfer, manager, true);
+      expect(await settlements.getManager(deposit.id, manager)).toMatchObject({ status: 'SETTLED', earlyReturnSettlement: { rentRefund: confirmed } });
       expect(await service.settleEarlyReturn(requested.id, transfer, manager, true)).toEqual(confirmed);
       await expect(service.settleEarlyReturn(requested.id, { ...transfer, reference: 'another' }, manager, true)).rejects.toThrow('đã được ghi nhận');
     }
     expect(await prisma.returnRequest.findUnique({ where: { id: requested.id } })).toMatchObject({ status: 'COMPLETED' });
+    if (scenario === 'used-debt') {
+      await expect(service.getCustomerReturn(customerId, requested.id)).resolves.toMatchObject({
+        physicallyReturnedAt: expect.any(String), settlementStatus: 'SETTLED', debtStatus: 'OUTSTANDING', outstandingBalance: 1500000,
+      });
+    }
   });
 
   it('allows an early return approval for a previously signed contract using the standard decision', async () => {
@@ -527,7 +748,7 @@ describe('Return and Inspection V1', () => {
     });
   });
 
-  it.each([true, false])('applies facility relief only with evidence and review (%s)', async verified => {
+  it.each([true, false])('applies facility relief only with evidence and review (%s)', async (verified: any) => {
     const { reservation, contracts: [contract], initial } = await activeRental({ end: day(10) });
     await prisma.payment.create({ data: { idempotencyKey: 'fault-' + initial.id, paymentCode: initial.invoiceCode + '-P', invoiceId: initial.id,
       amount: initial.totalAmount, method: 'CASH' } });
@@ -543,13 +764,13 @@ describe('Return and Inspection V1', () => {
     await expect(returns.reviewEarlyReturnFault(request.id, evidence, manager)).rejects.toThrow('Cần kết quả kiểm tra');
     if (verified) {
       await returns.updateInspection(request.id, inspection.id, { result: 'ISSUE_FOUND', issueType: 'FACILITY_FAULT', issueNote: 'Rò nước từ hệ thống kho.' }, staff);
-      await expect(returns.finalize(request.id, staff, { accessRevoked: true })).rejects.toThrow('quản lý xác minh');
+      await expect(returns.finalize(request.id, staff, { unitsEmpty: true, accessRevoked: true })).rejects.toThrow('quản lý xác minh');
       await expect(returns.reviewEarlyReturnFault(request.id, evidence, staff)).rejects.toBeInstanceOf(ForbiddenException);
       await expect(returns.reviewEarlyReturnFault(request.id, evidence, manager)).resolves.toEqual({ decision: 'APPROVED' });
     } else {
       await returns.updateInspection(request.id, inspection.id, { result: 'PASS' }, staff);
     }
-    await returns.finalize(request.id, staff, { accessRevoked: true });
+    await returns.finalize(request.id, staff, { unitsEmpty: true, accessRevoked: true });
     expect(await returns.getCustomerReturn(customerId, request.id)).toMatchObject({ earlyReturnCloseout: {
       facilityFaultCredit: verified ? 300000 : 0, refundAmount: verified ? 300000 : 0,
     } });
@@ -568,7 +789,7 @@ describe('Return and Inspection V1', () => {
     const futureAllocation = await prisma.reservationUnit.create({ data: { reservationId: future.id, storageUnitId: units[0].id, plannedStartDate: futureStart, plannedEndDate: futureEnd } });
     const requested = await requestReturn(reservation.id);
     await passAll(requested.id);
-    await returns.finalize(requested.id, staff);
+    await returns.finalize(requested.id, staff, { unitsEmpty: true, accessRevoked: true });
     expect(await prisma.reservationUnit.findUniqueOrThrow({ where: { id: futureAllocation.id } })).toMatchObject({ releasedAt: null });
     await prisma.storageUnit.updateMany({ where: { storageTypeId, id: { not: units[0].id } }, data: { status: 'MAINTENANCE' } });
     const availability = await booking.checkAvailability({
@@ -584,11 +805,11 @@ describe('Return and Inspection V1', () => {
     expect((await returns.listCustomerReturns(customerId, { page: 1, limit: 20 })).total).toBe(1);
     expect((await returns.listCustomerReturns(otherCustomerId, { page: 1, limit: 20 })).total).toBe(0);
     await expect(returns.getCustomerReturn(otherCustomerId, requested.id)).rejects.toBeInstanceOf(NotFoundException);
-    const managerList = await returns.listManagerReturns({ page: 1, limit: 20, search: customerId, status: 'REQUESTED', date: businessDate() });
+    const managerList = await returns.listManagerReturns({ page: 1, limit: 20, search: customerId, status: 'REQUESTED', date: businessDate() },manager);
     const staffList = await returns.listStaffReturns({ page: 1, limit: 20, search: unitCodes[0] }, staff);
     expect(managerList.total).toBe(1);
     expect(staffList.total).toBe(1);
-    expect(JSON.stringify(await returns.getManagerReturn(requested.id))).not.toContain('secret-hash');
+    expect(JSON.stringify(await returns.getManagerReturn(requested.id,manager))).not.toContain('secret-hash');
     expect(JSON.stringify(await returns.getStaffReturn(requested.id, staff))).not.toContain('billingSummary');
   });
 
@@ -604,12 +825,12 @@ describe('Return and Inspection V1', () => {
     await expect(authGuard.canActivate(unauthenticated)).rejects.toBeInstanceOf(UnauthorizedException);
     const rolesGuard = new RolesGuard(new Reflector());
     const allowed: Array<[typeof CustomerReturnsController | typeof ManagerReturnsController | typeof StaffReturnsController, PublicUser['role'][]]> = [
-      [CustomerReturnsController, ['CUSTOMER']],
-      [ManagerReturnsController, ['MANAGER']],
-      [StaffReturnsController, ['STAFF']],
+      [CustomerReturnsController, ['STORAGE_CUSTOMER']],
+      [ManagerReturnsController, ['FACILITY_MANAGER']],
+      [StaffReturnsController, ['FACILITY_STAFF']],
     ];
     for (const [controller, roles] of allowed) {
-      for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const) {
+      for (const role of ['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'] as const) {
         const context = { getHandler: () => function returnOperation() {}, getClass: () => controller, switchToHttp: () => ({ getRequest: () => ({ user: { role }, method: 'GET' }) }) } as unknown as ExecutionContext;
         if (roles.includes(role)) expect(rolesGuard.canActivate(context)).toBe(true);
         else expect(() => rolesGuard.canActivate(context)).toThrow(ForbiddenException);

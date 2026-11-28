@@ -1,0 +1,69 @@
+.workspace-date-field { position: relative; display: grid; gap: 6px; min-width: 0; align-content: start; }
+.workspace-date-control { display: flex; gap: 4px; min-width: 0; }
+.workspace-date-proxy { position: absolute !important; width: 1px !important; height: 1px !important; min-height: 0 !important; padding: 0 !important; opacity: 0; pointer-events: none; }
+.manager-shell .workspace-date-trigger,
+.manager-shell .workspace-date-clear {
+  min-height: 40px; margin: 0; border: 1px solid var(--color-border); background: var(--color-surface);
+  color: var(--color-ink); border-radius: 8px; font: inherit; padding: 7px 10px;
+}
+.manager-shell .workspace-date-trigger[aria-invalid="true"] { border-color: var(--color-danger, #b42318); }
+.workspace-date-trigger { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; }
+.workspace-date-trigger svg { color: var(--color-primary); flex: none; }
+.workspace-date-clear { flex: none; }
+.workspace-date-pair, .workspace-clock { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: start; }
+.workspace-date-pair[hidden] { display: none; }
+.workspace-clock { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; }
+.workspace-clock::after { content: ':'; grid-area: 1 / 2; }
+.workspace-clock select:last-child { grid-area: 1 / 3; }
+.workspace-clock select { width: 100%; min-width: 0; }
+.workspace-date-error { color: var(--color-danger, #b42318); font-size: .8rem; }
+.workspace-calendar {
+  position: fixed; margin: 0; box-sizing: border-box; padding: 10px; overflow: auto; border-radius: 12px;
+  border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-ink);
+  box-shadow: 0 12px 30px #0004;
+}
+.workspace-calendar-nav { display: grid; grid-template-columns: 32px minmax(0, 1fr) minmax(0, 1fr) 32px; gap: 4px; margin-bottom: 6px; }
+.workspace-calendar-nav select { width: 100%; padding-inline: 5px; }
+.bom-dash-filters .workspace-calendar select { min-width: 0; }
+.portal-toolbar .workspace-date-field, .bom-dash-filters .workspace-date-field { min-width: 138px; }
+.workspace-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.workspace-calendar-grid > span { text-align: center; font-size: .77rem; padding: 4px 0; }
+.manager-shell .workspace-calendar button {
+  margin: 0; padding: 0; min-height: 32px; display: grid; place-items: center; border-radius: 6px;
+  border: 1px solid transparent; color: var(--color-ink); background: transparent; font-size: .86rem;
+}
+.manager-shell .workspace-calendar button:hover:not(:disabled) { background: var(--surface-hover); }
+.manager-shell .workspace-calendar button[aria-current="date"] { border-color: var(--color-primary); color: var(--color-primary); }
+.manager-shell .workspace-calendar button[aria-pressed="true"] { background: var(--surface-selected); color: var(--color-primary); font-weight: 700; }
+.manager-shell .workspace-calendar button:disabled { opacity: .38; cursor: default; }
+.workspace-time-panel .workspace-clock select { min-height: 34px; }
+.manager-shell .workspace-time-panel .workspace-time-done {
+  width: 100%; margin-top: 8px; min-height: 32px; padding: 4px 8px; border-color: var(--workspace-border);
+  background: var(--workspace-input);
+}
+.workspace-hours { display: grid; gap: 7px; min-width: 0; margin: 0; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 10px; }
+.workspace-hours legend { padding: 0 5px; font-weight: 650; color: var(--color-ink); }
+.workspace-hours-modes, .workspace-hours-days { display: flex; flex-wrap: wrap; gap: 6px; }
+.manager-shell .workspace-hours-modes label {
+  display: inline-flex; align-items: center; gap: 5px; margin: 0; padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--workspace-border); font-size: .83rem; cursor: pointer;
+}
+.manager-shell .workspace-hours-modes label:has(input:checked) { background: var(--surface-selected); border-color: var(--workspace-primary); }
+.manager-shell .workspace-hours-modes label:hover { background: var(--workspace-hover); }
+.manager-shell .workspace-hours-modes input[type='radio'] {
+  width: 13px; height: 13px; padding: 0; margin: 0; min-height: 0; accent-color: var(--workspace-primary);
+}
+.manager-shell .workspace-hours button { margin: 0; }
+.manager-shell.internal-web.workspace-themed .workspace-hours-days button { min-width: 32px; min-height: 32px; padding: 2px 6px; font-size: .8rem; }
+.manager-shell.internal-web.workspace-themed .workspace-hours-days button[aria-pressed="true"] {
+  background: var(--workspace-selected); color: var(--workspace-primary); border-color: var(--workspace-primary);
+}
+.workspace-hours-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; column-gap: 8px; font-size: .82rem; }
+.workspace-hours-summary[hidden], .workspace-hours-preview:empty { display: none; }
+.workspace-hours-preview { margin: 0; overflow-wrap: anywhere; }
+.manager-shell .workspace-hours-summary button { font-size: .8rem; min-height: 26px; padding: 2px 0; }
+.manager-shell .workspace-hours-times .workspace-date-trigger { min-height: 35px; padding-block: 4px; }
+@media (max-width: 520px) {
+  .workspace-date-pair { grid-template-columns: minmax(0, 1fr); }
+  .workspace-hours-times { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

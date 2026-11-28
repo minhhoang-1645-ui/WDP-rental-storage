@@ -7,7 +7,7 @@ import { ManagerTableBack } from '../../components/manager/ManagerTaskTable';
 import { useManagerListRecord } from '../../components/manager/useManagerListRecord';
 import { usePaginatedResource } from '../../services/usePaginatedResource';
 import { mutate } from '../../services/portal';
-import { first, date, money, rows, type Row } from '../../components/manager/portal-data';
+import { first, date, rows, type Row } from '../../components/manager/portal-data';
 import { Empty, Facts, LoadState, PageHeader, RefreshStatus } from '../../components/manager/PortalUi';
 import { DetailSkeleton } from '../../components/LoadingSkeleton';
 import { EARLY_RETURN_PAYMENT_MESSAGE, earlyReturnManagerNote } from '../../utils/early-return';
@@ -54,19 +54,12 @@ function EarlyReturnReview({ item, refresh }: { item: Row; refresh: () => void }
   const [decision, setDecision] = useState('APPROVED');
   const [note, setNote] = useState('');
   const [reviewed, setReviewed] = useState(false);
-  const [facilityFaultReference, setFacilityFaultReference] = useState('');
   const [faultEvidence, setFaultEvidence] = useState('');
-  const [reference, setReference] = useState('');
-  const [transferredAt, setTransferredAt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const lock = useRef(false);
   const resolutionNote = first(item, 'resolutionNote');
   const managerNote = item.decision === 'APPROVED' ? earlyReturnManagerNote(resolutionNote) : resolutionNote;
-  const approvedAt = first(item, 'rentRefund.approvedAt');
-  const refundedAt = first(item, 'rentRefund.refundedAt');
-  const refundAmount = Number(first(item, 'closeout.refundAmount'));
-  const hasCloseout = Boolean(first(item, 'closeout.appliedAt'));
   const run = async (path: string, body: Row) => {
     if (lock.current) return;
     lock.current = true;
@@ -85,7 +78,7 @@ function EarlyReturnReview({ item, refresh }: { item: Row; refresh: () => void }
   const submit = (event: FormEvent) => {
     event.preventDefault();
     void run(encodeURIComponent(first(item, 'id')) + '/decision', {
-      decision, note: note.trim(), financialReviewConfirmed: reviewed, facilityFaultReference,
+      decision, note: note.trim(), financialReviewConfirmed: reviewed,
       reviewedEndDate: first(item, 'reservation.effectiveEndDate'),
       reviewedOutstandingAmount: Number(first(item, 'financialSummary.outstandingAmount')),
       reviewedPaidAmount: Number(first(item, 'financialSummary.paidAmount')),
@@ -113,12 +106,6 @@ function EarlyReturnReview({ item, refresh }: { item: Row; refresh: () => void }
       <label className="field-label">Quyết định trả sớm<select value={decision} onChange={event => setDecision(event.target.value)}>
         <option value="APPROVED">Cho phép trả kho trước hạn</option><option value="REJECTED">Từ chối đề nghị</option>
       </select></label>
-      {decision === 'APPROVED' && <>
-        <label className="field-label">Mã hồ sơ lỗi cơ sở đã xác minh (nếu áp dụng)
-          <input maxLength={200} value={facilityFaultReference} onChange={event => setFacilityFaultReference(event.target.value)} />
-          <small>Giảm tiền kỳ hiện tại khi nhân viên cũng xác nhận lỗi cơ sở lúc nhận kho.</small>
-        </label>
-      </>}
       <label className="field-label">Ghi chú quyết định<textarea required minLength={3} maxLength={3000} rows={3}
         value={note} onChange={event => setNote(event.target.value)} /></label>
       {decision === 'APPROVED' && <label className="portal-checkbox"><input type="checkbox" checked={reviewed}
@@ -136,21 +123,6 @@ function EarlyReturnReview({ item, refresh }: { item: Row; refresh: () => void }
         <button className="button-primary" disabled={busy || !faultEvidence.trim()} onClick={() => void run(settlementPath + '/facility-review', { approved: true, reference: faultEvidence })}>Duyệt giảm tiền kỳ hiện tại</button>
         <button className="button-secondary" disabled={busy || !faultEvidence.trim()} onClick={() => void run(settlementPath + '/facility-review', { approved: false, reference: faultEvidence })}>Giữ cách tính thông thường</button>
       </div>
-    </section>}
-    {hasCloseout && <section className="early-return-finance-review">
-      <h3>Duyệt quyết toán và hoàn tiền thuê</h3>
-      {!approvedAt ? <button className="button-primary" disabled={busy}
-        onClick={() => void run(settlementPath + '/settlement-approval', { amount: refundAmount })}>Duyệt quyết toán</button> :
-        <p>Đã duyệt quyết toán {date(approvedAt, true)}.</p>}
-      {refundedAt ? <p>Đã chuyển {money(refundAmount)} · {date(refundedAt, true)} · {first(item, 'rentRefund.reference')}</p> :
-        approvedAt && refundAmount > 0 && <form className="portal-form" onSubmit={event => {
-          event.preventDefault();
-          void run(settlementPath + '/refund-confirmation', { amount: refundAmount, reference, transferredAt: new Date(transferredAt).toISOString() });
-        }}>
-          <label className="field-label">Mã chuyển khoản<input required maxLength={160} value={reference} onChange={event => setReference(event.target.value)} /></label>
-          <label className="field-label">Thời điểm chuyển khoản<input required type="datetime-local" step="1" value={transferredAt} onChange={event => setTransferredAt(event.target.value)} /></label>
-          <button className="button-primary" disabled={busy}>Xác nhận đã chuyển {money(refundAmount)}</button>
-        </form>}
     </section>}
     {error && <p role="alert">{error}</p>}
   </article>;

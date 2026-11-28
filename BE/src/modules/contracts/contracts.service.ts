@@ -1,4 +1,7 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { managerReservationScope } from '../facility-access/record-access.js';
+import { currentContractScope } from '../facility-access/task-access.js';
+import { staffContractScope as assignedContractScope } from '../facility-access/task-access.js';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
@@ -7,8 +10,6 @@ import { SigningOtpService, signedDocument, signedEnvelope, signatureVerificatio
 import { DocumentPolicy } from '../documents/document-policy.js';
 import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../guest-booking/email.service.js';
-import { responsibleUnit } from '../unit-staff/operational-assignment.js';
-import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 
 const staffContractSelect = {
   id: true, contractCode: true, status: true, startDate: true, endDate: true, activatedAt: true,
@@ -27,7 +28,7 @@ export interface ContractListQuery {
 
 @Injectable()
 export class ContractsService {
-  constructor(private readonly prisma: PrismaService, private readonly signing: SigningOtpService = new SigningOtpService(new EmailService(new ConfigService())), private readonly policy: DocumentPolicy = new DocumentPolicy(new ConfigService()), @Optional() private readonly unitStaff?: UnitStaffService) {}
+  constructor(private readonly prisma: PrismaService, private readonly signing: SigningOtpService = new SigningOtpService(new EmailService(new ConfigService())), private readonly policy: DocumentPolicy = new DocumentPolicy(new ConfigService())) {}
 
   async requestSignatureOtp(customer: PublicUser, id: string, input: Record<string, unknown>) {
     const contract = await this.getCustomerContract(customer.id, id);
@@ -93,7 +94,7 @@ export class ContractsService {
   }
 
   async acceptCustomerContract(customer: PublicUser, id: string, input: Record<string, unknown>) {
-    if (customer.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ Customer được xác nhận hợp đồng của mình.');
+    if (customer.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException('Chỉ Customer được xác nhận hợp đồng của mình.');
     const acceptanceName = typeof input.acceptanceName === 'string' ? input.acceptanceName.trim() : '';
     const acceptanceNote = typeof input.acceptanceNote === 'string' ? input.acceptanceNote.trim() : '';
     if (acceptanceName.length < 2 || acceptanceName.length > 120) throw new BadRequestException('Họ tên xác nhận phải dài 2–120 ký tự.');
@@ -133,8 +134,9 @@ export class ContractsService {
     };
   }
 
-  async listManagerContracts(query: ContractListQuery) {
-    const where = this.contractFilters(query);
+  async listManagerContracts(query: ContractListQuery, actor: PublicUser) {
+    managerReservationScope(actor);
+    const where = {AND:[this.contractFilters(query),currentContractScope(actor)]};
     const total = await this.prisma.rentalContract.count({ where });
     const contracts = await this.prisma.rentalContract.findMany({
       where,
@@ -146,9 +148,9 @@ export class ContractsService {
     return { page: query.page, limit: query.limit, total, items: contracts.map((contract) => this.toContract(contract, true)) };
   }
 
-  async getManagerContract(id: string) {
+  async getManagerContract(id: string, actor: PublicUser) {
     const contract = await this.prisma.rentalContract.findFirst({
-      where: { OR: [{ id }, { contractCode: id }] },
+      where: { ...currentContractScope(actor), OR: [{ id }, { contractCode: id }] },
       include: this.contractInclude(),
     });
     if (!contract) throw new NotFoundException('Không tìm thấy hợp đồng.');
@@ -156,12 +158,11 @@ export class ContractsService {
   }
 
   private staffContractScope(staffId: string): Prisma.RentalContractWhereInput {
-    return { status: 'ACTIVE', reservationUnit: { releasedAt: null, storageUnit: responsibleUnit(staffId) } };
+    return { AND: [assignedContractScope({id:staffId,role:'FACILITY_STAFF'}), {status: 'ACTIVE', reservationUnit: { releasedAt: null }}] };
   }
 
   async listStaffContracts(query: ContractListQuery, staffId: string) {
     const { page, limit } = query;
-    if (!this.unitStaff?.enabled()) return { page, limit, total: 0, items: [] };
     const where = { AND: [this.staffContractScope(staffId), this.contractFilters(query)] };
     const [total, records] = await Promise.all([
       this.prisma.rentalContract.count({ where }),
@@ -173,13 +174,22 @@ export class ContractsService {
   }
 
   async getStaffContract(id: string, staffId: string) {
-    const notFound = () => new NotFoundException('Không tìm thấy hợp đồng thuộc kho bạn phụ trách.');
-    if (!this.unitStaff?.enabled()) throw notFound();
+    const notFound = () => new NotFoundException('Không tìm thấy hợp đồng thuộc nhiệm vụ được giao.');
     const record = await this.prisma.rentalContract.findFirst({
-      where: { ...this.staffContractScope(staffId), OR: [{ id }, { contractCode: id }] }, select: staffContractSelect,
+      where: { AND: [this.staffContractScope(staffId), { OR: [{ id }, { contractCode: id }] }] }, select: staffContractSelect,
     });
     if (!record) throw notFound();
     return this.staffContract(record);
+  }
+
+  async getStaffTransferDocument(id:string,transferId:string,actor:PublicUser) {
+    if(actor.role!=='FACILITY_STAFF')throw new ForbiddenException('Chỉ nhân viên được giao được xem biên bản.');
+    const record=await this.prisma.rentalContract.findFirst({where:{id,
+      AND: [assignedContractScope(actor)],
+      transferRequests:{some:{id:transferId,status:'COMPLETED',OR:[{assignedStaffUserId:actor.id},{receivingStaffId:actor.id}]}}
+    },include:this.contractInclude()});
+    if(!record)throw new NotFoundException('Không tìm thấy biên bản thuộc nhiệm vụ được giao.');
+    return this.toContract(record,true);
   }
 
   private staffContract(record: Prisma.RentalContractGetPayload<{ select: typeof staffContractSelect }>) {
@@ -198,6 +208,7 @@ export class ContractsService {
         include: {
           customer: { select: { id: true, fullName: true, email: true, phone: true } },
           storageType: { select: { id: true, code: true, name: true, sizeId: true, sizeName: true, condition: true } },
+          facility: { select: { code: true, name: true, address: true, officeHours: true, accessHours: true } },
           services: true,
           renewals: { orderBy: [{ requestedAt: 'asc' as const }, { id: 'asc' as const }], select: {
             id: true, renewalCode: true, rentalContractId: true, status: true, previousEndDate: true, requestedEndDate: true, termMonths: true, paymentPlan: true, quoteSnapshot: true,
@@ -208,7 +219,10 @@ export class ContractsService {
           } },
         },
       },
-      reservationUnit: { include: { storageUnit: { select: { id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true } } } },
+      reservationUnit: { include: { storageUnit: { select: {
+        id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true,
+        incidentBlocks: { where: { releasedAt: null }, take: 1, select: { id: true } },
+      } } } },
       transferRequests: {
         orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }], select: {
         id: true, transferCode: true, status: true, reason: true, handoverReport: true, createdAt: true, approvedAt: true, completedAt: true,
@@ -231,6 +245,7 @@ export class ContractsService {
       reservation: {
         id: reservation.id,
         reference: reservation.reservationCode,
+        facility: reservation.facility ?? null,
         status: reservation.status,
         quantity: reservation.quantity,
         ...(includeCustomer ? { customer: { id: reservation.customer.id, fullName: reservation.customer.fullName, email: reservation.customer.email, phone: reservation.customer.phone ?? '' } } : {}),
@@ -244,6 +259,9 @@ export class ContractsService {
         row: storageUnit.row,
         position: storageUnit.position,
         physicalStatus: storageUnit.status,
+        ...(contract.reservationUnit.releasedAt == null && ['PENDING_PAYMENT', 'READY_FOR_HANDOVER', 'ACTIVE'].includes(contract.status)
+          && (storageUnit.status === 'MAINTENANCE' || storageUnit.incidentBlocks?.length)
+          ? { maintenanceNotice: 'Ô kho đang được kiểm tra an toàn. Hãy liên hệ NestBox nếu cần hỗ trợ về việc bàn giao hoặc sử dụng kho.' } : {}),
       },
       reservationPricing: reservation.quoteSnapshot,
       services: reservation.services.map((service: any) => ({ code: service.serviceCodeSnapshot, name: service.serviceNameSnapshot, kind: service.serviceKindSnapshot, billingUnit: service.billingUnitSnapshot, unitPrice: Number(service.unitPriceSnapshot), quantity: service.quantity, serviceStartDate: service.serviceStartDate?.toISOString().slice(0, 10) ?? null, serviceEndDate: service.serviceEndDate?.toISOString().slice(0, 10) ?? null, amount: Number(service.amountSnapshot) })),
@@ -292,11 +310,14 @@ export class ContractsService {
 
   private documentSnapshot(contract: any) {
     const reservation = contract.reservation;
+    const unit = contract.reservationUnit.storageUnit;
     return {
       documentType: 'RENTAL_CONTRACT', version: contract.termsAcceptedAt ? contract.termsVersion : this.policy.issuer().termsVersion, contractCode: contract.contractCode,
       ...(contract.termsAcceptedAt ? { issuer: { brand: 'NestBox Storage', draft: true }, legacySnapshotUnavailable: true } : { issuer: this.policy.issuer(), clauses: this.policy.terms() }),
       reservationReference: reservation.reservationCode, customer: { fullName: reservation.customer.fullName, email: reservation.customer.email, phone: reservation.customer.phone ?? null },
-      storage: { name: reservation.storageType.name, unitCode: contract.reservationUnit.storageUnit.unitNumber },
+      ...(reservation.facility ? { facility: reservation.facility } : {}),
+      storage: { name: reservation.storageType.name, unitCode: unit.unitNumber,
+        floor: unit.floor ?? null, zone: unit.zone ?? null, row: unit.row ?? null, position: unit.position ?? null },
       startDate: this.isoDate(contract.startDate), endDate: this.isoDate(contract.endDate),
       quantity: reservation.quantity, pricing: reservation.quoteSnapshot,
       services: reservation.services.map((service: any) => ({ name: service.serviceNameSnapshot, billingUnit: service.billingUnitSnapshot, quantity: service.quantity, amount: Number(service.amountSnapshot) })),

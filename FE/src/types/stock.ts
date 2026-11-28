@@ -1,5 +1,5 @@
 export interface StockStorageUnit { id: string; unitNumber: string; floor?: string | null; zone?: string | null }
-export type StockRole = 'CUSTOMER' | 'MANAGER' | 'STAFF';
+export type StockRole = 'STORAGE_CUSTOMER' | 'FACILITY_MANAGER' | 'FACILITY_STAFF';
 export interface StoredItem {
   id: string; itemCode: string; name: string; unit: string; balance: number;
   storageUnit?: StockStorageUnit | null; note?: string | null; customer?: { id: string; fullName: string }; currentStorageUnit?: StockStorageUnit | null; rentalContract?: { id: string; contractCode: string; reservationUnit?: { storageUnit: StockStorageUnit } };

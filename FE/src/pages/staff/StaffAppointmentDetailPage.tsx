@@ -1,19 +1,22 @@
+import { StaffTaskException } from './StaffTaskException';
 import { ArrowLeft, Check, Printer, RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import { Fragment, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../../auth/auth-context';
 import { DetailSkeleton } from '../../components/LoadingSkeleton';
 import { Facts, LoadState, PageHeader, RefreshStatus, Status } from '../../components/manager/PortalUi';
-import { first, object, rows, type Row } from '../../components/manager/portal-data';
+import { date, first, object, rows, type Row } from '../../components/manager/portal-data';
 import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { useApiResource } from '../../services/useApiResource';
 import { hasDraft } from '../../services/live-events';
+import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
 import { handoverReportView } from '../../utils/handover-report';
-import { ManagerActions } from '../manager/ManagerActions';
-import { StaffActions } from './StaffActions';
-import { handoverCondition, handoverCustomer, handoverRecipient, handoverTime, handoverUnits } from './staff-appointment';
+import { ApiError } from '../../services/api';
+import { mutate } from '../../services/portal';
+import { PurchasedProducts, StaffActions } from './StaffActions';
+import { handoverCondition, handoverCustomer, handoverRecipient, handoverStatusText, handoverTime, handoverUnits } from './staff-appointment';
 import { useStaffProcessingTarget } from './useStaffProcessingTarget';
 import '../../styles/staff-appointments.css';
 
@@ -31,24 +34,37 @@ export function StaffAppointmentDetailPage() {
   const data = useApiResource<Row>(id ? `/staff/management/appointments/${encodeURIComponent(id)}` : null, user?.id ?? '', true, true);
   const [notice, setNotice] = useState('');
   const [submitted, setSubmitted] = useState<Row>();
-  const row = data.data?.status === 'COMPLETED' ? data.data : submitted ?? data.data;
+  const [formRevision, setFormRevision] = useState(0);
+  const denied = data.status !== null && [401, 403, 404].includes(data.status);
+  const row = denied ? null : data.data?.status === 'COMPLETED' ? data.data : submitted ?? data.data;
   const readiness = object(row?.handoverReadiness);
   const assigned = Boolean(user && row && first(row, 'assignedStaff.id') === user.id && first(row, 'assignedStaff.accountStatus') !== 'DISABLED');
-  const canAct = assigned && readiness.allowed !== false;
+  const canAct = assigned && row?.cancellationPending !== true && row?.bookingReady !== false && readiness.allowed === true;
   useStaffProcessingTarget(Boolean(row && ['REQUESTED', 'CONFIRMED'].includes(String(row.status))));
 
   return <section className="record-detail-page staff-appointment-detail">
     <Link className="booking-back" to={returnTo}><ArrowLeft size={16} />Về danh sách</Link>
-    <LoadState loading={data.loading} error={data.error} retry={data.refresh} placeholder={<DetailSkeleton form history />} />
+    <LoadState loading={data.loading} error={denied ? 'Bạn không còn quyền mở lịch này hoặc lịch đã được giao lại.' : data.error} retry={data.refresh} placeholder={<DetailSkeleton form history />} />
     {row && <>
-      <AppointmentHeader row={row} refresh={data.refresh} refreshing={data.refreshing} />
+      <AppointmentHeader row={row} refresh={data.refresh} discardAndRefresh={() => { setFormRevision(value => value + 1); data.refresh(); }} refreshing={data.refreshing} />
       <RefreshStatus active={data.refreshing} />
-      {notice && row.status !== 'COMPLETED' && <div className="portal-success" role="status">{notice}</div>}
+      {notice && <div className="portal-success" role="status">{notice}</div>}
       <AppointmentSummary row={row} />
-      {row.status === 'COMPLETED' && <HandoverResult row={row} />}
+      {row.canRecordCancellationRecovery === true && (row.recoveryStaffId ? row.recoveryStaffId === user?.id : assigned || first(row, 'completedBy.id') === user?.id) &&
+        <CancellationRecovery reservationId={first(row, 'reservation.id')} refresh={data.refresh} />}
+      {first(row, 'scheduleAdjustment.note') && <p role="status">
+        {first(row, 'scheduleAdjustment.action') === 'NO_SHOW' ? 'Đã hủy lịch do khách không đến' : 'Quản lý đã đổi lịch'} · {first(row, 'scheduleAdjustment.note')}
+      </p>}
+      <Fragment key={formRevision}>
+      {row.status === 'COMPLETED' && <>
+        <HandoverResult row={row} />
+        {row.cancellationPending !== true && rows(row.purchasedProducts).length > 0 && <RemainingProducts row={row} id={id}
+          allowed={assigned || (!first(row, 'assignedStaff.id') && first(row, 'completedBy.id') === user?.id)}
+          onSuccess={result => { setSubmitted(result); setNotice('Đã ghi nhận bàn giao sản phẩm.'); data.refresh(); }} />}
+      </>}
       {row.status === 'REQUESTED' && canAct && <section className="manager-section" id="staff-processing" tabIndex={-1}>
         <h2>Xác nhận lịch</h2>
-        <ManagerActions resource="appointments" row={row} id={id} refresh={data.refresh} onSuccess={setNotice} />
+        <ConfirmAppointment id={id} refresh={data.refresh} onConfirmed={() => setNotice('Đã xác nhận lịch bàn giao.')} />
       </section>}
       {row.status === 'CONFIRMED' && canAct && <StaffActions resource="appointments" row={row} id={id}
         refresh={data.refresh} onSuccess={(message, result) => {
@@ -57,22 +73,124 @@ export function StaffAppointmentDetailPage() {
         }} />}
       {['REQUESTED', 'CONFIRMED'].includes(String(row.status)) && !canAct && <section className="manager-section" id="staff-processing" tabIndex={-1}>
         <h2>Chưa thể xử lý bàn giao</h2>
-        <p>{!assigned ? 'Chỉ nhân viên được phân công mới được xử lý lịch.' : first(readiness, 'reason') || 'Hãy làm mới hồ sơ để kiểm tra điều kiện bàn giao.'}</p>
+        <p>{!assigned ? 'Chỉ nhân viên được phân công mới được xử lý lịch.'
+          : row.cancellationPending === true ? 'Đơn đang được xem xét hủy.' : first(readiness, 'reason') || first(row, 'bookingBlockReason') || (row.bookingReady === false
+            ? 'Đơn đặt kho chưa đủ điều kiện bàn giao.' : 'Làm mới hồ sơ để kiểm tra điều kiện bàn giao.')}</p>
       </section>}
+      </Fragment>
+      {assigned && ['REQUESTED', 'CONFIRMED'].includes(String(row.status)) && <StaffTaskException
+        kind="appointments" id={first(row, 'id')} waiting={row.waitingForManager === true} refresh={data.refresh} />}
       <HandoverNotes row={row} />
       <AppointmentHistory row={row} />
     </>}
   </section>;
 }
 
-function AppointmentHeader({ row, refresh, refreshing }: { row: Row; refresh: () => void; refreshing: boolean }) {
+function CancellationRecovery({ reservationId, refresh }: { reservationId: string; refresh: () => void }) {
+  const lock = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const checks = [['neverUsed', 'Kho chưa từng được sử dụng'], ['unitEmpty', 'Đã kiểm tra kho trống'],
+    ['accessRevoked', 'Đã thu hồi chìa khóa, thẻ và quyền truy cập'], ['equipmentReturned', 'Đã kiểm tra thiết bị thu hồi hoặc chưa giao']] as const;
+  return <section className="manager-section"><h2>Thu hồi quyền truy cập khi hủy đặt kho</h2>
+    <form className="portal-form" onSubmit={async event => {
+      event.preventDefault();
+      if (lock.current) return;
+      const form = new FormData(event.currentTarget);
+      lock.current = true;
+      setBusy(true);
+      setError('');
+      try {
+        await mutate(`/reservations/${encodeURIComponent(reservationId)}/paid-cancellation`, 'POST', {
+          action: 'RECOVER', note: form.get('note'), ...Object.fromEntries(checks.map(([name]) => [name, form.has(name)])),
+        });
+        refresh();
+      } catch (cause) { setError(cause instanceof Error ? cause.message : 'Chưa lưu được xác nhận.'); }
+      finally { lock.current = false; setBusy(false); }
+    }}><fieldset disabled={busy}>
+      {checks.map(([name, label]) => <label key={name} className="portal-checkbox"><input name={name} type="checkbox" required />{label}</label>)}
+      <label>Biên bản hoặc căn cứ kiểm tra<input name="note" minLength={3} maxLength={500} required /></label>
+      <button className="button-primary">Xác nhận đã thu hồi</button>
+    </fieldset></form>
+    {error && <p role="alert">{error}</p>}
+  </section>;
+}
+
+function ConfirmAppointment({ id, refresh, onConfirmed }: { id: string; refresh: () => void; onConfirmed: () => void }) {
+  const lock = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function submit() {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await mutate(`/staff/management/appointments/${encodeURIComponent(id)}/confirm`, 'PATCH');
+      onConfirmed();
+      refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Không xác nhận được lịch.');
+      if (caught instanceof ApiError && [403, 404, 409].includes(caught.status)) refresh();
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+  return <>
+    {error && <p className="booking-alert is-error" role="alert">{error}</p>}
+    <button type="button" className="button-primary" disabled={busy} onClick={() => void submit()}>
+      {busy ? 'Đang xác nhận…' : 'Xác nhận lịch bàn giao'}
+    </button>
+  </>;
+}
+
+function RemainingProducts({ row, id, allowed, onSuccess }: {
+  row: Row; id: string; allowed: boolean; onSuccess: (result: Row) => void;
+}) {
+  const lock = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const confirm = allowed && rows(row.purchasedProducts).some(product => product.fulfillmentStatus === 'RESERVED');
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!confirm || lock.current) return;
+    const deliveredPurchaseIds = new FormData(event.currentTarget).getAll('deliveredPurchaseIds').map(String);
+    if (!deliveredPurchaseIds.length) { setError('Chọn sản phẩm đã bàn giao.'); return; }
+    lock.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await mutate('/staff/appointments/' + encodeURIComponent(id) + '/complete-handover', 'POST', { deliveredPurchaseIds });
+      onSuccess(result);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Không ghi nhận được bàn giao sản phẩm.');
+    } finally { lock.current = false; setBusy(false); }
+  }
+  return <form className="manager-section portal-form" onSubmit={submit}>
+    <PurchasedProducts row={row} confirm={confirm} />
+    {error && <p className="booking-alert is-error" role="alert">{error}</p>}
+    {confirm && <button className="button-primary" disabled={busy}>{busy ? 'Đang lưu…' : 'Xác nhận đã bàn giao sản phẩm'}</button>}
+  </form>;
+}
+
+function AppointmentHeader({ row, refresh, discardAndRefresh, refreshing }: { row: Row; refresh: () => void; discardAndRefresh: () => void; refreshing: boolean }) {
+  const requestConfirmation = useConfirmation();
+  const refreshRecord = async () => {
+    if (document.querySelector('form[data-wdp-submitting="true"]')) return;
+    if (!hasDraft()) { refresh(); return; }
+    if (await requestConfirmation({title:'Làm mới hồ sơ?',description:'Thông tin bàn giao chưa lưu sẽ bị bỏ.',confirmLabel:'Bỏ thay đổi và làm mới',cancelLabel:'Tiếp tục chỉnh sửa',destructive:true})) discardAndRefresh();
+  };
   const units = handoverUnits(row);
   const title = units.length ? `Bàn giao · ${units[0].code}${units.length > 1 ? ` và ${units.length - 1} kho khác` : ''}` : 'Lịch bàn giao';
-  return <PageHeader title={title} status={<Status value={row.status} text={row.status === 'REQUESTED' ? 'Chờ xác nhận' : undefined} />}
+  const scheduled = handoverTime(row.scheduledAt);
+  return <PageHeader title={title} status={<Status value={row.status} text={handoverStatusText(row.status)} />}
     meta={<>{handoverCustomer(row) && <span>{handoverCustomer(row)}</span>}
-      <CopyRecordCode value={first(row, 'appointmentCode')} label="Mã lịch" /></>}>
+      <CopyRecordCode value={first(row, 'appointmentCode')} label="Mã lịch" />
+      {scheduled && <time dateTime={first(row, 'scheduledAt')}>{scheduled}</time>}</>}>
+    <Link className="button-secondary" to="/staff/policies">Tra cứu chính sách</Link>
     <button className="button-secondary" type="button" onClick={() => window.print()}><Printer size={16} />In hồ sơ</button>
-    <button className="button-secondary" type="button" onClick={() => { if (!hasDraft() || window.confirm('Làm mới hồ sơ đang nhập?')) refresh(); }} disabled={refreshing}><RefreshCw size={16} />Làm mới</button>
+    <button className="button-secondary" type="button" onClick={() => void refreshRecord()} disabled={refreshing}><RefreshCw size={16} />Làm mới</button>
   </PageHeader>;
 }
 
@@ -81,20 +199,31 @@ function AppointmentSummary({ row }: { row: Row }) {
   const recipient = handoverRecipient(row);
   const staff = first(row, 'assignedStaff.fullName');
   const actualStaff = first(row, 'completedBy.fullName');
-  const scheduled = handoverTime(row.scheduledAt);
-  const separateRecipient = row.status !== 'COMPLETED' && recipient.name
-    && (recipient.authorized || recipient.name !== handoverCustomer(row));
+  const recipientName = recipient.name || handoverCustomer(row);
   const facts: Array<[string, string]> = [];
-  if (scheduled) facts.push(['Ngày giờ hẹn', scheduled]);
-  if (separateRecipient) facts.push(['Người nhận', recipient.authorized ? `${recipient.name} · Được ủy quyền` : recipient.name]);
+  const reservation = first(row, 'reservation.reference');
+  if (reservation) facts.push(['Đơn đặt kho', reservation]);
+  if (first(row, 'facility.name')) facts.push(['Cơ sở', first(row, 'facility.name')]);
+  const startDates = [...new Set(rows(row.allocatedUnits).map(unit => first(unit, 'contractStartDate')).filter(Boolean))];
+  if (startDates.length) facts.push(['Ngày bắt đầu thuê', startDates.map(value => date(value)).join(' · ')]);
+  if (typeof row.handoverLeadDays === 'number') {
+    facts.push(['Mốc nhận chìa khóa theo hồ sơ', row.handoverLeadDays + ' ngày trước ngày thuê']);
+  }
+  const pickup = first(row, 'earliestPickupDate');
+  if (pickup) facts.push(['Nhận chìa khóa sớm nhất', date(pickup) + ' · Quyền sử dụng bắt đầu từ ngày thuê']);
+  if (row.bookingReady === true) facts.push(['Điều kiện đơn thuê', 'Đã ký hợp đồng và thanh toán hóa đơn ban đầu']);
+  if (row.status !== 'COMPLETED' && recipientName) facts.push(['Người nhận', recipient.authorized ? `${recipientName} · Được ủy quyền` : recipientName]);
   if (staff && (row.status !== 'COMPLETED' || staff !== actualStaff)) facts.push(['Nhân viên bàn giao', staff]);
   return <section className="manager-section staff-handover-summary">
     <h2>Tóm tắt lịch bàn giao</h2>
     {units.length > 0 && <ul className="staff-handover-units" aria-label="Kho và vị trí">
-      {units.map(unit => <li key={unit.id || unit.code}><strong>{unit.code}</strong>{unit.location && <span>{unit.location}</span>}</li>)}
+      {units.map(unit => <li key={unit.id || unit.code}><strong>{unit.code}</strong>
+        {unit.contract && <span>Hợp đồng · {unit.contract}</span>}
+        {unit.location && <span>{unit.location}</span>}
+      </li>)}
     </ul>}
     {facts.length > 0 && <Facts items={facts} />}
-    {!facts.length && !units.length && <p>Chưa có thông tin kho và giờ hẹn.</p>}
+    {!facts.length && !units.length && <p>Chưa có thông tin kho.</p>}
   </section>;
 }
 
@@ -105,6 +234,10 @@ function HandoverResult({ row }: { row: Row }) {
   const performer = first(row, 'completedBy.fullName');
   const checks = rows(report?.unitChecks).filter(unit => unit.inspected === true && first(unit, 'unitCode', 'unitId') && first(unit, 'condition'));
   const condition = report ? handoverCondition(first(report, 'condition')) : '';
+  const photos = Array.isArray(report?.photos) ? report.photos.filter((photo): photo is string =>
+    typeof photo === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(photo)) : [];
+  const links = Array.isArray(report?.photoLinks) ? report.photoLinks.filter((link): link is string =>
+    typeof link === 'string' && /^https:\/\//i.test(link)) : [];
   const confirmed = confirmationSteps.filter(([key]) => report?.[key] === true);
   const facts: Array<[string, string]> = [];
   if (completed) facts.push(['Hoàn tất thực tế', completed]);
@@ -125,6 +258,11 @@ function HandoverResult({ row }: { row: Row }) {
     {confirmed.length > 0 && <ul className="staff-handover-steps" aria-label="Các bước đã xác nhận">
       {confirmed.map(([key, title]) => <li key={key}><Check size={16} aria-hidden="true" />{title}</li>)}
     </ul>}
+    {(photos.length > 0 || links.length > 0) && <section>
+      <h3>Ảnh bàn giao</h3>
+      <div className="staff-handover-photos">{photos.map((photo, i) => <img key={i} src={photo} alt={'Ảnh bàn giao ' + (i + 1)} />)}</div>
+      {links.length > 0 && <ul>{links.map((link, i) => <li key={i}><a href={link} target="_blank" rel="noopener noreferrer">Mở link ảnh {i + 1}</a></li>)}</ul>}
+    </section>}
     {row.usageStatus === 'WAITING_FOR_RENTAL_START' && <p>Kho được kích hoạt khi đến ngày bắt đầu thuê và đủ điều kiện.</p>}
   </section>;
 }

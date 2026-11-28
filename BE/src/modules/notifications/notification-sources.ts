@@ -1,4 +1,4 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
 import type { PublicUser } from '../auth/auth.types.js';
 import { AppointmentsService } from '../appointments/appointments.service.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -10,10 +10,10 @@ import { DepositSettlementsService } from '../deposit-settlements/deposit-settle
 import { MaintenanceService } from '../maintenance/maintenance.service.js';
 import { RenewalsService } from '../renewals/renewals.service.js';
 import { ReturnsService } from '../returns/returns.service.js';
-import { StockMovementsService } from '../stock-movements/stock-movements.service.js';
 import { SupportService } from '../support/support.service.js';
 import { TransfersService } from '../transfers/transfers.service.js';
 import type { NotificationData, NotificationRow } from './notification-content.js';
+import { ActiveRentalsService } from '../rentals-active/active-rentals.service.js';
 
 type Query = { page: number; limit: number };
 type Page = { items: readonly object[]; total: number; limit: number };
@@ -44,33 +44,40 @@ export class NotificationSources {
     private readonly maintenance: MaintenanceService,
     private readonly renewals: RenewalsService,
     private readonly returns: ReturnsService,
-    private readonly stock: StockMovementsService,
     private readonly support: SupportService,
     private readonly transfers: TransfersService,
+    @Optional() private readonly activeRentals?: ActiveRentalsService,
   ) {}
 
   private sources(actor: PublicUser): Record<string, Source> {
     const { id, role } = actor;
-    if (role === 'ADMIN') return { users: q => this.audit.list({ page: String(q.page), limit: String(q.limit), category: 'ACCOUNT_NOTICES' }) };
-    const common: Record<string, Source> = { 'damage-claims': q => this.claims.list(actor, q) };
-    if (role === 'CUSTOMER') return {
+    if (role === "BUSINESS_OPERATIONS_MANAGER") return {};
+    if (role === 'SYSTEM_ADMINISTRATOR') return { users: q => this.audit.list({ page: String(q.page), limit: String(q.limit), category: 'ACCOUNT_NOTICES' },actor) };
+    const common: Record<string, Source> = { 'damage-claims': q => this.claims.list(actor, q), 'closure-relocations': q => this.audit.relocationNotices(actor, q) };
+    if (role === 'STORAGE_CUSTOMER') return {
       ...common,
+      'facility-lifecycle': q => this.audit.facilityLifecycleNotices(actor, q),
       reservations: () => this.booking.listReservations(id),
       'transfer-orders': () => this.transfers.listCustomer(actor),
       invoices: q => this.billing.listCustomerInvoices(id, q.page, q.limit),
       'payment-submissions': q => this.billing.listCustomerPaymentSubmissions(id, q.page, q.limit),
       appointments: q => this.appointments.listCustomerAppointments(id, q),
       renewals: q => this.renewals.listCustomerRenewals(id, q.page, q.limit),
-      'stock-movements': q => this.stock.listCustomer(id, q),
       returns: q => this.returns.listCustomerReturns(id, q),
       'deposit-settlements': q => this.deposits.listCustomer(id, q.page, q.limit),
       'support-requests': q => this.support.listCustomer(id, q),
       contracts: q => this.contracts.listCustomerContracts(id, q),
+      ...(this.activeRentals ? { 'rental-overdue': async (q: Query) => {
+        const page = await this.activeRentals!.listCustomerRentals(id, q);
+        return { ...page, items: page.items.flatMap(row => (row.contracts as NotificationRow[])
+          .filter(contract => !contract.returnInProgress)
+          .map(contract => ({ id: contract.id, contractCode: contract.contractCode, overdueOccupancy: contract.overdueOccupancy,
+            returnNoticeDays: contract.returnNoticeDays, endDate: contract.endDate, reservationId: row.reservationId }))) };
+      } } : {}),
     };
     const operational = { ...common, appointments: (q: Query) => this.appointments.listOperationalAppointments(q, actor) };
-    if (role === 'STAFF') return {
+    if (role === 'FACILITY_STAFF') return {
       ...operational,
-      'stock-movements': q => this.stock.listStaff(actor, q),
       returns: q => this.returns.listStaffReturns(q, actor),
       maintenance: q => this.maintenance.listStaff(q, actor),
       'support-requests': q => this.support.listStaff(q, actor),
@@ -78,14 +85,26 @@ export class NotificationSources {
     };
     return {
       ...operational,
-      'stock-movements': q => this.stock.listManager(q, actor),
-      returns: q => this.returns.listManagerReturns(q),
-      maintenance: q => this.maintenance.listManager(q),
-      'support-requests': q => this.support.listManager(q),
-      transfers: q => this.transfers.list(q),
-      renewals: q => this.renewals.listManagerRenewals(q),
-      invoices: q => this.billing.listManagerInvoices(q),
-      'deposit-settlements': q => this.deposits.listManager(q),
+      ...(this.activeRentals ? { 'rental-overdue': async (q: Query) => {
+        const page = await this.activeRentals!.listManagerRentals(q, actor);
+        return { ...page, items: page.items.flatMap(row => (row.contracts as NotificationRow[])
+          .filter(contract => (contract.overdueOccupancy as { managerReview?: boolean } | null)?.managerReview === true)
+          .map(contract => ({ id: contract.id, contractCode: contract.contractCode, overdueOccupancy: contract.overdueOccupancy, reservationId: row.reservationId }))) };
+      } } : {}),
+      'catalog-changes': q => this.audit.catalogNotices(actor, q),
+      'price-range-changes': q => this.audit.priceRangeNotices(actor, q),
+      'facility-lifecycle': q => this.audit.facilityLifecycleNotices(actor, q),
+      returns: q => this.returns.listManagerReturns(q,actor),
+      reservations: async q => {
+        const page = await this.booking.listManagerReservations(q.page, q.limit, actor);
+        return { ...page, items: page.items.filter(item => 'paidCancellation' in item && item.paidCancellation) };
+      },
+      maintenance: q => this.maintenance.listManager(q,actor),
+      'support-requests': q => this.support.listManager(q,actor),
+      transfers: q => this.transfers.list(q,actor),
+      renewals: q => this.renewals.listManagerRenewals(q, actor),
+      invoices: q => this.billing.listManagerInvoices(q, actor),
+      'deposit-settlements': q => this.deposits.listManager(q, actor),
     };
   }
 

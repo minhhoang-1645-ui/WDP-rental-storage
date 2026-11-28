@@ -1,6 +1,6 @@
 .workspace-themed[data-workspace-role="manager"] {
-  --report-rent: #355a8d;
-  --report-received: #0f766e;
+  --report-rent: var(--workspace-primary);
+  --report-received: var(--workspace-success);
   --manager-reserved: #966019;
   --manager-maintenance: #7158a0;
   --manager-other: #ae375c;
@@ -8,8 +8,6 @@
 }
 
 .workspace-themed[data-workspace-role="manager"][data-workspace-theme="dark"] {
-  --report-rent: #9ebeff;
-  --report-received: #7adbc9;
   --manager-reserved: #ffd996;
   --manager-maintenance: #cfbdf4;
   --manager-other: #f4a6bf;
@@ -28,7 +26,7 @@
   align-items: stretch;
   gap: var(--space-8);
   min-width: 0;
-  min-height: 142px;
+  min-height: 124px;
   padding: var(--panel-padding);
   border-radius: 12px;
 }
@@ -272,16 +270,67 @@
   .workspace-themed[data-workspace-role="manager"] .manager-task-list .portal-search { flex-basis: 100%; max-width: none; }
 }
 
+.workspace-themed[data-workspace-role="manager"] .manager-record-list .manager-task-list .staff-table-options {
+  justify-content: flex-start;
+  align-items: end;
+  gap: 8px 12px;
+}
+.workspace-themed[data-workspace-role="manager"] .manager-record-list .portal-search {
+  flex: 0 1 19rem;
+  min-width: 0;
+}
+.workspace-themed[data-workspace-role="manager"] .manager-record-list .manager-table { table-layout: fixed; min-width: 0; }
+.workspace-themed[data-workspace-role="manager"] .manager-record-list .manager-table :is(th, td) {
+  padding: 8px 9px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.workspace-themed[data-workspace-role="manager"] .manager-record-list .manager-table :is(th, td):last-child {
+  width: 15%;
+}
+.manager-record-list .manager-table small { display: block; font-size: var(--type-meta); }
+.manager-record-list .manager-table small.staff-table-description { display: -webkit-box; min-width: 0; }
+.manager-record-list .manager-table .manager-status { max-width: 100%; }
+.workspace-themed[data-workspace-role="manager"] .manager-record-list .manager-task-list .manager-record-action {
+  min-height: 32px;
+  max-width: 100%;
+  padding: 5px 8px;
+  font-size: var(--type-meta);
+  text-align: center;
+  white-space: normal;
+}
+.manager-record-list .manager-table td .record-code { margin: 0; flex-wrap: nowrap; gap: 3px; }
+.manager-record-list .record-code > span { min-width: 0; }
+.manager-record-list .manager-table td .record-copy { flex: none; min-width: 24px; min-height: 24px; width: 24px; height: 24px; }
+.manager-record-note { margin: 0 0 10px; color: var(--workspace-secondary); font-size: var(--type-meta); }
+@media (hover: hover) and (pointer: fine) {
+  .manager-record-list .record-copy:not(:focus-visible) { opacity: 0; }
+  .manager-record-list .manager-table tr:hover .record-copy,
+  .manager-record-list .manager-table tr:focus-within .record-copy { opacity: 1; }
+}
+@media (max-width: 680px) {
+  .workspace-themed[data-workspace-role="manager"] .manager-record-list .manager-table { min-width: 580px; }
+  .workspace-themed[data-workspace-role="manager"] .manager-record-list .portal-search { flex-basis: 100%; }
+}
+
 /* Manager assignments and physical unit screens. */
-.manager-assignment-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-.manager-assignment-tabs button[aria-pressed="true"] { border-color: var(--workspace-primary); background: var(--workspace-selected); color: var(--workspace-primary); }
 .workspace-themed[data-workspace-role="manager"] .manager-assignments .manager-task-list .staff-table-options { display: block; }
-.manager-assignment-filters { display: grid; grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.manager-assignment-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr)); align-items: end; gap: 10px 12px; }
 .manager-assignments .manager-assignment-filters .portal-search { width: 100%; max-width: none; }
-.manager-assignment-filter-more { grid-column: 1 / -1; }
-.manager-assignment-filter-more > summary { cursor: pointer; width: fit-content; color: var(--workspace-primary); }
-.manager-assignment-filter-more > div { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 12px; margin-top: 10px; }
-.manager-assign-trigger { display: block; margin-top: 4px; }
+.manager-assignment-filters :is(input, select) { min-width: 0; text-overflow: ellipsis; }
+.manager-assignments .manager-table { min-width: 960px; table-layout: fixed; }
+.workspace-themed .manager-assignments .manager-table :is(th, .staff-table-sort) { white-space: normal; text-align: start; }
+.manager-assignments .manager-table :is(th:first-child, th:last-child) { width: 19%; }
+.manager-assignments .manager-table th:nth-child(4) { width: 13%; }
+.manager-assignments .manager-table th:nth-child(5) { width: 12%; }
+.manager-assignments .manager-table th:nth-child(6) { width: 15%; }
+.manager-assignments .assignment-related-record { display: block; color: var(--workspace-primary); font-size: var(--type-meta); }
+.manager-assignments .work-row-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.workspace-themed .manager-assignments .work-row-actions :is(.button-primary, .button-secondary) {
+  min-height: 34px;
+  padding: 6px 9px;
+  font-size: var(--type-meta);
+}
 .manager-unit-assignments-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-bottom: 14px; }
 .manager-unit-assignments-toolbar .portal-search { flex: 1 1 16rem; max-width: 420px; }
 .manager-unit-assignments .staff-table-options:empty { display: none; }
@@ -296,32 +345,35 @@
 .manager-unit-list .staff-table-options select { min-width: 0; text-overflow: ellipsis; }
 .workspace-themed[data-workspace-role="manager"] .manager-unit-list .manager-task-list .manager-table td:last-child { width: auto; }
 .manager-unit-list .record-code-value { font-weight: 600; color: var(--workspace-text); }
-.manager-unit-detail .manager-section .manager-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.manager-unit-detail .manager-section .manager-facts { grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); }
 .workspace-themed .manager-unit-list .manager-status.is-occupied, .workspace-themed .manager-unit-detail .manager-status.is-occupied { color: var(--report-rent); }
 .workspace-themed .manager-unit-list .manager-status.is-available, .workspace-themed .manager-unit-detail .manager-status.is-available { color: var(--report-received); }
 .workspace-themed .manager-unit-list .manager-status.is-reserved, .workspace-themed .manager-unit-detail .manager-status.is-reserved { color: var(--manager-reserved); }
 .workspace-themed .manager-unit-list .manager-status.is-maintenance, .workspace-themed .manager-unit-detail .manager-status.is-maintenance { color: var(--manager-maintenance); }
-.workspace-themed .portal-dialog.inventory-unit-dialog { width: min(680px, calc(100vw - 24px)); }
-.inventory-unit-dialog fieldset { display: grid; gap: 12px; min-width: 0; }
-.inventory-unit-dialog h3 { margin: 0; font-size: 1rem; }
-.inventory-unit-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
-.inventory-type-preview { margin: 0; color: var(--workspace-secondary); font-size: .875rem; }
 .assignment-dialog .staff-assignee-picker { min-height: 0; }
-.assignment-dialog .assignment-staff-list { max-height: min(32dvh, 19rem); overflow: auto; overscroll-behavior: contain; padding: 4px; }
+.assignment-dialog .assignment-staff-list { padding: 4px; }
 .assignment-dialog .assignment-staff-option { grid-template-columns: auto minmax(0, 1fr) auto; padding: 6px 8px; }
 .assignment-dialog .assignment-staff-option > small { grid-column: auto; text-align: end; }
 @media (max-width: 650px) {
   .manager-assignment-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .manager-assignment-filters > .portal-search { grid-column: 1 / -1; }
-  .inventory-unit-fields { grid-template-columns: minmax(0, 1fr); }
   .workspace-themed[data-workspace-role="manager"] .manager-unit-list .staff-table-options > .portal-search { flex-basis: 100%; }
-}
-@media (min-height: 580px) {
-  .assignment-dialog :is(.portal-dialog-body, .portal-form, .staff-assignee-picker) { display: flex; flex-direction: column; min-height: 0; }
-  .assignment-dialog .portal-dialog-body { overflow: hidden; }
-  .assignment-dialog .portal-dialog-body > :not(.portal-form), .assignment-dialog .staff-assignee-picker > :not(fieldset) { flex-shrink: 0; }
-  .assignment-dialog .assignment-staff-list { min-height: 0; }
 }
 @media print {
   .manager-unit-detail .record-disclosure::details-content { content-visibility: visible; }
+}
+.workspace-themed .portal-dialog.inventory-type-dialog { width: min(720px, calc(100vw - 24px)); }
+.inventory-type-dialog fieldset, .inventory-type-image { display: grid; gap: 12px; min-width: 0; }
+.inventory-type-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.inventory-type-dimensions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.inventory-type-dialog .portal-form .inventory-type-grid .field-label { min-width: 0; margin: 0; }
+.inventory-type-dialog .portal-form .inventory-type-toggle { display: flex; align-items: center; gap: 9px; }
+.inventory-type-dialog .portal-form .inventory-type-toggle input { width: 1.125rem; min-height: 0; height: 1.125rem; margin: 0; accent-color: var(--workspace-primary); }
+.inventory-type-image { padding: 12px; border: 1px solid var(--workspace-border); border-radius: 10px; }
+.inventory-type-image h3 { margin: 0; font-size: 1rem; }
+.inventory-type-image input[type="file"] { overflow: hidden; }
+.inventory-type-preview-row { display: flex; align-items: center; gap: 10px; }
+.inventory-type-preview-row img { width: 96px; height: 68px; object-fit: cover; border-radius: 8px; }
+@media (max-width: 560px) {
+  .inventory-type-grid:not(.inventory-type-dimensions) { grid-template-columns: minmax(0, 1fr); }
 }

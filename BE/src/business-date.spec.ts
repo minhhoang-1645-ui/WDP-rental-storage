@@ -19,8 +19,8 @@ describe('Vietnam facility calendar boundaries, without a live database', () => 
   });
   it('pricing and booking both reject yesterday immediately after Vietnamese midnight', async () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-05T17:00:00Z'));
-    const product = { id: 'type', name: 'Kho', sizeId: 'small', monthlyRate: new Prisma.Decimal(650000), allowDailyRental: true, minRentalDays: 1 };
-    const prisma = { storageType: { findUnique: vi.fn(async () => product) } };
+    const product = { id: 'type', facilityId:'facility', name: 'Kho', sizeId: 'small', monthlyRate: new Prisma.Decimal(650000), allowDailyRental: true, minRentalDays: 1 };
+    const prisma = { storageType: { findUnique: vi.fn(async () => product) }, facility:{findUnique:vi.fn().mockResolvedValue({bookingEnabled:true,operationalStatus:'OPEN'})}, businessRule:{findMany:vi.fn().mockResolvedValue([]),findFirst:vi.fn().mockResolvedValue({ value: { min: 500_000, max: 800_000 } })} };
     const pricing = new PricingService(prisma as never), booking = new BookingService(prisma as never);
     const input = { storageTypeId: 'type', startDate: '2026-11-05', endDate: '2027-02-05', quantity: 1, paymentPlan: 'PAY_MONTHLY' };
     await expect(pricing.quote(input)).rejects.toThrow('quá khứ');
@@ -39,8 +39,8 @@ describe('Vietnam facility calendar boundaries, without a live database', () => 
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-05T17:00:00Z'));
     const count = vi.fn(async () => 0), findMany = vi.fn(async () => []);
     const prisma = { rentalContract: { findMany }, reservation: { count }, handoverAppointment: { count }, renewalRequest: { count }, supportRequest: { count }, storageUnit: { count }, depositSettlement: { count } };
-    await new ManagerService(prisma as never).dashboardSummary();
+    await new ManagerService(prisma as never).dashboardSummary({id:"manager",role:'FACILITY_MANAGER',fullName:'Isolated test',email:'test@example.test',phone:''});
     expect(findMany.mock.calls).toHaveLength(2);
-    expect(findMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: { status: 'ACTIVE', endDate: { lte: new Date('2026-11-06T00:00:00Z') } } }));
+    expect(findMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'ACTIVE', endDate: { lte: new Date('2026-11-06T00:00:00Z') }, reservationUnit: {storageUnit:{storageType:{facility:expect.any(Object)}}} }) }));
   });
 });

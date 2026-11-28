@@ -36,8 +36,25 @@ describe('Shared storage catalog and database inventory', () => {
     expect((await storage.list({})).items).toHaveLength(catalog.products.length);
   });
 
+  it('returns a public facility directory and keeps scoped catalog and unit selection consistent', async () => {
+    const catalog = await booking.getCatalog();
+    const product = catalog.products[0];
+    const facilityId = String(product.facilityId);
+    expect(catalog.facilities).toEqual(expect.arrayContaining([expect.objectContaining({
+      id: facilityId, operationalStatus: 'OPEN', bookingEnabled: true,
+    })]));
+    const scoped = await booking.getCatalog(facilityId);
+    expect(scoped.facilityId).toBe(facilityId);
+    expect(scoped.products.length).toBeGreaterThan(0);
+    expect(scoped.products.every(item => item.facilityId === facilityId)).toBe(true);
+    expect(scoped.addons.every(item => item.facilityId === facilityId)).toBe(true);
+    await expect(booking.getUnitMap({
+      productId: product.id, facilityId: 'different-facility',
+    })).rejects.toThrow('Loại kho không thuộc cơ sở đã chọn.');
+  });
+
   it('filters by product type and full-period availability', async () => {
-    const result = await storage.list({ size: 'small', type: 'standard', date: start(), duration: '1' });
+    const result = await storage.list({ size: 'small', type: 'standard', date: start(), duration: '5' });
     expect(result.checkedPeriod).toBe(true);
     expect(result.items.map((item) => item.id)).toContain('sm-b12');
   });
@@ -59,7 +76,7 @@ describe('Shared storage catalog and database inventory', () => {
   });
 
   it('rejects invalid filters, impossible dates and missing products', async () => {
-    for (const query of [{ size: 'unknown' }, { type: 'unknown' }, { duration: '2' }, { date: ['2030-01-01'] }, { date: '2099-02-30', size: 'locker', type: 'climate' }]) {
+    for (const query of [{ size: 'unknown' }, { type: 'unknown' }, { duration: '0' }, { duration: '1.5' }, { duration: '-2' }, { date: ['2030-01-01'] }, { date: '2099-02-30', size: 'locker', type: 'climate' }]) {
       await expect(storage.list(query)).rejects.toBeInstanceOf(BadRequestException);
     }
     await expect(storage.get('missing')).rejects.toBeInstanceOf(NotFoundException);

@@ -19,11 +19,6 @@ export const staffWorkGroups = [
     description: "Xác nhận lịch khách đề xuất và bàn giao đúng giờ.",
   },
   {
-    resource: "stock-movements",
-    title: "Nhập – xuất hàng",
-    description: "Kiểm đếm phiếu được giao; tồn chỉ đổi sau khi hoàn tất.",
-  },
-  {
     resource: "renewals",
     title: "Gia hạn kho",
     description: "Đối chiếu hạn cũ – mới và báo giá trước khi duyệt.",
@@ -82,8 +77,6 @@ export function staffNeedsAction(
       return ["REQUESTED", "INSPECTION_IN_PROGRESS", "ISSUE_FOUND"].includes(
         status,
       );
-    case "stock-movements":
-      return status === "ASSIGNED" && assignee(row) === userId;
     case "support-requests":
       return !isEarlyReturnRequest(row) && ["ASSIGNED", "IN_PROGRESS"].includes(status) && assignee(row) === userId;
     case "maintenance":
@@ -96,7 +89,7 @@ export function staffNeedsAction(
 export function awaitingAssignment(resource: string, row: WorkRow) {
   return (
     !(resource === "support-requests" && isEarlyReturnRequest(row)) &&
-    ["support-requests", "maintenance", "stock-movements", "appointments"].includes(resource) &&
+    ["support-requests", "maintenance", "appointments"].includes(resource) &&
     ["OPEN", "REQUESTED", "CONFIRMED"].includes(String(row.status)) &&
     !assignee(row)
   );
@@ -107,7 +100,7 @@ export function assignmentNeedsAttention(resource: string, row: WorkRow) {
   if (awaitingAssignment(resource, row)) return true;
   const person = row.assignedStaff;
   const disabled = person && typeof person === "object" && (person as WorkRow).accountStatus === "DISABLED";
-  const states = resource === "support-requests" ? ["ASSIGNED", "IN_PROGRESS"] : resource === "maintenance" ? ["OPEN", "IN_PROGRESS"] : resource === "stock-movements" ? ["ASSIGNED"] : resource === "appointments" ? ["REQUESTED", "CONFIRMED"] : [];
+  const states = resource === "support-requests" ? ["ASSIGNED", "IN_PROGRESS"] : resource === "maintenance" ? ["OPEN", "IN_PROGRESS"] : resource === "appointments" ? ["REQUESTED", "CONFIRMED"] : [];
   return Boolean(disabled && !isEarlyReturnRequest(row) && states.includes(String(row.status)));
 }
 

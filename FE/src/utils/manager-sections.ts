@@ -3,6 +3,8 @@ export const managerStorageLabels = {
   catalog: { title: 'Loại kho & đơn giá', description: 'Quản lý loại kho, kích thước và giá thuê.' },
 } as const;
 
+export const managerRefundTitle = 'Hoàn tiền';
+
 /** Management destinations only. Daily customer operations belong to Staff. */
 export const managerSections = {
   reviews: {
@@ -15,11 +17,11 @@ export const managerSections = {
     ],
   },
   finance: {
-    title: 'Tài chính', description: 'Theo dõi hóa đơn, khoản đã thu, tiền còn thiếu và tiền cọc.',
+    title: 'Tài chính', description: 'Theo dõi hóa đơn, khoản đã thu, tiền còn thiếu và các khoản hoàn.',
     items: [
-      { title: 'Hóa đơn & khoản phải thu', description: 'Xem tiền còn thiếu và ghi nhận khoản đã nhận.', web: '/manager/operations/invoices', mobile: '/manager/invoices' },
-      { title: 'Xử lý tiền cọc', description: 'Duyệt khoản khấu trừ và tiền hoàn sau khi kiểm tra kho.', web: '/manager/operations/deposit-settlements', mobile: '/manager/deposit-settlements' },
-      { title: 'Lịch sử thu tiền', description: 'Tra cứu các khoản thu đã ghi nhận.', web: '/manager/operations/payments', mobile: '/manager/payments' },
+      { title: 'Hóa đơn', description: 'Xem số dư, khoản đã nhận và giao dịch liên quan đến hóa đơn.', web: '/manager/operations/invoices', mobile: '/manager/invoices' },
+      { title: 'Khoản thu', description: 'Tra cứu các khoản đã thu và xử lý giao dịch cần xác minh hoặc đối soát.', web: '/manager/operations/payments', mobile: '/manager/payments' },
+      { title: managerRefundTitle, description: 'Xem và ghi nhận hoàn tiền cọc, tiền thuê và dịch vụ sau khi nhận lại kho.', web: '/manager/operations/deposit-settlements', mobile: '/manager/deposit-settlements' },
     ],
   },
   'rental-records': {
@@ -31,17 +33,16 @@ export const managerSections = {
     ],
   },
   facility: {
-    title: 'Kho & hàng hóa', description: 'Quản lý danh sách kho, giá thuê, vật tư và thiết bị.',
+    title: 'Kho và dịch vụ bổ trợ', description: 'Quản lý danh sách kho, giá thuê, vật tư và thiết bị.',
     items: [
       { ...managerStorageLabels.units, web: '/manager/units', mobile: '/manager/units' },
-      { title: 'Hàng đang lưu theo kho', description: 'Xem vị trí, số lượng hàng và kết quả nhân viên kiểm đếm.', web: '/manager/stored-items', mobile: '/manager/stock-movements' },
     ],
   },
 } as const;
 export type ManagerSection = keyof typeof managerSections;
 export const managerPrimaryMenu = [
   { title: 'Tổng quan', key: '' }, { title: managerSections.reviews.title, key: 'reviews' },
-  { title: 'Phân công nhân viên', key: 'assignments' }, { title: 'Tài chính', key: 'finance' },
-  { title: 'Kho & hàng hóa', key: 'facility' }, { title: 'Hợp đồng & khách hàng', key: 'rental-records' },
+  { title: 'Điều phối công việc', key: 'assignments' }, { title: 'Tài chính', key: 'finance' },
+  { title: 'Kho và dịch vụ bổ trợ', key: 'facility' }, { title: 'Hợp đồng & khách hàng', key: 'rental-records' },
   { title: 'Dịch vụ & bảng giá', key: 'catalog' }, { title: 'Báo cáo', key: 'reports' },
 ] as const;

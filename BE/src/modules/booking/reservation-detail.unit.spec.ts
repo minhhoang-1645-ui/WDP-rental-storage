@@ -2,7 +2,7 @@ import type { PublicUser } from '../auth/auth.types.js';
 import { reservationWorkflow } from './reservation-detail.js';
 
 const customer = { id: 'customer', fullName: 'Khách thuê' };
-const staff = { id: 'staff', role: 'STAFF' } as PublicUser;
+const staff = { id: 'staff', role: 'FACILITY_STAFF' } as PublicUser;
 const createdAt = new Date('2026-11-15T02:00:00Z');
 const confirmedAt = new Date('2026-11-15T03:00:00Z');
 const signedAt = new Date('2026-11-15T04:00:00Z');
@@ -22,7 +22,7 @@ function confirmed() {
     appointments: [{
       id: 'private-appointment', appointmentCode: 'A01', status: 'CONFIRMED', scheduledAt, createdAt,
       confirmedAt, completedAt: null, assignedStaffUserId: staff.id, completedByUserId: null,
-      assignedStaff: { accountStatus: 'ACTIVE', role: 'STAFF' }, requestedBy: customer, confirmedBy: { fullName: 'Nhân viên' }, completedBy: null,
+      assignedStaff: { accountStatus: 'ACTIVE', role: 'FACILITY_STAFF' }, requestedBy: customer, confirmedBy: { fullName: 'Nhân viên' }, completedBy: null,
     }],
   };
 }

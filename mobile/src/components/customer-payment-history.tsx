@@ -11,7 +11,7 @@ import { invoiceStyles as s } from './customer-invoice-styles';
 import { EmptyState, ErrorState, LoadingState } from './screen-state';
 
 const endpoint = '/customer/payments';
-const methodNames: Record<string, string> = { VNPAY: 'VNPay', BANK_TRANSFER: 'Chuyển khoản', CASH: 'Tiền mặt' };
+const methodNames: Record<string, string> = { PAYOS: 'payOS', VNPAY: 'VNPay', BANK_TRANSFER: 'Chuyển khoản', CASH: 'Tiền mặt' };
 const descriptions: Record<string, string> = {
   INITIAL: 'Thanh toán hóa đơn ban đầu', RECURRING: 'Thanh toán tiền thuê', RENEWAL: 'Thanh toán gia hạn', SETTLEMENT: 'Thanh toán quyết toán',
 };

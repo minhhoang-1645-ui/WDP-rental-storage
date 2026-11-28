@@ -1,7 +1,7 @@
-import { safeLocalStorage } from '../services/browser-storage';
+import { safeLocalStorage, safeSessionStorage } from '../services/browser-storage';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useAuth } from '../auth/auth-context';
-import { apiRequest } from '../services/api';
+import { ApiError, apiRequest } from '../services/api';
 import { allPages } from '../services/portal';
 import { DATA_CHANGED, LIVE_REFRESH, markFormDirty } from '../services/live-events';
 import { activitySources, buildActivity, type ActivityData, type ActivityRole, type ActivityRow } from '../utils/activity';
@@ -15,6 +15,14 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
   return user ? <ActivitySession key={`${user.id}:${user.role}`} userId={user.id} role={user.role}>{children}</ActivitySession> : children;
 }
 function ActivitySession({ children, userId, role }: { children: ReactNode; userId: string; role: ActivityRole }) {
+  const [facility, setFacility] = useState(() => role === 'FACILITY_MANAGER' ? safeSessionStorage.getItem('nestbox-manager-facility') ?? '' : '');
+  useEffect(() => {
+    if (role !== 'FACILITY_MANAGER') return;
+    const changed = () => setFacility(safeSessionStorage.getItem('nestbox-manager-facility') ?? '');
+    window.addEventListener('nestbox-manager-facility-change', changed);
+    changed();
+    return () => window.removeEventListener('nestbox-manager-facility-change', changed);
+  }, [role]);
   const storageKey = `wdp-activity-read:${userId}:${role}`;
   const [read, setRead] = useState(() => storedRead(storageKey));
   const [state, setState] = useState<{ data: ActivityData; checkedAt: number; failed: string[]; checking: boolean }>({ data: {}, checkedAt: 0, failed: [], checking: true });
@@ -30,6 +38,8 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
   }, [storageKey]);
   useEffect(() => {
     const controller = new AbortController(), sources = activitySources(role);
+    setState({ data: {}, checkedAt: 0, failed: [], checking: Boolean(role !== 'FACILITY_MANAGER' || facility) });
+    if (role === 'FACILITY_MANAGER' && !facility) return;
     const sessionToken = safeLocalStorage.getItem(AUTH_TOKEN_KEY);
     const snapshot: ActivityData = {}; let running = false, initialized = false, queued = false, timer: ReturnType<typeof setTimeout>;
     const load = async () => {
@@ -47,7 +57,14 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
           if (!Array.isArray(rows)) throw new Error('Danh sách không hợp lệ');
           if (initialized && JSON.stringify(snapshot[source.kind]) !== JSON.stringify(rows)) changed.push(source.path);
           snapshot[source.kind] = rows;
-        } catch { if (!controller.signal.aborted) failed.push(source.title); }
+        } catch (error) {
+          if (controller.signal.aborted) continue;
+          if (role === 'FACILITY_STAFF' && error instanceof ApiError && [401, 403, 404].includes(error.status)) {
+            if (snapshot[source.kind]?.length) changed.push(source.path);
+            delete snapshot[source.kind];
+          }
+          failed.push(source.title);
+        }
       } };
       await Promise.all([worker(), worker(), worker()]);
       if (controller.signal.aborted) return;
@@ -61,12 +78,17 @@ function ActivitySession({ children, userId, role }: { children: ReactNode; user
     const resume = () => { if (document.visibilityState !== 'hidden') void load(); };
     const mutation = () => { clearTimeout(timer); timer = setTimeout(() => { void load().finally(schedule); }, 400); };
     const crossTab = (event: StorageEvent) => { if (event.key === DATA_PULSE_KEY && event.newValue) mutation(); };
-    const dirty = (event: Event) => { const target = event.target; if (target instanceof Element) { const form = target.closest('form'); if (form) markFormDirty(form); } };
+    const dirty = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Element) || target.closest('[data-wdp-ignore-dirty]')) return;
+      const form = target.closest('form');
+      if (form) markFormDirty(form);
+    };
     const submit = (event: Event) => { if (event.target instanceof HTMLFormElement && event.target.dataset.wdpDraft !== 'ignore') event.target.setAttribute('data-wdp-submitting', 'true'); };
     document.addEventListener('input', dirty, true); document.addEventListener('change', dirty, true); document.addEventListener('submit', submit, true);
     document.addEventListener('visibilitychange', resume); window.addEventListener('online', resume); window.addEventListener('offline', resume); window.addEventListener('focus', resume); window.addEventListener(DATA_CHANGED, mutation); window.addEventListener('storage', crossTab);
     void load().finally(schedule);
     return () => { controller.abort(); clearTimeout(timer); document.removeEventListener('input', dirty, true); document.removeEventListener('change', dirty, true); document.removeEventListener('submit', submit, true); document.removeEventListener('visibilitychange', resume); window.removeEventListener('online', resume); window.removeEventListener('offline', resume); window.removeEventListener('focus', resume); window.removeEventListener(DATA_CHANGED, mutation); window.removeEventListener('storage', crossTab); };
-  }, [role, userId]);
+  }, [role, userId, facility]);
   return <ActivityContext.Provider value={{ data: state.data, entries: buildActivity(role, userId, state.data), read, loading: !state.checkedAt, checking: state.checking, checkedAt: state.checkedAt, failed: state.failed, refresh, markRead }}>{children}</ActivityContext.Provider>;
 }

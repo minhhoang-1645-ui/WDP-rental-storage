@@ -105,3 +105,9 @@
   padding-inline: .3rem;
   font-weight: 600;
 }
+
+.staff-handover-photos { display: flex; flex-wrap: wrap; gap: 10px; }
+.staff-handover-photos img { width: min(100%, 210px); aspect-ratio: 4 / 3; object-fit: contain; border: 1px solid var(--workspace-border); border-radius: 8px; }
+
+.staff-maintenance-result { max-width: 760px; }
+.staff-maintenance-result > .button-primary { justify-self: start; }

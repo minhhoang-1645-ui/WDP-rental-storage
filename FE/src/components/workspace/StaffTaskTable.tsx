@@ -7,7 +7,7 @@ import { safeSessionStorage } from '../../services/browser-storage';
 import { TableSkeleton } from '../LoadingSkeleton';
 
 
-export function TablePopover({ name, trigger, children }: { name: string; trigger: ReactNode; children: ReactNode }) {
+export function TablePopover({ name, trigger, children, panelClassName = '' }: { name: string; trigger: ReactNode; children: ReactNode; panelClassName?: string }) {
   const id = useId();
   const panel = useRef<HTMLDivElement>(null);
   return <>
@@ -25,7 +25,7 @@ export function TablePopover({ name, trigger, children }: { name: string; trigge
         popup.style.bottom = openUp ? `${window.innerHeight - box.top + 5}px` : 'auto';
         popup.style.maxHeight = `${Math.max(44, (openUp ? above : below) - 13)}px`;
       }}>{trigger}</button>
-    <div ref={panel} id={id} className="staff-table-popover" popover="auto">{children}</div>
+    <div ref={panel} id={id} className={`staff-table-popover ${panelClassName}`.trim()} popover="auto">{children}</div>
   </>;
 }
 

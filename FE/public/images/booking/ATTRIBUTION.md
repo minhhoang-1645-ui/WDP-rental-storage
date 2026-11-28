@@ -5,3 +5,5 @@
 - No competitor imagery, logos, trademarks or proprietary 3D assets are included.
 - The atlas is reused as a CSS sprite so the browser downloads one optimized JPEG atlas instead of four separate card images.
 
+- `self-storage-corridor.jpg` is [A row of storage units with yellow doors](https://unsplash.com/photos/a-row-of-storage-units-with-yellow-doors-9OfBsfty2x4) by Aga Adamek, used under the [Unsplash License](https://unsplash.com/license). The photo illustrates the type of space.
+

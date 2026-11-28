@@ -1,10 +1,13 @@
 export interface AdditionalService {
+  minimumRentalMonths?: number | null;
+  facilityId?:string|null;
   id: string;
   code: string;
   name: string;
   description: string | null;
   kind: 'PURCHASE' | 'RENTAL';
   billingUnit: 'ONE_TIME' | 'DAY' | 'MONTH';
+  physicalUnit?: string | null;
   unitPrice: number | null;
   isActive?: boolean;
   imageUrl?: string | null;

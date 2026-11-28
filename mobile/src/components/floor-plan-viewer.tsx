@@ -1,24 +1,95 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { ReduceMotion, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
-import { WdpColors, WdpRadius, WdpSpacing } from '@/constants/wdp-theme';
+import { useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Check, Maximize, Minus, Plus, RotateCcw, X } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import { WdpColors as C } from '@/constants/wdp-theme';
+import { bookingBlue as blue } from './booking-header';
 
 export type FloorPlanUnit = { id: string; code: string; status: 'AVAILABLE' | 'RESERVED' | 'OCCUPIED' | 'MAINTENANCE'; available: boolean; floor: string | null; zone: string | null; row: number | null; position: number | null };
-const fills: Record<FloorPlanUnit['status'], string> = { AVAILABLE: WdpColors.successBackground, RESERVED: WdpColors.warningBackground, OCCUPIED: WdpColors.surfaceSecondary, MAINTENANCE: WdpColors.dangerBackground };
-const inks: Record<FloorPlanUnit['status'], string> = { AVAILABLE: WdpColors.success, RESERVED: WdpColors.warning, OCCUPIED: WdpColors.muted, MAINTENANCE: WdpColors.danger };
+const fills = { AVAILABLE: '#DCF4E6', RESERVED: '#FFF0CF', OCCUPIED: '#EDF0F4', MAINTENANCE: '#FBE4E6' };
+const labels = { AVAILABLE: 'Còn trống', RESERVED: 'Đã giữ', OCCUPIED: 'Đang dùng', MAINTENANCE: 'Bảo trì' };
 
-/** Maps configured row/position values only; it never invents a physical layout. */
-export function FloorPlanViewer({ units, selectedIds = [], onPress }: { units: FloorPlanUnit[]; selectedIds?: string[]; onPress?: (unit: FloorPlanUnit) => void }) {
-  const reducedMotion = useReducedMotion(); const scale = useSharedValue(1), translateX = useSharedValue(0), translateY = useSharedValue(0), startScale = useSharedValue(1), startX = useSharedValue(0), startY = useSharedValue(0);
-  const pan = Gesture.Pan().onBegin(() => { startX.set(translateX.get()); startY.set(translateY.get()); }).onUpdate(event => { translateX.set(startX.get() + event.translationX); translateY.set(startY.get() + event.translationY); });
-  const pinch = Gesture.Pinch().onBegin(() => { startScale.set(scale.get()); }).onUpdate(event => { scale.set(Math.max(1, Math.min(2.4, startScale.get() * event.scale))); }).onEnd(() => { if (scale.get() < 1.05) scale.set(withSpring(1, { duration: 400, dampingRatio: 0.8, reduceMotion: ReduceMotion.System })); });
-  const transform = useAnimatedStyle(() => ({ transform: [{ translateX: reducedMotion ? 0 : translateX.get() }, { translateY: reducedMotion ? 0 : translateY.get() }, { scale: reducedMotion ? 1 : scale.get() }] }));
-  const positioned = units.filter(unit => unit.row !== null && unit.position !== null);
-  if (!units.length || !positioned.length) return <View style={styles.empty}><Text style={styles.emptyTitle}>Chưa có sơ đồ có thể hiển thị</Text><Text style={styles.emptyCopy}>Cơ sở này chưa có hàng và vị trí vận hành cho các kho, nên ứng dụng không tự vẽ sơ đồ giả.</Text></View>;
-  const maxRow = Math.max(...positioned.map(unit => unit.row ?? 1)), maxPosition = Math.max(...positioned.map(unit => unit.position ?? 1));
-  return <View style={styles.wrapper}><View style={styles.hint}><Text style={styles.hintText}>Chụm để phóng to · kéo để xem · chạm vào kho để chọn</Text><Pressable accessibilityRole="button" onPress={() => { scale.set(withSpring(1, { duration: 400, dampingRatio: 1, reduceMotion: ReduceMotion.System })); translateX.set(withSpring(0, { duration: 400, dampingRatio: 1, reduceMotion: ReduceMotion.System })); translateY.set(withSpring(0, { duration: 400, dampingRatio: 1, reduceMotion: ReduceMotion.System })); }}><Text style={styles.reset}>Đặt lại</Text></Pressable></View><GestureDetector gesture={Gesture.Simultaneous(pan, pinch)}><View accessibilityLabel="Sơ đồ kho" style={styles.viewport}><Animated.View style={[styles.canvas, transform]}>{positioned.map(unit => { const chosen = selectedIds.includes(unit.id); return <Pressable key={unit.id} accessibilityRole="button" accessibilityState={{ selected: chosen, disabled: !unit.available }} accessibilityLabel={`${unit.code}, ${chosen ? 'đang chọn' : unit.status}`} disabled={!unit.available} onPress={() => onPress?.(unit)} style={({ pressed }) => [styles.unit, { left: `${((unit.position! - 1) / maxPosition) * 100 + 1}%`, top: `${((unit.row! - 1) / maxRow) * 100 + 2}%`, width: `${Math.max(13, 86 / maxPosition)}%`, height: `${Math.max(18, 82 / maxRow)}%`, backgroundColor: chosen ? WdpColors.teal : fills[unit.status], borderColor: chosen ? WdpColors.navyStrong : inks[unit.status] }, pressed && unit.available && { opacity: 0.75 }]}><Text numberOfLines={1} style={[styles.unitText, { color: chosen ? WdpColors.surface : inks[unit.status] }]}>{unit.code}</Text><Text numberOfLines={1} style={[styles.unitMeta, { color: chosen ? WdpColors.surface : inks[unit.status] }]}>{unit.zone ?? 'Khu chưa gắn'}</Text></Pressable>; })}</Animated.View></View></GestureDetector></View>;
+export function FloorPlanViewer({ units, selectedIds = [], onPress, compact = false, fullscreen = false }: {
+  units: FloorPlanUnit[]; selectedIds?: string[]; onPress?: (unit: FloorPlanUnit) => void; compact?: boolean;
+  fullscreen?: boolean;
+}) {
+  const [width, setWidth] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const scale = useSharedValue(1), x = useSharedValue(0), y = useSharedValue(0);
+  const initialScale = useSharedValue(1), initialX = useSharedValue(0), initialY = useSharedValue(0);
+  const pinch = Gesture.Pinch().onBegin(() => { initialScale.set(scale.get()); })
+    .onUpdate(event => { scale.set(Math.max(1, Math.min(2.4, initialScale.get() * event.scale))); });
+  const pan = Gesture.Pan().minDistance(8).onBegin(() => { initialX.set(x.get()); initialY.set(y.get()); })
+    .onUpdate(event => { if (scale.get() > 1) { x.set(initialX.get() + event.translationX); y.set(initialY.get() + event.translationY); } });
+  const transform = useAnimatedStyle(() => ({ transform: [{ translateX: scale.get() === 1 ? 0 : x.get() }, { translateY: scale.get() === 1 ? 0 : y.get() }, { scale: scale.get() }] }));
+  const positions = units.filter(unit => unit.row != null && unit.position != null);
+  const rows = [...new Set(positions.map(unit => unit.row))].sort((left, right) => Number(left) - Number(right));
+  if (!positions.length) return <View style={s.panel}><Text style={s.label}>Chưa có vị trí được cấu hình cho các ô kho.</Text></View>;
+  const columns = compact ? Math.max(1, Math.min(5, Math.floor((width + 4) / 63))) : Math.max(1, Math.floor((width + 4) / 63));
+  const cellWidth = (width - (columns - 1) * 4) / columns;
+  return <View style={s.panel}>
+    <View style={s.toolbar}>
+      <Text style={s.label}>Vị trí theo hàng</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Thu nhỏ sơ đồ" style={s.control} onPress={() => scale.set(Math.max(1, scale.get() - 0.35))}><Minus size={16} color={blue} /></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Phóng to sơ đồ" style={s.control} onPress={() => scale.set(Math.min(2.4, scale.get() + 0.35))}><Plus size={16} color={blue} /></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Đặt lại sơ đồ" style={s.control} onPress={() => { scale.set(1); x.set(0); y.set(0); }}><RotateCcw size={15} color={blue} /></Pressable>
+      {!fullscreen && <Pressable accessibilityRole="button" accessibilityLabel="Mở sơ đồ toàn màn hình" style={s.control}
+        onPress={() => setExpanded(true)}><Maximize size={16} color={blue} /></Pressable>}
+    </View>
+    <GestureDetector gesture={Gesture.Simultaneous(pan, pinch)}>
+      <View accessibilityLabel="Sơ đồ kho" onLayout={event => setWidth(event.nativeEvent.layout.width)} style={s.viewport}>
+        <Animated.View style={[s.rows, transform]}>
+          {width > 0 && rows.map(row => <View key={row} style={s.row}>
+            {rows.length > 1 && <Text style={s.rowLabel}>Hàng {row}</Text>}
+            <View style={s.cells}>{positions.filter(unit => unit.row === row).sort((a, b) => Number(a.position) - Number(b.position)).map(unit => {
+              const chosen = selectedIds.includes(unit.id);
+              const blocked = unit.status === 'AVAILABLE' && !unit.available;
+              const label = blocked ? 'Không trống' : labels[unit.status];
+              return <Pressable key={unit.id} accessibilityRole="button" accessibilityLabel={unit.code + ' · ' + label}
+                accessibilityState={{ selected: chosen, disabled: !unit.available }} disabled={!unit.available}
+                onPress={() => onPress?.(unit)} style={[s.cell, { width: cellWidth, backgroundColor: chosen ? '#E5F0FF' : fills[blocked ? 'OCCUPIED' : unit.status] }, chosen && s.selected]}>
+                {chosen && <View style={s.check}><Check size={10} color="white" strokeWidth={3} /></View>}
+                <Text style={s.code} adjustsFontSizeToFit minimumFontScale={0.75} numberOfLines={1}>{unit.code}</Text>
+                <Text style={s.status}>{label}</Text>
+              </Pressable>;
+            })}</View>
+          </View>)}
+        </Animated.View>
+      </View>
+    </GestureDetector>
+    {expanded && <Modal visible animationType="slide" onRequestClose={() => setExpanded(false)}>
+      <GestureHandlerRootView style={s.fullscreen}>
+        <SafeAreaView style={s.fullscreen}>
+          <View style={s.toolbar}>
+            <Text accessibilityRole="header" style={s.label}>Sơ đồ vị trí kho</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Đóng sơ đồ" style={s.control}
+              onPress={() => setExpanded(false)}><X size={22} color={blue} /></Pressable>
+          </View>
+          <ScrollView contentContainerStyle={{ paddingBottom: 16 }}>
+            <FloorPlanViewer units={units} selectedIds={selectedIds} onPress={onPress} fullscreen />
+          </ScrollView>
+        </SafeAreaView>
+      </GestureHandlerRootView>
+    </Modal>}
+  </View>;
 }
 
-const styles = StyleSheet.create({
-  wrapper: { gap: WdpSpacing.xs }, hint: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', gap: WdpSpacing.sm }, hintText: { color: WdpColors.muted, flex: 1, fontSize: 12, lineHeight: 18 }, reset: { color: WdpColors.teal, fontSize: 13, fontWeight: '700', padding: WdpSpacing.xs }, viewport: { aspectRatio: 1.25, borderWidth: 1, borderColor: WdpColors.border, borderRadius: WdpRadius.md, backgroundColor: WdpColors.surfaceSecondary, overflow: 'hidden' }, canvas: { flex: 1, backgroundColor: WdpColors.surface, borderRadius: WdpRadius.md }, unit: { alignItems: 'center', borderRadius: WdpRadius.sm, borderWidth: 1, justifyContent: 'center', paddingHorizontal: WdpSpacing.xxs, position: 'absolute' }, unitText: { fontSize: 11, fontWeight: '800' }, unitMeta: { fontSize: 9, fontWeight: '600' }, empty: { gap: WdpSpacing.xs, borderWidth: 1, borderColor: WdpColors.border, borderRadius: WdpRadius.md, backgroundColor: WdpColors.surfaceSecondary, padding: WdpSpacing.md }, emptyTitle: { color: WdpColors.navy, fontSize: 16, fontWeight: '700' }, emptyCopy: { color: WdpColors.muted, fontSize: 13, lineHeight: 20 },
+const s = StyleSheet.create({
+  fullscreen: { flex: 1, backgroundColor: 'white', paddingHorizontal: 8 },
+  panel: { backgroundColor: '#F1F4F8', borderColor: '#DCE3EC', borderWidth: 1, borderRadius: 13, padding: 7, gap: 3 },
+  toolbar: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  label: { fontSize: 12, fontWeight: '700', color: C.navy, flex: 1 },
+  control: { minWidth: 40, minHeight: 40, alignItems: 'center', justifyContent: 'center' },
+  viewport: { overflow: 'hidden' },
+  rows: { gap: 7 },
+  row: { gap: 3 },
+  rowLabel: { fontSize: 10, color: C.muted },
+  cells: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  cell: { minHeight: 68, borderRadius: 8, borderWidth: 1, borderColor: '#14243B0D', alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 2 },
+  selected: { borderColor: blue, borderWidth: 2 },
+  check: { position: 'absolute', top: 3, right: 3, backgroundColor: blue, borderRadius: 8, padding: 2 },
+  code: { fontSize: 12, fontWeight: '800', color: '#14243B' },
+  status: { fontSize: 10, textAlign: 'center', color: '#293B53' },
 });

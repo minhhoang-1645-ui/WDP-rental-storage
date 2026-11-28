@@ -1,7 +1,7 @@
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, Warehouse, CreditCard, User, ClipboardList, Wrench, Search, Grid2X2, Users, History, ShieldCheck } from 'lucide-react-native';
+import { Home, Warehouse, CreditCard, Search, Grid2X2 } from 'lucide-react-native';
 import { WdpColors } from '@/constants/wdp-theme';
 import { openWorkspaceEntry } from '@/utils/workspace-navigation';
 
@@ -10,36 +10,18 @@ type Tab = { key: string; label: string; icon: typeof Home; path: string; match:
 const customerTabs: Tab[] = [
   { key: 'home', label: 'Trang chủ', icon: Home, path: '/customer', match: ['/customer'] },
   { key: 'discover', label: 'Tìm kho', icon: Search, path: '/customer/discover', match: ['/customer/discover', '/customer/booking', '/customer/size-finder'] },
-  { key: 'rentals', label: 'Kho thuê', icon: Warehouse, path: '/customer/rentals', match: ['/customer/rentals', '/customer/floor-plan', '/customer/contracts', '/customer/contract-document', '/customer/contract-sign', '/customer/renewals', '/customer/returns', '/customer/early-returns', '/customer/transfers', '/customer/transfer-order', '/customer/stored-items', '/customer/stock-movements'] },
+  { key: 'rentals', label: 'Kho đang thuê', icon: Warehouse, path: '/customer/rentals', match: ['/customer/rentals', '/customer/floor-plan', '/customer/contracts', '/customer/contract-document', '/customer/contract-sign', '/customer/renewals', '/customer/returns', '/customer/early-returns', '/customer/transfers', '/customer/transfer-order'] },
   { key: 'payments', label: 'Thanh toán', icon: CreditCard, path: '/customer/invoices', match: ['/customer/invoices', '/customer/payments', '/customer/payment-result', '/customer/payment-history', '/customer/payment-submissions'] },
-  { key: 'services', label: 'Dịch vụ', icon: Grid2X2, path: '/customer/services', match: ['/customer/services', '/customer/account', '/customer/support-requests', '/customer/damage-claims', '/customer/deposit-settlements', '/customer/deposit-deductions', '/customer/deposit-refund', '/customer/reservations', '/customer/appointments'] },
+  { key: 'services', label: 'Dịch vụ', icon: Grid2X2, path: '/customer/services', match: ['/customer/services', '/customer/policies', '/customer/my-requests', '/customer/account', '/customer/support-requests', '/customer/damage-claims', '/customer/deposit-settlements', '/customer/deposit-deductions', '/customer/deposit-refund', '/customer/reservations', '/customer/appointments'] },
 ];
 
-const staffTabs: Tab[] = [
-  { key: 'home', label: 'Hôm nay', icon: ClipboardList, path: '/staff', match: ['/staff'] },
-  { key: 'tasks', label: 'Vận hành', icon: Wrench, path: '/staff/tasks', match: ['/staff/tasks', '/staff/assigned-units', '/staff/appointments', '/staff/reservations', '/staff/inquiries', '/staff/support-requests', '/staff/stock-movements', '/staff/renewals', '/staff/transfers', '/staff/returns', '/staff/maintenance', '/staff/contracts', '/staff/rentals', '/staff/units'] },
-  { key: 'account', label: 'Tài khoản', icon: User, path: '/staff/account', match: ['/staff/account'] },
-];
 
-const managerTabs: Tab[] = [
-  { key: 'home', label: 'Tổng quan', icon: Home, path: '/manager', match: ['/manager'] },
-  { key: 'approvals', label: 'Duyệt', icon: ShieldCheck, path: '/manager/approvals', match: ['/manager/approvals', '/manager/reviews'] },
-  { key: 'assignments', label: 'Phân công', icon: Users, path: '/manager/assignments', match: ['/manager/assignments'] },
-  { key: 'facility', label: 'Cơ sở', icon: Warehouse, path: '/manager/facility', match: ['/manager/facility', '/manager/catalog', '/manager/units', '/manager/additional-services'] },
-  { key: 'account', label: 'Tài khoản', icon: User, path: '/manager/account', match: ['/manager/account'] },
-];
-const adminTabs: Tab[] = [
-  { key: 'home', label: 'Tổng quan', icon: Home, path: '/admin', match: ['/admin'] },
-  { key: 'users', label: 'Người dùng', icon: Users, path: '/admin/users', match: ['/admin/users', '/admin/roles', '/admin/account-status'] },
-  { key: 'audit', label: 'Nhật ký', icon: History, path: '/admin/activity', match: ['/admin/activity', '/admin/login-history'] },
-  { key: 'account', label: 'Tài khoản', icon: User, path: '/admin/account', match: ['/admin/account'] },
-];
-export function BottomNav({ role }: { role: 'CUSTOMER' | 'STAFF' | 'MANAGER' | 'ADMIN' }) {
+export function BottomNav(_props: { role: 'STORAGE_CUSTOMER' }) {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const tabs = { CUSTOMER: customerTabs, STAFF: staffTabs, MANAGER: managerTabs, ADMIN: adminTabs }[role];
+  const tabs = customerTabs;
 
-  return <View style={[styles.wrap, { minHeight: 68 + Math.max(insets.bottom, 8), height: 'auto', paddingTop: 8, paddingBottom: Math.max(insets.bottom, 8) }, role === 'STAFF' && { position: 'relative', height: 'auto', minHeight: 60 + Math.max(insets.bottom, 8), paddingTop: 8 }]}>
+  return <View style={[styles.wrap, { minHeight: 56 + Math.max(insets.bottom, 8), height: 'auto', paddingTop: 4, paddingBottom: Math.max(insets.bottom, 8) }]}>
     {tabs.map(tab => {
       const active = tab.match.some(m => pathname === m || !['/customer', '/staff', '/manager', '/admin'].includes(m) && pathname.startsWith(`${m}/`));
       const Icon = tab.icon;
@@ -49,7 +31,7 @@ export function BottomNav({ role }: { role: 'CUSTOMER' | 'STAFF' | 'MANAGER' | '
       }} style={styles.tab}>
         {active && <View style={styles.dot} />}
         <Icon size={22} color={color} strokeWidth={active ? 2.2 : 1.6} />
-        <Text style={[styles.label, active && styles.labelActive, role === 'STAFF' && { fontSize: 13, lineHeight: 18 }]}>{tab.label}</Text>
+        <Text style={[styles.label, active && styles.labelActive, tab.key === 'rentals' && styles.rentalLabel]}>{tab.label}</Text>
       </Pressable>;
     })}
   </View>;
@@ -94,5 +76,10 @@ const styles = StyleSheet.create({
   labelActive: {
     color: WdpColors.teal,
     fontWeight: '700',
+  },
+  rentalLabel: {
+    fontSize: 11,
+    lineHeight: 13,
+    textAlign: 'center',
   },
 });

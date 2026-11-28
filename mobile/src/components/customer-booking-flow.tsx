@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { router, Stack, useLocalSearchParams, usePathname } from 'expo-router';
-import { ArrowRight, Calculator, CalendarDays, Check, ChevronLeft, CircleCheck, CreditCard, FileText, Info, Minus, Plus, Warehouse } from 'lucide-react-native';
+import { BookingHeader, BookingTabs } from './booking-header';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, BackHandler, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { ArrowRight, Calculator, CalendarDays, Check, CircleCheck, CreditCard, FileText, Info, Map as MapIcon, Minus, Plus, Warehouse, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/auth/use-auth';
 import { usePublicCatalog } from '@/hooks/use-public-catalog';
@@ -11,13 +12,15 @@ import { useDraftGuard } from '@/services/live-events';
 import { object, rows, text, type Row } from '@/operations/model';
 import { Button, Navigation, styles } from '@/operations/ui';
 import { WdpColors as C } from '@/constants/wdp-theme';
-import { vietnamCalendarDate } from '@/utils/calendar-date';
+import { isCalendarDate, vietnamCalendarDate } from '@/utils/calendar-date';
 
 import { formatDate, formatMoney } from '@/utils/format';
 import { profileContactIssue } from '@/utils/profile-contact';
 import { serviceSelectionIssue } from '@/utils/service-period';
 import type { AdditionalService, ServiceInventory, ServiceSelection } from '@/types/additional-service';
 import type { FloorPlanUnit } from './floor-plan-viewer';
+import { StorageFloorPlan, floorPlanStatuses } from './storage-floor-plan';
+import { storageFloorPlan } from '@/utils/rental-floor-plan';
 import type { StoragePreviewSize } from './storage-architectural-viewer';
 import { ServiceCatalog } from './service-catalog';
 import { quotePaymentSummary } from '@/utils/quote-payment-summary';
@@ -26,35 +29,95 @@ import { matchingStorage, storageArea, StorageComparison } from './storage-compa
 import { CustomerReveal } from './customer-flow';
 import { ErrorState, LoadingState } from './screen-state';
 import { RentalCalendar } from './rental-calendar';
+import { rentalEndDate as monthEnd } from '@/utils/rental-period';
+import { acceptsBookings, BookingFacilityPicker, isBookingFacility, type BookingFacility } from './booking-facility-picker';
+import { useBookingFacility } from './booking-facility-context';
 
+const minimumMonthlyRental = 'Thuê theo tháng tối thiểu là 1 tháng.';
 
-type UnitMap = {productId: string; units: FloorPlanUnit[]};
-const titles = ['Chọn loại kho','Thời gian thuê','Chọn vị trí kho','Thiết bị thêm','Chi phí & xác nhận'];
-const monthEnd = (start: string, months: number) => {if(!start || !Number.isInteger(months) || months<1)return '';const date=new Date(start+'T00:00:00Z');const result=new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth()+months,1));result.setUTCDate(Math.min(date.getUTCDate(),new Date(Date.UTC(result.getUTCFullYear(),result.getUTCMonth()+1,0)).getUTCDate()));return result.toISOString().slice(0,10);};
+type UnitMap = {productId: string; startDate: string; endDateExclusive: string; units: FloorPlanUnit[]};
+
 
 export function CustomerBookingFlow() {
-  const pathname = usePathname();
+  const catalog = usePublicCatalog(undefined, true, true);
+  const { facilityId, selectFacility } = useBookingFacility();
+  const [choosing, setChoosing] = useState(true);
+  const [selections,setSelections] = useState<ServiceSelection[]>([]);
+  const insets = useSafeAreaInsets();
+  const entries = catalog.data?.facilities;
+  const productFacilityIds = [...new Set(rows(catalog.data?.products).map(item => text(item, 'facilityId')).filter(Boolean))];
+  const facilities: BookingFacility[] = entries === undefined
+    ? productFacilityIds.map(id => ({
+        id, name: productFacilityIds.length === 1 ? 'Cơ sở lưu trữ' : 'Cơ sở · ' + id,
+        address: '', bookingEnabled: true, operationalStatus: 'OPEN',
+      }))
+    : Array.isArray(entries) ? entries.filter(isBookingFacility) : [];
+  const facility = facilities.find(item => item.id === facilityId && acceptsBookings(item));
+  const invalidList = entries !== undefined && (!Array.isArray(entries) ||
+    entries.length !== facilities.length || new Set(facilities.map(item => item.id)).size !== facilities.length);
+
+  useEffect(() => {
+    if (catalog.data && !invalidList && facilityId && !facility) selectFacility('');
+  }, [catalog.data, invalidList, facilityId, facility, selectFacility]);
+
+  const leave = () => {
+    router.dismissTo('/customer');
+  };
+  const pickerError = catalog.error || (invalidList ? 'Danh sách cơ sở không hợp lệ.' : undefined);
+  const showPicker = !facility || choosing || !catalog.data || Boolean(pickerError);
+
+  return <View style={{ flex: 1 }}>
+    {facility && <View style={showPicker ? { display: 'none' } : { flex: 1 }}>
+      <BookingWizard key={facility.id} facility={facility} hidden={showPicker} selections={selections} setSelections={setSelections}
+        onChangeFacility={() => setChoosing(true)} refreshFacilities={catalog.refresh} />
+    </View>}
+    {showPicker && <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: 'white' }}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <BookingFacilityPicker facilities={facilities} selected={facilityId} onBack={leave}
+        loading={catalog.loading || (!catalog.data && !pickerError)} error={pickerError} onRetry={catalog.refresh}
+        onSelect={item => { selectFacility(item.id); setChoosing(false); }} />
+    </View>}
+  </View>;
+}
+
+function BookingWizard({ facility, hidden = false, onChangeFacility, refreshFacilities, selections, setSelections }: {
+  facility: BookingFacility;
+  hidden?: boolean;
+  onChangeFacility?: () => void;
+  refreshFacilities: () => void;
+  selections: ServiceSelection[];
+  setSelections: (value: ServiceSelection[]) => void;
+}) {
+
   const params = useLocalSearchParams<{product?: string; size?: string; minimumArea?: string; startDate?: string; endDate?: string; durationMonths?: string; periodMode?: string; unit?: string}>();
-  const catalog = usePublicCatalog(), {user} = useAuth(), insets = useSafeAreaInsets();
+  const catalog = usePublicCatalog(facility.id, true, true);
+  const {user} = useAuth(), insets = useSafeAreaInsets();
+  const wrongScope = Boolean(facility && catalog.data && (
+    catalog.data.facilityId !== facility.id || rows(catalog.data.products).some(item => item.facilityId !== facility.id)
+  ));
   const sizes = rows(catalog.data?.sizes);
   const minimumArea = Number(params.minimumArea);
   const filtered = Number.isFinite(minimumArea) && minimumArea > 0;
-  const allProducts = rows(catalog.data?.products);
+  const allProducts = wrongScope ? [] : rows(catalog.data?.products);
   const products = filtered ? matchingStorage(allProducts, sizes, minimumArea).map(item => item.product) : allProducts;
-  const addons = useResource<AdditionalService[]>('/additional-services');
   const [step,setStep] = useState(1), [productChoice,setProduct] = useState(params.product ?? '');
-  const product = products.find(row => text(row,'id') === productChoice) ?? products.find(row => row.sizeId === params.size) ?? products[0];
+  const product = products.find(row => text(row,'id') === productChoice) ?? (!productChoice || step === 1 ? products.find(row => row.sizeId === params.size) ?? products[0] : undefined);
   const productId = text(product ?? {},'id'), size = sizes.find(row => row.id === product?.sizeId);
-  const supported = Array.isArray(catalog.data?.approvedDurations) ? (catalog.data.approvedDurations as unknown[]).map(Number).filter(n => [1,3,6,12].includes(n)) : [1,3,6,12];
-  const durations = Array.from({length: Math.max(...(supported.length?supported:[12]))},(_,index)=>index+1);
+  const productFacilityId = text(product ?? {}, 'facilityId');
+  const addons = useResource<AdditionalService[]>(productFacilityId
+    ? '/additional-services?facilityId=' + encodeURIComponent(productFacilityId) : null);
+  const serviceScopeMismatch = addons.data !== undefined && (!Array.isArray(addons.data)
+    || addons.data.some(service => !service || service.facilityId !== productFacilityId));
+  const services = serviceScopeMismatch ? [] : (addons.data ?? []).filter(item => !(item.kind === 'RENTAL' && item.billingUnit === 'DAY'));
   const [mode,setMode] = useState<'duration'|'dates'>(params.periodMode === 'dates' ? 'dates' : 'duration');
   const allowsDaily = product?.allowDailyRental === true;
   const effectiveMode = allowsDaily ? mode : 'duration';
-  const [start,setStart] = useState(params.startDate ?? ''), [dailyEnd,setEnd] = useState(params.endDate ?? '');
-  const [chosenMonths,setMonths] = useState(Number(params.durationMonths) || 3), [quantity,setQuantity] = useState('1');
-  const months = !catalog.data || durations.includes(chosenMonths) ? chosenMonths : durations[0];
-  const [plan,setPlan] = useState<'PAY_MONTHLY'|'PREPAID'>('PAY_MONTHLY');
-  const [selections,setSelections] = useState<ServiceSelection[]>([]);
+  const [start,setStart] = useState(isCalendarDate(params.startDate ?? '') ? params.startDate! : '');
+  const [dailyEnd,setEnd] = useState(isCalendarDate(params.endDate ?? '') ? params.endDate! : '');
+  const [chosenMonths,setMonths] = useState(params.durationMonths ?? '3'), [quantity,setQuantity] = useState('1');
+  const months = /^[1-9]\d*$/.test(chosenMonths) ? Number(chosenMonths) : NaN;
+  const [monthlyPlan,setPlan] = useState<'PAY_MONTHLY'|'PREPAID'>('PAY_MONTHLY');
+  const plan = effectiveMode === 'dates' ? 'PREPAID' : monthlyPlan;
   const [units,setUnits] = useState<FloorPlanUnit[]>([]), [selected,setSelected] = useState<string[]>([]);
   const [quote,setQuote] = useState<Row>(), [busy,setBusy] = useState(false), [error,setError] = useState(''), [soldOut,setSoldOut] = useState(false);
   const [createdBooking,setCreatedBooking] = useState<Row>();
@@ -64,16 +127,55 @@ export function CustomerBookingFlow() {
   const end = effectiveMode === 'duration' ? monthEnd(start, months) : dailyEnd;
   useDraftGuard(Boolean(start || selections.length || busy));
   useEffect(() => () => request.current?.abort(), []);
-  useEffect(() => {const sub = BackHandler.addEventListener('hardwareBackPress', () => {if(busy)return true;if(createdBooking){router.dismissTo('/customer');return true;}if(step > 1 && !locked.current) {setStep(step - 1); return true;} return locked.current;}); return () => sub.remove();}, [step,busy,createdBooking]);
+  const back = useCallback(() => {
+    if (busy || locked.current) return;
+    if (createdBooking) router.dismissTo('/customer');
+    else if (step > 1) setStep(step - 1);
+    else if (onChangeFacility) onChangeFacility();
+    else router.dismissTo('/customer');
+  }, [busy, createdBooking, step, onChangeFacility, setStep]);
+  useFocusEffect(useCallback(() => {
+    if (hidden) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => { back(); return true; });
+    return () => subscription.remove();
+  }, [back, hidden]));
   const invalidate = () => {version.current++; request.current?.abort(); request.current=null; setBusy(false); setUnits([]); setSelected([]); setQuote(undefined); setError(''); setSoldOut(false);};
   const chooseProduct = (choice: Row) => {
     invalidate();
     setStep(1);
+    if (choice.facilityId === productFacilityId) addons.refresh();
     setProduct(text(choice, 'id'));
-    if (choice.allowDailyRental !== true) setMode('duration');
+    if (choice.allowDailyRental !== true) {
+      if (mode === 'dates') setMonths('');
+      setMode('duration');
+    }
   };
-  const payload = (ids = selected) => ({productId, startDate:start, quantity:Number(quantity), periodMode:'dates', endDate:end, paymentPlan:plan, paymentChoice:'pay-later', adjacencyPreference:false, ...(ids.length ? {selectedUnitIds:ids} : {}), addonIds:[], services:selections});
-  const validate = (includeServices = true) => !product ? 'Chọn loại kho.' : !start || start < vietnamCalendarDate() ? 'Chọn ngày bắt đầu từ hôm nay.' : !end || end <= start ? 'Chọn ngày kết thúc sau ngày bắt đầu.' : !Number.isInteger(Number(quantity)) || Number(quantity)<1 || Number(quantity)>3 ? 'Bạn có thể đặt từ 1 đến 3 kho.' : effectiveMode === 'duration' && !durations.includes(months) ? 'Chọn thời hạn thuê được hỗ trợ.' : effectiveMode === 'dates' && end >= monthEnd(start,1) ? 'Chọn kỳ thuê theo tháng nếu thuê từ một tháng trở lên.' : effectiveMode === 'dates' && rentalDays < Number(product.minRentalDays) ? 'Thời gian thuê tối thiểu là '+product.minRentalDays+' ngày.' : includeServices && selections.map(selection => serviceSelectionIssue(addons.data?.find(service => service.id === selection.serviceId),selection,start,end)).find(Boolean) || '';
+  const payload = (ids = selected) => ({productId, ...(facility ? { facilityId: facility.id } : {}), startDate:start, quantity:Number(quantity), ...(effectiveMode === 'duration' ? { periodMode: 'duration', durationMonths: months } : { periodMode: 'dates', endDate: end }), paymentPlan:plan, paymentChoice:'pay-later', adjacencyPreference:false, ...(ids.length ? {selectedUnitIds:ids} : {}), addonIds:[], services:selections});
+  const serviceScopeIssue = selections.length > 0 && selections.some(selection => !services.some(service => service.id === selection.serviceId));
+  function validate(includeServices = true) {
+    if (catalog.error || wrongScope || (facility && productFacilityId !== facility.id)) return 'Chưa xác minh được loại kho tại cơ sở đã chọn.';
+    if (!product) return 'Chọn loại kho.';
+    if (!isCalendarDate(start) || start < vietnamCalendarDate()) return 'Chọn ngày bắt đầu từ hôm nay.';
+    if (effectiveMode === 'duration' && (!Number.isSafeInteger(months) || months < 1)) return minimumMonthlyRental;
+    if (effectiveMode === 'duration' && !end) return 'Ngày kết thúc không hợp lệ. Kiểm tra lại ngày bắt đầu và số tháng thuê.';
+    if (!isCalendarDate(end) || end <= start) return 'Chọn ngày kết thúc sau ngày bắt đầu.';
+    if (!Number.isInteger(Number(quantity)) || Number(quantity) < 1 || Number(quantity) > 3) return 'Bạn có thể đặt từ 1 đến 3 kho.';
+    if (effectiveMode === 'dates' && end >= monthEnd(start, 1)) return 'Chọn kỳ thuê theo tháng nếu thuê từ một tháng trở lên.';
+    if (effectiveMode === 'dates' && !Number(product.minRentalDays)) return 'Loại kho này chưa có thời hạn thuê ngày tối thiểu.';
+    if (effectiveMode === 'dates' && rentalDays < Number(product.minRentalDays)) return 'Thời gian thuê tối thiểu là ' + product.minRentalDays + ' ngày.';
+    if (!includeServices) return '';
+    if (serviceScopeIssue) return 'Dịch vụ không còn khả dụng tại cơ sở này. Vui lòng chọn lại.';
+    return selections.map(selection => serviceSelectionIssue(services.find(service => service.id === selection.serviceId), selection, start, end)).find(Boolean) || '';
+  }
+
+  function assertUnitMap(map: UnitMap) {
+    if (map?.productId !== productId || map.startDate !== start || map.endDateExclusive !== end || !Array.isArray(map.units) ||
+        map.units.some(unit => !unit || typeof unit.id !== 'string' || typeof unit.code !== 'string' ||
+          typeof unit.available !== 'boolean' || !Object.prototype.hasOwnProperty.call(floorPlanStatuses, unit.status) || String(unit.status) === "UNAVAILABLE" ||
+          (unit.available && unit.status !== 'AVAILABLE'))) {
+      throw new Error('Không thể xác minh các ô kho phù hợp. Vui lòng thử lại.');
+    }
+  }
   async function availability(nextStep: number, revalidate = false, chosenPlan = plan, skipServices = false) {
     if(request.current || locked.current) return;
     const requestedServices = nextStep===5 && !skipServices ? selections : [];
@@ -82,7 +184,7 @@ export function CustomerBookingFlow() {
     request.current=controller; setBusy(true); setError(''); setSoldOut(false);
     try {
       for(const selection of requestedServices) {
-        const query = new URLSearchParams({quantity:String(selection.quantity), ...(selection.serviceStartDate ? {startDate:selection.serviceStartDate} : {}), ...(selection.serviceEndDate ? {endDate:selection.serviceEndDate} : {})});
+        const query = new URLSearchParams({facilityId:productFacilityId,quantity:String(selection.quantity), ...(selection.serviceStartDate ? {startDate:selection.serviceStartDate} : {}), ...(selection.serviceEndDate ? {endDate:selection.serviceEndDate} : {})});
         const inventory = await apiRequest<ServiceInventory>('/additional-services/'+encodeURIComponent(selection.serviceId)+'/availability?'+query,{signal:controller.signal});
         if(!inventory.available) throw new Error('Dịch vụ thêm không còn đủ số lượng. Hãy sửa lựa chọn dịch vụ.');
       }
@@ -90,7 +192,7 @@ export function CustomerBookingFlow() {
       const result=await apiRequest<Row>('/booking/availability',{method:'POST',authenticated:false,body,signal:controller.signal});
       const map=(result.available === true || revalidate) ? await apiRequest<UnitMap>('/booking/unit-map',{method:'POST',authenticated:false,body,signal:controller.signal}) : undefined;
       if(controller.signal.aborted || version.current !== revision) return;
-      if(map && (map.productId !== productId || !Array.isArray(map.units))) throw new Error('Không thể tải các ô kho phù hợp. Vui lòng thử lại.');
+      if (map) assertUnitMap(map);
       if(!map || map.units.filter(unit=>unit.available).length<Number(quantity)) {
         setUnits([]);setSelected([]);setQuote(undefined);setSoldOut(true);setStep(2);return;
       }
@@ -108,7 +210,13 @@ export function CustomerBookingFlow() {
       setQuote(object(result.quote));
       if(skipServices)setSelections([]);
       setStep(nextStep);
-    } catch(caught) {if(!controller.signal.aborted) setError(caught instanceof Error ? caught.message : 'Không thể kiểm tra kho lúc này.');}
+    } catch(caught) {if (!controller.signal.aborted) {
+      if (caught instanceof ApiError && caught.status === 409 && facility) {
+        refreshFacilities();
+        catalog.refresh();
+      }
+      setError(caught instanceof Error ? caught.message : 'Không thể kiểm tra kho lúc này.');
+    }}
     finally {if(request.current===controller) {request.current=null;setBusy(false);}}
   }
   async function submit() {
@@ -119,7 +227,8 @@ export function CustomerBookingFlow() {
     try {
       const body=JSON.stringify(payload());
       const map=await apiRequest<UnitMap>('/booking/unit-map',{method:'POST',authenticated:false,body,signal:controller.signal});
-      if(!Array.isArray(map.units) || selected.some(id=>!map.units.some(unit=>unit.id===id && unit.available))) {setUnits(map.units??[]);setSelected([]);setQuote(undefined);setError('Ô kho này vừa được đặt. Vui lòng chọn ô khác.');setStep(3);return;}
+      assertUnitMap(map);
+      if(selected.some(id=>!map.units.some(unit=>unit.id===id && unit.available))) {setUnits(map.units);setSelected([]);setQuote(undefined);setError('Ô kho này vừa được đặt. Vui lòng chọn ô khác.');setStep(3);return;}
       const check = await apiRequest<Row>('/booking/availability', { method:'POST', authenticated:false, body, signal:controller.signal });
       if (check.available !== true) {
         setQuote(undefined); setSelected([]); setStep(2); setError('Kho vừa hết chỗ. Vui lòng kiểm tra lại.'); return;
@@ -127,17 +236,40 @@ export function CustomerBookingFlow() {
       const latest = object(check.quote);
       const fields = ['quotedTotalAmount', 'estimatedInitialAmountDue', 'paymentPlan', 'depositAmount', 'discountAmount', 'rentalAmount', 'addOnTotalAmount'] as const;
       if (fields.some(field => latest[field] !== quote[field]) || JSON.stringify(latest.services) !== JSON.stringify(quote.services) ||
+          JSON.stringify(latest.pricingPolicy) !== JSON.stringify(quote.pricingPolicy) ||
           JSON.stringify(latest.initialPaymentBreakdown) !== JSON.stringify(quote.initialPaymentBreakdown)) {
         setQuote(latest); setError('Báo giá đã thay đổi. Vui lòng xem lại chi phí trước khi gửi.'); return;
       }
-      const created=await apiRequest<Row>('/reservations',{method:'POST',body,signal:controller.signal});
+      const expectedServiceQuoteVersion = text(check, 'serviceQuoteVersion');
+      const reservationBody = expectedServiceQuoteVersion ? JSON.stringify({ ...payload(), expectedServiceQuoteVersion }) : body;
+      const created = await apiRequest<Row>('/reservations', { method: 'POST', body: reservationBody, signal: controller.signal });
       setCreatedBooking(created);
-    } catch(caught) {setError(caught instanceof Error ? caught.message : 'Chưa gửi được yêu cầu. Bạn thử lại nhé.');if(caught instanceof ApiError && caught.status===409) {setSelected([]);setQuote(undefined);setStep(2);setError('Kho vừa có thay đổi. Hãy kiểm tra lại ô trống.');}}
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Chưa gửi được yêu cầu. Bạn thử lại nhé.');
+      if (caught instanceof ApiError && text(object(caught.payload), 'code') === 'SERVICE_QUOTE_CHANGED') {
+        addons.refresh();
+        setQuote(undefined);
+      } else if (caught instanceof ApiError && caught.status === 409) {
+        refreshFacilities();
+        catalog.refresh();
+        setSelected([]);
+        setQuote(undefined);
+        setStep(2);
+        setError('Kho vừa có thay đổi. Hãy kiểm tra lại ô trống.');
+      }
+    }
     finally {locked.current=false;request.current=null;setBusy(false);}
   }
   const floors=[...new Set(units.map(unit=>unit.floor??''))], zones=[...new Set(units.filter(unit=>(unit.floor??'')===floor).map(unit=>unit.zone??''))];
   const visible=units.filter(unit=>(unit.floor??'')===floor && (unit.zone??'')===zone);
-  const toggle=(unit:FloorPlanUnit)=>{if(!unit.available)return;setError('');setQuote(undefined);setSelected(previous=>previous.includes(unit.id)?previous.filter(id=>id!==unit.id):Number(quantity)===1?[unit.id]:previous.length<Number(quantity)?[...previous,unit.id]:previous);};
+  const map = step === 3 ? storageFloorPlan(visible) : null;
+  const selectedUnits = units.filter(unit => unit.available && selected.includes(unit.id));
+  const unmapped = step === 3 ? visible.filter(unit => !map?.cells.some(cell => cell.id === unit.id)) : [];
+  const choices = new Map(visible.map(unit => [unit.id, {
+    status: unit.available ? 'AVAILABLE' as const : unit.status === 'AVAILABLE' ? 'UNAVAILABLE' as const : unit.status,
+    disabled: busy || !unit.available || (!selected.includes(unit.id) && Number(quantity) > 1 && selected.length >= Number(quantity)),
+  }]));
+  const toggle=(unit:FloorPlanUnit)=>{if(busy || request.current || !unit.available)return;setError('');setQuote(undefined);setSelected(previous=>previous.includes(unit.id)?previous.filter(id=>id!==unit.id):Number(quantity)===1?[unit.id]:previous.length<Number(quantity)?[...previous,unit.id]:previous);};
   const webOrigin=process.env.EXPO_PUBLIC_WEB_URL || (__DEV__ ? new URL(apiUrl).origin.replace(/:\d+$/,':5173') : '');
   const image=text(product??{},'image')||text(size??{},'image');
   const previewSize: StoragePreviewSize = {
@@ -149,16 +281,25 @@ export function CustomerBookingFlow() {
   const area = product ? storageArea(product,sizes) : 0;
   const areaLabel = area > 0 ? area.toLocaleString('vi-VN') + ' m²' : '';
   const rentalDays = (Date.parse(end) - Date.parse(start)) / 86400000;
-  const back=()=>{if(busy)return;if(createdBooking){router.dismissTo('/customer');return;}if(step>1)setStep(step-1);else if(router.canGoBack())router.back();else router.replace('/customer');};
   const clearQuote = () => {version.current++;request.current?.abort();request.current=null;setBusy(false);setQuote(undefined);setError('');};
   const submittedPayment = createdBooking ? quotePaymentSummary(object(createdBooking.quote ?? quote)) : undefined;
   const payment = quote ? quotePaymentSummary(quote) : undefined;
   const quoteReady = payment != null && payment.total !== null && payment.first !== null && quote?.paymentPlan === plan;
   const selectedCodes = units.filter(unit => selected.includes(unit.id)).map(unit => unit.code).join(', ');
   const editLink = (title:string,target:number) => <Pressable accessibilityRole="button" accessibilityState={{disabled:busy}} disabled={busy} onPress={()=>setStep(target)} style={{minHeight:44,paddingHorizontal:4,justifyContent:'center'}}><Text style={{fontSize:14,fontWeight:'600',color:'#315D99'}}>{title}</Text></Pressable>;
-  const primary=step===1?'Chọn thời gian thuê':step===2?busy?'Đang kiểm tra kho…':'Kiểm tra ô còn trống':step===3?busy?'Đang kiểm tra ô kho…':'Chọn thiết bị thêm':busy?'Đang gửi yêu cầu…':'Gửi yêu cầu đặt kho';
-  return <KeyboardAvoidingView behavior={Platform.OS==='ios'?'padding':undefined} style={{flex:1,backgroundColor:C.surface}}><Stack.Screen options={{headerShown:false}}/>
-    <View style={{paddingTop:insets.top+4,paddingHorizontal:16,gap:2,paddingBottom:4}}><View style={{flexDirection:'row',alignItems:'center',gap:8}}><Pressable accessibilityRole="button" accessibilityLabel="Quay lại" disabled={busy} onPress={back} style={{minWidth:44,minHeight:44,justifyContent:'center'}}><ChevronLeft color={C.text}/></Pressable><Text accessibilityRole="header" style={{flex:1,textAlign:'center',fontSize:18,lineHeight:24,fontWeight:'700',color:step===5?C.text:blue}}>{titles[step-1]}</Text><Text style={{width:44,textAlign:'right',fontSize:14,color:C.text}}>{step}/5</Text></View><View style={{flexDirection:'row',gap:6}}>{titles.map((title,index)=><Pressable key={title} accessibilityRole="button" accessibilityLabel={'Bước '+(index+1)+': '+title} accessibilityState={{disabled:busy||index+1>=step,selected:index+1===step}} disabled={Boolean(createdBooking)||busy||index+1>=step} onPress={()=>{setError('');setStep(index+1);}} style={{flex:1,minHeight:step===5?44:24,justifyContent:'center'}}><View style={{height:4,borderRadius:4,backgroundColor:index<step?'#0758DC':C.border}}/></Pressable>)}</View></View>
+  const primaryDisabled = busy || catalog.loading || Boolean(catalog.error) || wrongScope || !product
+    || (step === 3 && selectedUnits.length !== Number(quantity))
+    || (step === 5 && (!quoteReady || selected.length !== Number(quantity) || Boolean(profileContactIssue(user?.fullName ?? '', user?.phone ?? ''))));
+  const primary=step===1?'Chọn thời gian thuê':step===2?busy?'Đang kiểm tra kho…':'Kiểm tra ô còn trống':step===3?busy?'Đang kiểm tra ô kho…':'Chọn thiết bị thêm':busy?'Đang gửi yêu cầu…':'Xác nhận & tiếp tục';
+  return <KeyboardAvoidingView behavior={Platform.OS==='ios'?'padding':undefined} style={{flex:1,backgroundColor:step === 3 ? "#F7F9FC" : C.surface}}><Stack.Screen options={{headerShown:false}}/>
+    <View style={{paddingTop:insets.top}}><BookingHeader step={step + 1} busy={busy} onBack={back} /></View>
+    {!createdBooking && <View style={[booking.summary, { marginHorizontal: 16, marginTop: 3 }, step === 3 && locationStyles.facility]}>
+      <View style={booking.summaryIcon}><Warehouse size={20} color={blue} /></View>
+      <View style={{ flex: 1 }}><Text style={booking.label}>{facility.name}</Text>
+        {facility.address ? <Text style={booking.muted}>{facility.address}</Text> : null}</View>
+      {step === 1 && onChangeFacility && <Pressable accessibilityRole="button" disabled={busy}
+        onPress={onChangeFacility} style={booking.change}><Text style={booking.link}>Đổi cơ sở</Text></Pressable>}
+    </View>}
     {createdBooking ? <ScrollView contentContainerStyle={{ padding:16, gap:16 }}>
       <View style={{ alignItems:'center', paddingVertical:20, gap:8 }}>
         <View style={{width:72,height:64,borderRadius:20,backgroundColor:"#EDF3FD",alignItems:"center",justifyContent:"center"}}><FileText size={44} color="#0758DC" /><View style={{position:"absolute",right:-4,bottom:-3,backgroundColor:"white",borderRadius:16}}><CircleCheck size={27} color="#0758DC" /></View></View>
@@ -178,85 +319,124 @@ export function CustomerBookingFlow() {
         else router.replace('/customer/reservations');
       }} />
       <Button title="Về trang chủ" variant="secondary" onPress={() => router.dismissTo('/customer')} />
-    </ScrollView> : step===4 ? <ServiceCatalog services={addons.data??[]} selections={selections} start={start} end={end} loading={addons.loading} error={addons.error} continueError={error} retry={addons.refresh} quoteInput={payload()} busy={busy} onChange={value=>{clearQuote();setSelections(value);}} onContinue={skip=>void availability(5,true,plan,skip)}/> : <ScrollView key={step} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentContainerStyle={{padding:16,gap:12,paddingBottom:24}}>
-      {catalog.loading && !catalog.data ? <LoadingState/> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh}/> : !product ? <Text style={styles.copy}> {filtered ? 'Hiện chưa có loại kho đủ diện tích ước tính.' : 'Chưa có loại kho để chọn.'}</Text> : <CustomerReveal key={step}>
+    </ScrollView> : step===4 ? <ServiceCatalog bookingSummary={[previewSize.name, selectedCodes, formatDate(start) + ' → ' + formatDate(end)].filter(Boolean).join(' · ')} services={services} selections={selections} start={start} end={end} loading={addons.loading} error={serviceScopeMismatch ? 'Danh mục dịch vụ không khớp cơ sở đã chọn.' : addons.error} continueError={error} retry={addons.refresh} quoteInput={payload()} busy={busy} onChange={value=>{clearQuote();setSelections(value);}} onContinue={skip=>void availability(5,true,plan,skip)}/> : <ScrollView key={step} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentContainerStyle={{paddingHorizontal:16,paddingTop:9,gap:9,paddingBottom:16}}>
+      {catalog.loading && !catalog.data ? <LoadingState/> : catalog.error ? <ErrorState message={catalog.error} onRetry={catalog.refresh}/> : wrongScope ? <ErrorState message="Catalog không khớp cơ sở đã chọn." onRetry={catalog.refresh}/> : !product ? <Text style={styles.copy}> {filtered ? 'Hiện chưa có loại kho đủ diện tích ước tính.' : 'Chưa có loại kho để chọn.'}</Text> : <CustomerReveal key={step}>
       {step===1 && <>
-        <View style={booking.tools}>
-          {pathname === '/customer/discover' && <Pressable accessibilityRole="button" onPress={() => router.push('/customer/size-finder')} style={booking.tool}>
-            <Calculator size={17} color={blue}/><Text style={booking.link}>Ước tính kích thước</Text>
-          </Pressable>}
+        <View style={booking.utilities}>
+          <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/customer/size-finder', params: facility ? { facilityId: facility.id } : {} })} style={booking.tool}>
+            <View style={booking.summaryIcon}><Calculator size={19} color={blue}/></View><View style={{flex:1}}><Text style={booking.link}>Ước tính kích thước</Text><Text style={booking.muted}>Tìm loại kho phù hợp</Text></View><ArrowRight size={16} color={blue}/>
+          </Pressable>
           <StorageComparison compact products={products} sizes={sizes} onChoose={chooseProduct}/>
         </View>
         {filtered && <Text style={booking.label}>Kho phù hợp · từ {minimumArea.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} m²</Text>}
-        <View style={booking.photo}>
+        <View style={booking.productCard}><View style={booking.photo}>
           {previewSize.image && failedImage !== previewSize.image
             ? <Image source={{uri:previewSize.image}} onError={()=>setFailedImage(previewSize.image)} resizeMode="cover" accessibilityLabel={'Ảnh minh họa '+previewSize.name} style={{width:'100%',height:'100%'}}/>
             : <Warehouse size={40} color={blue}/>}
         </View>
-        <View style={{gap:3}}>
+        <View style={booking.productCopy}>
           <Text style={booking.product}>{previewSize.name}</Text>
-          <Text style={booking.meta}>{[previewSize.dimensions, areaLabel].filter(Boolean).join(' · ')}</Text>
+          <Text style={booking.meta}>{[previewSize.dimensions, areaLabel, text(product,'volume')].filter(Boolean).join(' · ')}</Text>
           <Text style={booking.price}>{typeof product.monthlyPrice==='number'?formatMoney(product.monthlyPrice)+' / tháng':'Xem giá sau khi chọn ngày'}</Text>
+          {text(product, 'description') ? <Text style={booking.meta}>{text(product, 'description')}</Text> : null}
           {previewSize.image && failedImage !== previewSize.image ? <Text style={booking.muted}>Ảnh minh họa loại kho</Text> : null}
         </View>
-        <Text style={booking.label}>Loại kho khác</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8}}>
+        </View>{products.length > 1 && <Text style={booking.label}>Chọn loại kho khác</Text>}
+        <View style={booking.grid}>
           {products.map(item=>{
             const active = item.id === productId;
             return <Pressable key={text(item,'id')} accessibilityRole="radio" accessibilityState={{checked:active}}
-              onPress={()=>{if(!active)chooseProduct(item);}} style={[booking.typeTile,active&&booking.typeActive]}>
+              onPress={()=>{if(!active)chooseProduct(item);}} style={[booking.typeTile, products.length === 4 && {width:"23.5%"}, active&&booking.typeActive]}>
               {active?<Check size={18} color={blue}/>:<Warehouse size={18} color={blue}/>}
-              <Text style={[booking.label,{textAlign:'center'}]}>{text(item,'name')}</Text>
+              <Text style={[booking.label,{textAlign:'center'}]}>{text(item,'name')}</Text>{!!storageArea(item,sizes) && <Text style={booking.muted}>{storageArea(item,sizes).toLocaleString('vi-VN')} m²</Text>}
             </Pressable>;
           })}
-        </ScrollView>
+        </View>
       </>}
       {step===2 && <>
-        <View style={booking.summary}><Warehouse size={18} color={blue}/><Text style={[booking.label,{flex:1}]}>{[previewSize.name,areaLabel].filter(Boolean).join(' · ')}</Text></View>
-        <BookingOptions value={effectiveMode} options={[{value:'duration',label:'Theo tháng'},...(product.allowDailyRental===true?[{value:'dates',label:'Theo ngày'}]:[])]}
+        <View style={booking.summary}><Warehouse size={18} color={blue}/><View style={{flex:1}}><Text style={booking.label}>{previewSize.name}</Text><Text style={booking.muted}>{[previewSize.dimensions, areaLabel].filter(Boolean).join(' · ')}</Text></View></View>
+        {allowsDaily ? <BookingTabs value={effectiveMode} options={[{value:'duration',label:'Thuê theo tháng'},{value:'dates',label:'Thuê theo ngày'}]}
           onChange={value=>{if(value===effectiveMode)return;invalidate();setMode(value as typeof mode);setEnd('');}}/>
+          : <Text style={booking.label}>Thuê theo tháng</Text>}
         <RentalCalendar compact start={start} end={end} daily={effectiveMode==='dates'}
           earliestEnd={start && Number(product.minRentalDays)>0 ? new Date(Date.parse(start)+Number(product.minRentalDays)*86400000).toISOString().slice(0,10) : undefined}
           endLimit={start ? monthEnd(start,1) : undefined} onChange={(from,to)=>{invalidate();setStart(from);setEnd(to);}}/>
-        {effectiveMode==='duration' && <BookingStepper label="Thời hạn thuê" display={months+' tháng'} index={durations.indexOf(months)} count={durations.length}
-          onChange={index=>{invalidate();setMonths(durations[index]);}}/>}
+        {effectiveMode==='duration' ? <>
+          <View style={booking.summary}>
+          <Text style={booking.label}>Số tháng thuê</Text>
+          <TextInput accessibilityLabel="Số tháng thuê" keyboardType="number-pad" value={chosenMonths}
+            onChangeText={value=>{invalidate();setMonths(value);}}
+            style={{ flex:1, minHeight:44, color:C.text, textAlign:'right' }} />
+          </View>
+          <Text accessibilityRole={error === minimumMonthlyRental ? 'alert' : undefined}
+            style={error === minimumMonthlyRental ? styles.error : booking.muted}>{minimumMonthlyRental}</Text>
+        </> : <Text style={booking.muted}>{Number(product.minRentalDays) > 0
+          ? `Thuê ít nhất ${product.minRentalDays} ngày và dưới một tháng theo lịch. Thanh toán toàn bộ kỳ thuê.`
+          : 'Loại kho này chưa có thời hạn thuê ngày tối thiểu.'}</Text>}
         <View style={booking.summary}><CalendarDays size={18} color={blue}/><Text style={[booking.meta,{flex:1}]}>
-          {start ? formatDate(start) : 'Chọn ngày bắt đầu'} → {end ? formatDate(end) : 'Chọn ngày kết thúc'}
+          {start ? formatDate(start) : 'Chọn ngày bắt đầu'} → {end ? formatDate(end) : effectiveMode === 'dates' ? 'Chọn ngày kết thúc' : 'Ngày kết thúc được tính theo số tháng'}
           {effectiveMode==='dates' && rentalDays>0 ? ' · '+rentalDays+' ngày' : ''}
         </Text></View>
         <BookingStepper label="Số kho" display={quantity} index={Number(quantity)-1} count={3} onChange={index=>{invalidate();setQuantity(String(index+1));}}/>
-        {soldOut && <View style={booking.tools}><Text accessibilityRole="alert" style={[styles.error,{flex:1}]}>Không đủ ô trống cho số kho và thời gian bạn chọn.</Text>{editLink('Đổi loại kho',1)}</View>}
+        {soldOut && <View style={booking.utilities}><Text accessibilityRole="alert" style={[styles.error,{flex:1}]}>Không đủ ô trống cho số kho và thời gian bạn chọn.</Text>{editLink('Đổi loại kho',1)}</View>}
       </>}
       {step===3 && <>
-        <Pressable accessibilityRole="button" accessibilityLabel="Sửa thời gian thuê" onPress={()=>setStep(2)} style={[booking.summary,{backgroundColor:pale}]}>
-          <Warehouse size={18} color={blue}/><Text style={[booking.label,{flex:1}]}>{previewSize.name} · {formatDate(start)} – {formatDate(end)} · {quantity} ô</Text><ArrowRight size={16} color={blue}/>
+        <Pressable accessibilityRole="button" accessibilityLabel="Sửa thời gian thuê" disabled={busy} onPress={()=>setStep(2)} style={[booking.summary, locationStyles.period]}>
+          <View style={booking.summaryIcon}><Warehouse size={20} color="#175CD3" /></View>
+          <View style={locationStyles.copy}><Text style={booking.label}>{[previewSize.name, areaLabel, quantity + ' ô'].filter(Boolean).join(' · ')}</Text>
+            <View style={locationStyles.row}><CalendarDays size={14} color="#667085" /><Text style={[booking.muted, locationStyles.copy]}>{formatDate(start)} – {formatDate(end)}</Text></View>
+          </View><ArrowRight size={17} color="#175CD3" />
         </Pressable>
         {floors.length>1 && <BookingOptions value={floor} options={floors.map(value=>({value,label:value ? (/^tầng/i.test(value)?value:'Tầng '+value) : 'Tầng chưa ghi nhận'}))}
           onChange={value=>{setFloor(value);setZone(units.find(unit=>(unit.floor??'')===value)?.zone??'');}}/>}
         {zones.length>1 && <BookingOptions value={zone} options={zones.map(value=>({value,label:value ? (/^khu/i.test(value)?value:'Khu '+value) : 'Khu chưa ghi nhận'}))} onChange={setZone}/>}
-        <View style={booking.legend}>{[['Còn trống','#DCF4E6'],['Hết chỗ','#FBE4E6'],['Đã chọn',blue]].map(([label,color])=><View key={label} style={booking.legendItem}>
-          <View style={{width:12,height:12,borderRadius:3,backgroundColor:color}}/><Text style={booking.muted}>{label}</Text>
-        </View>)}</View>
-        {visible.length ? <View style={booking.grid}>{visible.map(unit=>{
-          const active=selected.includes(unit.id);
-          const disabled=busy || !unit.available || (!active && Number(quantity)>1 && selected.length>=Number(quantity));
-          const color=active?'white':unit.available?'#173C2C':'#8A2932';
-          return <Pressable key={unit.id} accessibilityRole="checkbox" accessibilityLabel={unit.code+' · '+(unit.available?'Còn trống':'Hết chỗ')}
-            accessibilityState={{checked:active,disabled}} disabled={disabled} onPress={()=>toggle(unit)}
-            style={[booking.unit,{backgroundColor:active?blue:unit.available?'#DCF4E6':'#FBE4E6'}]}>
-            {active && <Check size={14} color={color}/>}
-            <Text style={[booking.label,{color,textAlign:'center'}]}>{unit.code}</Text>
-            {!!areaLabel && <Text style={[booking.muted,{color}]}>{areaLabel}</Text>}
-            {!unit.available && <Text style={[booking.muted,{color}]}>Hết chỗ</Text>}
-          </Pressable>;
-        })}</View> : <Text style={booking.muted}>Chưa có ô kho trong khu này.</Text>}
-        <View style={booking.legendItem}><Info size={15} color={blue}/><Text style={[booking.muted,{flex:1}]}>Bố cục minh họa · Mã ô và tình trạng lấy từ hệ thống.</Text></View>
-        {selectedCodes ? <Text style={booking.label}>Ô đã chọn · {selectedCodes}</Text> : null}
+        <View style={locationStyles.card}>
+          <View style={locationStyles.row}><MapIcon size={23} color="#175CD3" /><Text accessibilityRole="header" style={[locationStyles.title, locationStyles.copy]}>Sơ đồ kho</Text>
+            {map && <Text style={locationStyles.badge}>Sơ đồ minh họa</Text>}
+          </View>
+          {map ? <StorageFloorPlan key={facility.id + ':' + productId + ':' + floor + ':' + zone} plan={map}
+            selection={{ ids: selected, states: choices, onToggle: id => { const unit = visible.find(item => item.id === id); if (unit) toggle(unit); } }} />
+            : <Text style={booking.muted}>Chưa có sơ đồ cho khu này.</Text>}
+          {unmapped.length > 0 && <View style={locationStyles.unmapped}>
+            <Text style={booking.muted}>Ô chưa có tọa độ trên sơ đồ</Text>
+            <View style={locationStyles.chips}>{unmapped.map(unit => {
+              const checked = selected.includes(unit.id);
+              const state = choices.get(unit.id)!;
+              return <Pressable key={unit.id} accessibilityRole="checkbox" accessibilityState={{ checked, disabled: state.disabled }}
+                accessibilityLabel={unit.code + ' · ' + floorPlanStatuses[state.status].label} disabled={state.disabled} onPress={() => toggle(unit)}
+                style={[locationStyles.chip, { backgroundColor: checked ? '#175CD3' : floorPlanStatuses[state.status].fill }]}>
+                {checked && <Check size={15} color="white" />}<Text style={{ color: checked ? 'white' : '#101828' }}>{unit.code}</Text>
+              </Pressable>;
+            })}</View>
+          </View>}
+          {!visible.some(unit => unit.available) && <Text style={booking.muted}>Khu này không có ô trống trong kỳ thuê đã chọn.</Text>}
+        </View>
+        {selectedUnits.map(unit => <View key={unit.id} style={[locationStyles.card, locationStyles.row]}>
+          <View style={booking.summaryIcon}><Warehouse size={20} color="#175CD3" /></View>
+          <View style={locationStyles.copy}><Text style={locationStyles.title}>{unit.code}</Text>
+            <Text style={booking.muted}>{[previewSize.name, areaLabel, unit.floor?.replace(/^ground(?: floor)?$/i, 'Tầng trệt'), unit.zone].filter(Boolean).join(' · ')}</Text>
+          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel={'Bỏ chọn ' + unit.code} disabled={busy} onPress={() => toggle(unit)} style={locationStyles.remove}><X color="#667085" size={20} /></Pressable>
+        </View>)}
+        <View style={locationStyles.row}><Info size={15} color="#175CD3" /><Text style={[booking.muted, locationStyles.copy]}>Ô kho chỉ được giữ khi hệ thống xác nhận đơn.</Text></View>
       </>}
-      {step===5 && <><View style={{gap:4}}><View style={{flexDirection:'row',alignItems:'center',gap:10}}><View style={{backgroundColor:'#EDF3FD',padding:10,borderRadius:10}}><Warehouse size={24} color='#0758DC'/></View><View style={{flex:1,gap:2}}><Text style={styles.title}>{previewSize.name}</Text><Text style={styles.copy}>{[previewSize.dimensions, text(product,'floorArea') || text(size??{},'floorArea'), selected.length + ' kho'].filter(Boolean).join(' · ')}</Text>{selectedCodes ? <Text style={styles.copy}>{selectedCodes}</Text> : null}</View></View><View style={{paddingVertical:12,paddingHorizontal:14,borderRadius:12,borderWidth:1,borderColor:'#315D99',gap:4,marginTop:8}}><Text style={{fontSize:14,fontWeight:'600',color:C.muted}}>Thời gian thuê · {effectiveMode==='duration'?months+' tháng':typeof quote?.billableDays==='number'?quote.billableDays+' ngày':'Theo ngày'}</Text><Text style={{fontSize:18,lineHeight:26,fontWeight:'700',color:'#123E85'}}>{formatDate(start)} → {formatDate(end)}</Text></View></View><View style={{ gap: 8, marginTop: 6 }}>
+      {step===5 && <>
+        <View style={booking.productCard}>
+          <BookingDetail title={'Loại kho: ' + previewSize.name} detail={[previewSize.dimensions, areaLabel].filter(Boolean).join(' · ')} />
+          <BookingDetail title={'Thời gian thuê · ' + (effectiveMode === 'duration' ? months + ' tháng' : rentalDays + ' ngày')}
+            detail={formatDate(start) + ' → ' + formatDate(end)} />
+          <BookingDetail title={'Vị trí kho: ' + selectedCodes} detail={selected.length + ' ô kho'} />
+          <Pressable accessibilityRole="button" onPress={() => setStep(4)}>
+            <BookingDetail title={'Thiết bị thêm (' + selections.length + ')'} detail={selections.map(choice => {
+              const service = services.find(item => item.id === choice.serviceId);
+              return service ? service.name + ' ×' + choice.quantity + (service.kind === 'RENTAL' ? ' (thuê)' : ' (mua)') : '';
+            }).filter(Boolean).join(', ')} />
+          </Pressable>
+        </View>
+        <View style={{ gap: 8 }}>
         <Text style={styles.title}>Cách thanh toán</Text>
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          {(['PAY_MONTHLY', 'PREPAID'] as const).map(value => <Pressable key={value} accessibilityRole="radio"
+          {(['PAY_MONTHLY', 'PREPAID'] as const).filter(value => effectiveMode === 'duration' || value === 'PREPAID').map(value => <Pressable key={value} accessibilityRole="radio"
             accessibilityState={{ checked: value === plan, disabled: busy }} disabled={busy}
             onPress={() => {
               if (request.current || locked.current || value === plan) return;
@@ -269,44 +449,71 @@ export function CustomerBookingFlow() {
             <Text style={{ color: value === plan ? 'white' : C.text, fontWeight: '700', textAlign: 'center' }}>{value === 'PAY_MONTHLY' ? 'Trả hàng tháng' : 'Trả thẳng'}</Text>
           </Pressable>)}
         </View>
-      </View>{busy?<LoadingState layout="compact" label="Đang cập nhật chi phí…"/>:quote && quoteReady?<BookingBill quote={quote}/>:<Button title="Cập nhật chi phí" variant="secondary" onPress={()=>void availability(5,true)}/>}{profileContactIssue(user?.fullName??'',user?.phone??'')&&<Navigation title="Bổ sung thông tin liên hệ" path="/customer/account"/>}</>}
+      </View>{busy?<LoadingState layout="compact" label="Đang cập nhật chi phí…"/>:quote && quoteReady?<BookingBill quote={quote}/>:<Button title="Cập nhật chi phí" variant="secondary" onPress={()=>void availability(5,true)}/>}{profileContactIssue(user?.fullName??'',user?.phone??'')&&<Navigation title="Bổ sung thông tin liên hệ" path="/customer/account?returnTo=booking"/>}</>}
 
-      </CustomerReveal>}{error?<View style={{gap:8}}><Text accessibilityRole="alert" style={styles.error}>{error}</Text>{step===2&&<Button title="Thử lại" variant="secondary" disabled={busy} onPress={()=>void availability(3)}/>}</View>:null}
+      </CustomerReveal>}{error && !(step === 2 && effectiveMode === 'duration' && error === minimumMonthlyRental) ?<View style={{gap:8}}><Text accessibilityRole="alert" style={styles.error}>{error}</Text>{step===2&&<Button title="Thử lại" variant="secondary" disabled={busy} onPress={()=>void availability(3)}/>}</View>:null}
     </ScrollView>}
     {!createdBooking && step!==4 && <View style={{paddingHorizontal:16,paddingTop:12,paddingBottom:Math.max(insets.bottom,12),borderTopWidth:1,borderColor:'#E4E7EC',backgroundColor:'white',gap:8}}>
 
-      {step===3&&<Text style={{fontSize:14,lineHeight:20,color:C.muted}}>{selected.length ? 'Đã chọn '+selected.length+'/'+quantity+' ô kho' : 'Chọn ô còn trống để tiếp tục'}</Text>}
-      <Pressable accessibilityRole="button" accessibilityLabel={primary} accessibilityState={{busy,disabled:busy||catalog.loading||!product||step===3&&selected.length!==Number(quantity)||step===5&&(!quoteReady||selected.length!==Number(quantity)||Boolean(profileContactIssue(user?.fullName??'',user?.phone??'')))}} disabled={busy||catalog.loading||!product||step===3&&selected.length!==Number(quantity)||step===5&&(!quoteReady||selected.length!==Number(quantity)||Boolean(profileContactIssue(user?.fullName??'',user?.phone??'')))} onPress={()=>{setError('');if(step===1)setStep(2);else if(step===2)void availability(3);else if(step===3)void availability(4,true);else void submit();}} style={({pressed})=>({minHeight:52,borderRadius:12,paddingHorizontal:18,paddingVertical:14,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:10,backgroundColor:catalog.loading||!product||step===3&&selected.length!==Number(quantity)||step===5&&(!quoteReady||selected.length!==Number(quantity)||Boolean(profileContactIssue(user?.fullName??'',user?.phone??'')))?'#E4E7EC':pressed?'#0847AE':'#0758DC'})}>
-        {busy&&<ActivityIndicator size="small" color="white"/>}<Text style={{fontSize:16,lineHeight:24,fontWeight:'600',textAlign:'center',flexShrink:1,color:catalog.loading||!product||step===3&&selected.length!==Number(quantity)||step===5&&(!quoteReady||selected.length!==Number(quantity)||Boolean(profileContactIssue(user?.fullName??'',user?.phone??'')))?'#667085':'white'}}>{primary}</Text>{!busy&&<ArrowRight size={20} color={catalog.loading||!product||step===3&&selected.length!==Number(quantity)||step===5&&(!quoteReady||selected.length!==Number(quantity)||Boolean(profileContactIssue(user?.fullName??'',user?.phone??'')))?'#667085':'white'}/>}
+      {step===3&&<Text style={{fontSize:14,lineHeight:20,color:C.muted}}>Đã chọn <Text style={locationStyles.count}>{selectedUnits.length}/{quantity}</Text> ô kho</Text>}
+      <Pressable accessibilityRole="button" accessibilityLabel={primary} accessibilityState={{busy,disabled:primaryDisabled}} disabled={primaryDisabled} onPress={()=>{setError('');if(step===1){setProduct(productId);setStep(2);}else if(step===2)void availability(3);else if(step===3)void availability(4,true);else void submit();}} style={({pressed})=>({minHeight:52,borderRadius:12,paddingHorizontal:18,paddingVertical:14,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:10,backgroundColor:primaryDisabled?'#E4E7EC':pressed?'#0847AE':step===3?'#175CD3':'#0758DC'})}>
+        {busy&&<ActivityIndicator size="small" color="white"/>}<Text style={{fontSize:16,lineHeight:24,fontWeight:'600',textAlign:'center',flexShrink:1,color:primaryDisabled?'#667085':'white'}}>{primary}</Text>{!busy&&<ArrowRight size={20} color={primaryDisabled?'#667085':'white'}/>}
       </Pressable>
     </View>}
   </KeyboardAvoidingView>;
 }
 
+const locationStyles = StyleSheet.create({
+  card: { padding: 11, gap: 8, borderRadius: 15, borderWidth: 1, borderColor: '#E4E7EC', backgroundColor: 'white' },
+  facility: { backgroundColor: 'white', borderRadius: 15, padding: 10 },
+  period: { backgroundColor: '#EEF4FF', borderRadius: 15, padding: 10 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  copy: { flex: 1, minWidth: 0 },
+  title: { fontSize: 17, fontWeight: '800', color: '#101828' },
+  badge: { color: '#475467', backgroundColor: '#F2F4F7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, fontSize: 12 },
+  unmapped: { gap: 5 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  chip: { minHeight: 44, borderRadius: 9, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  remove: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  count: { color: '#175CD3', fontWeight: '800' },
+});
 const blue = '#0758DC';
 const pale = '#EAF1FD';
 const booking = StyleSheet.create({
   tools:{flexDirection:'row',flexWrap:'wrap',alignItems:'center',gap:4,paddingHorizontal:8,backgroundColor:pale,borderRadius:12},
-  tool:{flexGrow:1,minHeight:44,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:6,paddingHorizontal:4},
+  utilities:{gap:5},
+  tool:{minHeight:49,backgroundColor:pale,borderRadius:11,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:8,paddingHorizontal:10},
   link:{color:blue,fontWeight:'700',fontSize:13,flexShrink:1},
-  photo:{height:176,borderRadius:12,overflow:'hidden',backgroundColor:pale,alignItems:'center',justifyContent:'center'},
-  product:{fontSize:21,fontWeight:'800',color:C.text},
+  photo:{height:150,overflow:'hidden',backgroundColor:pale,alignItems:'center',justifyContent:'center'},
+  productCard:{borderWidth:1,borderColor:'#DCE3EC',borderRadius:12,overflow:'hidden'},
+  detailLine:{flexDirection:'row',alignItems:'center',gap:8,padding:8,borderBottomWidth:StyleSheet.hairlineWidth,borderColor:'#DCE3EC'},
+  productCopy:{padding:10,gap:4},
+  summaryIcon:{backgroundColor:'#E5F3FF',padding:7,borderRadius:10},
+  change:{minHeight:40,paddingHorizontal:8,justifyContent:'center',borderWidth:1,borderColor:'#DCE3EC',borderRadius:9},
+  product:{fontSize:19,fontWeight:'800',color:C.text},
   price:{fontSize:18,fontWeight:'800',color:blue},
   label:{fontSize:14,fontWeight:'700',color:C.text},
-  meta:{fontSize:14,color:C.text},
+  meta:{fontSize:13,color:C.text},
   muted:{fontSize:12,color:C.muted},
-  typeTile:{width:98,minHeight:76,borderWidth:1,borderColor:C.border,borderRadius:12,alignItems:'center',justifyContent:'center',gap:5,padding:7},
+  typeTile:{width:"32%",minHeight:72,borderWidth:1,borderColor:C.border,borderRadius:12,alignItems:'center',justifyContent:'center',gap:5,padding:7},
   typeActive:{borderColor:blue,backgroundColor:pale},
-  summary:{flexDirection:'row',alignItems:'center',gap:8,borderWidth:1,borderColor:C.border,borderRadius:10,paddingHorizontal:10,paddingVertical:9,minHeight:44},
-  legend:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',gap:8},
-  legendItem:{flexDirection:'row',alignItems:'center',gap:5},
+  summary:{flexDirection:'row',alignItems:'center',gap:8,borderWidth:1,borderColor:C.border,borderRadius:10,paddingHorizontal:10,paddingVertical:6,minHeight:44},
   grid:{flexDirection:'row',flexWrap:'wrap',gap:'2%',rowGap:8},
-  unit:{width:'32%',minHeight:72,borderRadius:10,padding:5,alignItems:'center',justifyContent:'center',gap:3},
   pill:{flex:1,minWidth:96,minHeight:44,borderWidth:1,borderColor:C.border,borderRadius:24,alignItems:'center',justifyContent:'center',padding:6},
   stepper:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},
   counter:{flexDirection:'row',alignItems:'center',borderRadius:24,backgroundColor:pale},
   counterAction:{width:44,height:44,alignItems:'center',justifyContent:'center'},
 });
+
+function BookingDetail({ title, detail }: { title: string; detail: string }) {
+  return <View style={booking.detailLine}>
+    <View style={booking.summaryIcon}><Warehouse size={16} color={blue} /></View>
+    <View style={{ flex: 1 }}>
+      <Text style={booking.label}>{title}</Text>
+      {detail ? <Text style={booking.muted}>{detail}</Text> : null}
+    </View>
+  </View>;
+}
 
 function BookingOptions({value, options, onChange}:{value:string;options:{value:string;label:string}[];onChange:(value:string)=>void}) {
   return <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{options.map(option=>{

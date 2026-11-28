@@ -368,10 +368,13 @@ for (const kind of ['support-requests', 'maintenance', 'stock-movements']) {
   assert(assignmentNeedsAttention(kind, row));
   assert(buildActivity('MANAGER', 'manager', { [kind]: [row] })[0].web.startsWith('/manager/assignments'));
 }
-assert.deepEqual(buildActivity('MANAGER', 'manager', {
-  'payment-submissions': [{ id: 'bank', status: 'PENDING_VERIFICATION' }],
+assert.deepEqual(buildActivity('FACILITY_MANAGER', 'manager', {
+  'payment-submissions': [{ id: 'bank', status: 'PENDING_VERIFICATION', invoice: { id: 'bill' } }],
   'online-payment-reconciliations': [{ id: 'late', status: 'REFUND_REQUIRED' }],
-}), []);
+}).map(item => item.web).sort(), [
+  '/manager/operations/invoices/bill?review=submissions&record=bank',
+  '/manager/operations/payments?review=reconciliation&record=late',
+]);
 assert(matchesSource('/staff/returns/return', ['/staff/stock-movements/movement/complete']));
 const { resolveApiBase } = await import(await moduleUrl(new URL('../../mobile/src/services/api-base.ts', import.meta.url)));
 assert.equal(resolveApiBase({ configured: 'https://api.example.org/api/', development: true, hostUri: '192.168.1.9:8081' }), 'https://api.example.org/api');
@@ -387,6 +390,10 @@ const defaultMonth = defaultServiceSelection(shelfService,'2027-01-31','2027-03-
 assert.equal(defaultMonth.serviceEndDate,'2027-02-28');
 assert.equal(serviceEstimatedTotal(shelfService,defaultMonth,'2027-01-31','2027-03-15'),120000);
 assert.equal(serviceEstimatedTotal(shelfService,{...defaultMonth,serviceEndDate:'2027-03-15'},'2027-01-31','2027-03-15'),null);
+const threeMonthSelection = defaultServiceSelection(shelfService, '2027-01-31', '2027-04-30');
+assert.equal(threeMonthSelection.serviceEndDate, '2027-04-30');
+assert.equal(serviceEstimatedTotal(shelfService, threeMonthSelection, '2027-01-31', '2027-04-30'), 360000);
+assert.match(serviceSelectionIssue({ ...shelfService, minimumRentalMonths: 2 }, defaultMonth, '2027-01-31', '2027-04-30'), /tối thiểu 2 tháng/);
 const dayService={...shelfService,id:'cart',billingUnit:'DAY',unitPrice:60000};
 assert.equal(serviceEstimatedTotal(dayService,{serviceId:'cart',quantity:2,serviceStartDate:'2027-01-05',serviceEndDate:'2027-01-10'},'2027-01-01','2027-04-01'),600000);
 assert(serviceSelectionIssue(dayService,{serviceId:'cart',quantity:0},'2027-01-01','2027-04-01'));

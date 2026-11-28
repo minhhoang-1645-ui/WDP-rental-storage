@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { invoiceBreakdown } from '../billing/invoice-breakdown.js';
+import { baselinePricingPolicy } from '../policies/pricing-policy.js';
 import { applyEarlyReturn, earlyReturnSettlementPending, hasStartedUnissuedRenewal, planEarlyReturn, summarizeEarlyReturn } from './return-period-closeout.js';
 
 const day = (date: string) => new Date(date + 'T00:00:00Z');
@@ -11,7 +12,7 @@ const invoice = (cycle: number, paid = 0n, overrides: Partial<Invoice> = {}): In
   rentalAmount: 100n, serviceAmount: 0n, chargeAmount: 0n, depositAmount: 0n, totalAmount: 100n, amountPaid: paid, balanceDue: 100n - paid,
   billingCycle: cycle, billingPeriodStart: day(starts[cycle - 1]), billingPeriodEnd: day(starts[cycle]),
   renewalRequestId: null, renewalCycle: null, renewalRequest: null, depositSettlement: null,
-  dueAt: day(starts[cycle - 1]), storageTypeIdSnapshot: 'type', currency: 'VND', pricingSnapshot: { paymentPlan: 'PAY_MONTHLY' },
+  dueAt: day(starts[cycle - 1]), storageTypeIdSnapshot: 'type', facilityIdSnapshot: null, currency: 'VND', pricingSnapshot: { paymentPlan: 'PAY_MONTHLY' },
   ...overrides,
 });
 const plan = (invoices: Invoice[], date = '2027-01-10', fault = false) => planEarlyReturn(invoices, 'contract', ['contract'], day(date), fault);
@@ -27,6 +28,53 @@ const db = () => ({
 });
 
 describe('Early return financial closeout', () => {
+  it('uses the booked discount table and offsets the signed fee against prepaid rent', async () => {
+    const row = invoice(1, 0n, { status: 'PAID', rentalAmount: 15_300_000n, totalAmount: 15_300_000n,
+      amountPaid: 15_300_000n, balanceDue: 0n, billingPeriodEnd: day('2027-11-17'), pricingSnapshot: {
+        paymentPlan: 'PREPAID', billingMode: 'MONTHLY', termMonths: 12, monthlyUnitPrice: 1_500_000,
+        pricingPolicy: { ...baselinePricingPolicy, earlyReturn: { version: 4, value: {
+          feeMethod: 'FIXED_AMOUNT', feeAmount: 100_000, refundMode: 'RECALCULATE_DISCOUNT',
+        } } },
+      } });
+    const result = plan([row], '2027-03-17');
+    expect(summarizeEarlyReturn(result, '2027-03-17')).toMatchObject({ rentalAmount: 5_700_000,
+      penaltyAmount: 100_000, refundOffset: 100_000, refundAmount: 9_500_000, additionalCharge: 0 });
+    const tx = db();
+    tx.payment.findMany.mockResolvedValue([{ id: 'pay-booked', amount: row.amountPaid }]);
+    await expect(applyEarlyReturn(tx as never, result, 'contract', 'RET', day('2027-03-17'))).resolves.toEqual([
+      { invoiceId: row.id, paymentIds: ['pay-booked'], amount: 9_500_000, offsetAmount: 100_000 },
+    ]);
+    expect(tx.invoice.updateMany).not.toHaveBeenCalled();
+    expect(tx.invoice.create).not.toHaveBeenCalled();
+    const protectedPlan = planEarlyReturn([row], 'contract', ['contract'], day('2027-03-17'), false, [], true);
+    expect(summarizeEarlyReturn(protectedPlan, '2027-03-17')).toMatchObject({ refundAmount: 10_200_000, penaltyAmount: 0 });
+  });
+
+  it('keeps prepaid rent in the no-refund mode and records the fee once outside original paid invoices', async () => {
+    const row = { ...prepaid(660n), pricingSnapshot: { paymentPlan: 'PREPAID', billingMode: 'MONTHLY', termMonths: 6,
+      pricingPolicy: { earlyReturn: { version: 2, value: { feeMethod: 'UNUSED_RENT_PERCENTAGE', feeAmount: 10, refundMode: 'NONE' } } },
+    } } satisfies Invoice;
+    const result = plan([row, { ...row, id: 'second', invoiceCode: 'I2', billingPeriodStart: day('2027-05-17'), billingPeriodEnd: day('2027-11-17') }]);
+    expect(summarizeEarlyReturn(result, '2027-01-10')).toMatchObject({ refundAmount: 0, penaltyAmount: 100, additionalCharge: 100 });
+    const tx = db();
+    await applyEarlyReturn(tx as never, result, 'contract', 'RET', day('2027-01-10'), 'return-id');
+    expect(tx.invoice.updateMany).not.toHaveBeenCalled();
+    expect(tx.invoice.create).toHaveBeenCalledExactlyOnceWith({ data: expect.objectContaining({ invoiceCode: 'RET-EARLY',
+      type: 'SETTLEMENT', chargeAmount: 100n, balanceDue: 100n, dueAt: day('2027-01-10'),
+      pricingSnapshot: expect.objectContaining({ returnRequestId: 'return-id', rentalContractId: 'contract' }),
+    }) });
+  });
+
+  it('charges the fixed early return fee inside the last started period and skips it on the end date', () => {
+    const row = invoice(1, 100n, { pricingSnapshot: { paymentPlan: 'PAY_MONTHLY', pricingPolicy: {
+      earlyReturn: { version: 1, value: { feeMethod: 'FIXED_AMOUNT', feeAmount: 20, refundMode: 'ORIGINAL_DISCOUNT' } },
+    } } });
+    expect(summarizeEarlyReturn(plan([row], '2026-12-16'), '2026-12-16')).toMatchObject({
+      refundAmount: 0, penaltyAmount: 20, additionalCharge: 20,
+    });
+    expect(summarizeEarlyReturn(plan([row], '2026-12-17'), '2026-12-17')).toMatchObject({ penaltyAmount: 0, additionalCharge: 0 });
+  });
+
   it('keeps two started periods and waives periods three to six in the November 17 example', async () => {
     const invoices = [1, 2, 3, 4, 5, 6].map(cycle => invoice(cycle, cycle <= 2 ? 100n : 0n));
     const result = plan(invoices);

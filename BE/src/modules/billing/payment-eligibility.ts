@@ -1,6 +1,10 @@
 type Contract = { id: string; contractCode: string; termsAcceptedAt?: Date | null };
 type Invoice = { type: string; reservation: { quantity: number; contracts: Contract[] }; renewalRequest?: { id: string; status: string; appendixAcceptedAt?: Date | null } | null };
 
+export function supportsOnlinePayment(invoice: { type: string }) {
+  return ['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type);
+}
+
 /** Display metadata only; BillingService still validates signatures inside payment transactions. */
 export function invoiceSigningRequirements(invoice: Invoice) {
   if (invoice.type === 'INITIAL') {

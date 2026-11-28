@@ -25,7 +25,7 @@ const path = require('node:path');
     console.log(name + ': ' + page.url());
   }
   if (phase === 'after') {
-    for (const resource of ['reservations', 'inquiries', 'support-requests', 'appointments', 'stock-movements', 'renewals', 'transfers', 'returns', 'maintenance']) {
+    for (const resource of ['reservations', 'inquiries', 'support-requests', 'appointments', 'renewals', 'transfers', 'returns', 'maintenance']) {
       await page.goto('http://127.0.0.1:8081/staff/' + resource);
       await page.waitForTimeout(1800);
       const content = await page.locator('body').innerText();

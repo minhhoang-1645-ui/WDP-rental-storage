@@ -19,7 +19,7 @@ describe('handover activation window', async () => {
     expect(findMany.mock.calls[0][0].where).toMatchObject({ status: 'COMPLETED', reservation: { status: 'CONFIRMED', contracts: { some: { status: 'READY_FOR_HANDOVER' } } } });
   });
   it('activates all contracts and units together and generates billing only on activation', async () => {
-    const tx = { rentalContract: { count: vi.fn().mockResolvedValue(0), updateMany: vi.fn().mockResolvedValue({ count: 1 }) }, storageUnit: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } };
+    const tx = { $queryRaw: vi.fn().mockResolvedValue([{ operationalStatus: 'OPEN', closureMode: null }]), rentalContract: { count: vi.fn().mockResolvedValue(0), updateMany: vi.fn().mockResolvedValue({ count: 1 }) }, storageUnit: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) } };
     const inventory = { fulfillPurchases: vi.fn() }, billing = { ensureRecurringInvoices: vi.fn() };
     const worker = new AppointmentsService({} as never, billing as never, inventory as never);
     const current = { id: 'reservation', quantity: 1, contracts: [{ id: 'contract', reservationUnit: { storageUnit: { id: 'unit', status: 'AVAILABLE' } } }] };
@@ -27,6 +27,15 @@ describe('handover activation window', async () => {
     expect(tx.rentalContract.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'ACTIVE' }) }));
     expect(tx.storageUnit.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'OCCUPIED' } }));
     expect(billing.ensureRecurringInvoices).toHaveBeenCalledOnce();
+    expect(inventory.fulfillPurchases).not.toHaveBeenCalled();
+    tx.$queryRaw.mockResolvedValueOnce([{ operationalStatus: 'CLOSING', closureMode: 'REQUIRED_RELOCATION' }]);
+    await expect(Reflect.get(worker, 'activateContracts').call(worker, tx, current)).rejects.toThrow('dừng bàn giao');
+    expect(tx.rentalContract.updateMany).toHaveBeenCalledTimes(1);
+    tx.$queryRaw.mockResolvedValueOnce([{ operationalStatus: 'CLOSING', closureMode: 'REQUIRED_RELOCATION' }]);
+    await expect(Reflect.get(worker, 'activateContracts').call(worker, tx, current, true)).resolves.toBeUndefined();
+    expect(tx.rentalContract.updateMany).toHaveBeenCalledTimes(2);
+    tx.$queryRaw.mockResolvedValueOnce([{ operationalStatus: 'CLOSED', closureMode: 'REQUIRED_RELOCATION' }]);
+    await expect(Reflect.get(worker, 'activateContracts').call(worker, tx, current, true)).rejects.toThrow('dừng bàn giao');
     current.contracts[0].reservationUnit.storageUnit.status = 'MAINTENANCE';
     await expect(Reflect.get(worker, 'activateContracts').call(worker, tx, current)).rejects.toThrow();
   });

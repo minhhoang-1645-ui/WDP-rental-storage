@@ -1,4 +1,4 @@
-import { Boxes, ClipboardList, Warehouse } from 'lucide-react';
+import { CalendarClock, ClipboardList, FileText, History, ShieldAlert } from 'lucide-react';
 import { InternalPortalLayout, type InternalNavItem } from '../../components/layout/InternalPortalLayout';
 import { staffNavigation } from '../../components/manager/operations-navigation';
 import { OperationsWorkspace } from '../../components/manager/operations-workspace';
@@ -6,7 +6,7 @@ import type { WorkspaceSection } from '../../components/workspace/WorkspaceSecti
 import '../../styles/workspace-theme.css';
 import '../../styles/staff-workspace.css';
 
-const staffItems = staffNavigation();
+const staffItems = staffNavigation().filter(item => item.to !== '/staff/rentals');
 const groups = [
   { key: 'intake', title: 'Tiếp nhận yêu cầu' },
   { key: 'handover', title: 'Giao nhận & thay đổi' },
@@ -16,22 +16,13 @@ export const staffSections: WorkspaceSection[] = groups.map(group => ({
   ...group,
   items: staffItems.filter(item => item.group === group.title),
 }));
-function section(group: string, destinations: Record<string, string>): InternalNavItem[] {
-  return Object.entries(destinations).flatMap(([resource, label]) => {
-    const item = staffItems.find(entry => entry.to === `/staff/${resource}`);
-    if (!item) return [];
-    return [{ ...item, label, group, match: [`/staff/operations/${resource}`, ...(resource === 'rentals' ? ['/staff/overstays'] : [])] }];
-  });
-}
-
 const menu: InternalNavItem[] = [
-  ...staffItems.filter(item => item.end).map(item => ({ ...item, label: 'Bàn làm việc', group: 'Tổng quan', match: ['/staff/operations'] })),
-  { to: '/staff/tasks', label: 'Công việc của tôi', icon: ClipboardList, group: 'Tổng quan' },
-  ...section('Đặt kho & bàn giao', { appointments: 'Lịch bàn giao' }),
-  ...section('Hàng hóa', { 'stock-movements': 'Phiếu nhập – xuất' }),
-  { to: '/staff/stored-items', label: 'Hàng đang lưu', icon: Boxes, group: 'Hàng hóa' },
-  { to: '/staff/assigned-units', label: 'Kho tôi phụ trách', icon: Warehouse, group: 'Hàng hóa' },
-  ...section('Vận hành kho', { rentals: 'Kho đang thuê', transfers: 'Chuyển kho', returns: 'Trả kho', 'support-requests': 'Hỗ trợ khách hàng', maintenance: 'Bảo trì', 'damage-claims': 'Sự cố hàng hóa' }),
+  ...staffItems.filter(item => item.end).map(item => ({ ...item, label: 'Tổng quan', group: 'Không gian làm việc', match: ['/staff/operations'] })),
+  { to: '/staff/tasks', label: 'Công việc', icon: ClipboardList, group: 'Không gian làm việc' },
+  { to: '/staff/schedule', label: 'Lịch phục vụ', icon: CalendarClock, group: 'Không gian làm việc' },
+  { to: '/staff/report-issue', label: 'Báo cáo sự cố', icon: ShieldAlert, group: 'Không gian làm việc' },
+  { to: '/staff/history', label: 'Lịch sử công việc', icon: History, group: 'Không gian làm việc' },
+  { to: '/staff/policies', label: 'Chính sách áp dụng', icon: FileText, group: 'Tra cứu' },
 ];
 
 export function StaffLayout() {

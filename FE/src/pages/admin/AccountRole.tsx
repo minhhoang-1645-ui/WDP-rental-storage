@@ -1,31 +1,74 @@
-import { BriefcaseBusiness, ClipboardCheck, ShieldCheck, UserRound } from 'lucide-react';
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useAuth } from '../../auth/auth-context';
+import { useApiResource } from '../../services/useApiResource';
+import { Link } from 'react-router-dom';
+import { Modal, PageHeader } from '../../components/manager/PortalUi';
+import { Building2, ChartNoAxesColumn, Check, ClipboardCheck, Database, Eye, Info, Layers, ShieldCheck, UserRound } from 'lucide-react';
 
 const adminRoles = {
-  CUSTOMER: {
-    label: 'Khách hàng', icon: UserRound,
-    description: 'Quản lý hồ sơ và dịch vụ lưu trữ của mình.',
-    access: ['Đặt kho và theo dõi yêu cầu của mình.', 'Xem hợp đồng, hóa đơn, thanh toán và hàng đang lưu của mình.', 'Gửi yêu cầu nhập/xuất, gia hạn, chuyển kho, trả kho hoặc hỗ trợ.'],
+  SYSTEM_ADMINISTRATOR: {
+    label: 'Quản trị viên', english: 'System Administrator', icon: ShieldCheck,
+    scope: 'Quản trị toàn hệ thống',
+    access: [
+      'Quản lý tài khoản và trạng thái truy cập, cấp vai trò khi tạo tài khoản nội bộ và đổi vai trò theo quy định.',
+      'Cấp, thu hồi và điều chuyển quyền truy cập cơ sở. Quản lý phiên đăng nhập.',
+      'Tra cứu lịch sử đăng nhập, nhật ký hoạt động và lịch sử thay đổi quyền.',
+    ],
+    limits: 'Không trực tiếp xử lý nghiệp vụ thuê kho hoặc điều phối nhân viên cơ sở.',
   },
-  STAFF: {
-    label: 'Nhân viên', icon: ClipboardCheck,
-    description: 'Xử lý công việc tại kho được phân công.',
-    access: ['Tiếp nhận yêu cầu đặt kho, tư vấn và bàn giao kho.', 'Kiểm đếm khi nhập/xuất và xử lý hồ sơ gia hạn, chuyển kho, trả kho theo quy trình.', 'Xử lý yêu cầu hỗ trợ và bảo trì được giao.'],
+  BUSINESS_OPERATIONS_MANAGER: {
+    label: 'Điều hành kinh doanh', english: 'Business Operations Manager', icon: ChartNoAxesColumn,
+    scope: 'Điều hành kinh doanh toàn hệ thống',
+    access: [
+      'Quản lý cơ sở, trạng thái kinh doanh, giờ hoạt động và lịch phục vụ tùy chọn.',
+      'Thiết lập chính sách kinh doanh, công bố khung giá theo cơ sở và nhóm kho.',
+      'Quản lý danh mục bổ trợ chung và theo dõi doanh thu, hiệu quả cơ sở.',
+      'Quyết định phương án ngừng kinh doanh cơ sở.',
+    ],
+    limits: 'Không trực tiếp phân công nhân viên hoặc quản trị tài khoản.',
   },
-  MANAGER: {
-    label: 'Quản lý', icon: BriefcaseBusiness,
-    description: 'Điều phối hoạt động của cơ sở NestBox.',
-    access: ['Phân công nhân viên và theo dõi kho, khách hàng, hợp đồng, kết quả kiểm đếm.', 'Duyệt yêu cầu nhân viên chuyển lên và kết quả bảo trì.', 'Kiểm tra khoản thu và quyết định khấu trừ, hoàn tiền cọc.', 'Theo dõi tài chính, bảng giá và báo cáo.'],
+  FACILITY_MANAGER: {
+    label: 'Quản lý cơ sở', english: 'Facility Manager', icon: Building2,
+    scope: 'Một cơ sở được cấp quyền hiện hành',
+    access: [
+      'Quản lý loại kho, đơn giá, danh sách kho và dịch vụ bổ trợ tại cơ sở.',
+      'Giám sát hàng chờ Staff. Phân công việc đặc biệt, điều phối và chuyển giao nhiệm vụ. Quản lý lịch hẹn và hồ sơ thuê kho.',
+      'Tra cứu thông tin khách hàng tại cơ sở.',
+      'Xử lý ngoại lệ bàn giao, gia hạn, chuyển kho và trả kho.',
+      'Xử lý hỗ trợ, khiếu nại và nghiệm thu bảo trì.',
+      'Quản lý hóa đơn, khoản thu và hoàn tiền. Theo dõi báo cáo hoạt động cơ sở.',
+    ],
+    limits: 'Chỉ xử lý tại cơ sở được cấp quyền. Chính sách kinh doanh và khung giá theo nhóm kho do Điều hành kinh doanh quản lý.',
   },
-  ADMIN: {
-    label: 'Quản trị viên', icon: ShieldCheck,
-    description: 'Quản trị tài khoản và theo dõi nhật ký hệ thống.',
-    access: ['Tạo tài khoản nhân viên hoặc quản lý.', 'Cập nhật thông tin liên hệ và quản lý trạng thái tài khoản.', 'Xem lịch sử đăng nhập và nhật ký hoạt động.'],
+  FACILITY_STAFF: {
+    label: 'Nhân viên cơ sở', english: 'Facility Staff', icon: ClipboardCheck,
+    scope: 'Một cơ sở được cấp quyền hiện hành',
+    access: [
+      'Tra cứu lịch phục vụ, kiểm tra thông tin đặt thuê và chủ động nhận việc vận hành đủ điều kiện.',
+      'Bàn giao kho và phương tiện truy cập, kiểm tra khi trả kho, hỗ trợ và thực hiện chuyển kho đã duyệt. Thực hiện nhiệm vụ đặc biệt khi được giao.',
+      'Báo cáo sự cố, ghi nhận kết quả và chuyển quản lý xử lý khi vượt thẩm quyền.',
+    ],
+    limits: 'Không quản lý giá thuê, chính sách, tài khoản hoặc quyết toán tài chính. Không kiểm kê tài sản cá nhân của khách.',
+  },
+  STORAGE_CUSTOMER: {
+    label: 'Khách thuê kho', english: 'Storage Customer', icon: UserRound,
+    scope: 'Hồ sơ và giao dịch của tài khoản',
+    access: [
+      'Tìm và đặt thuê kho, ký hợp đồng, thanh toán hóa đơn và đặt lịch nhận kho.',
+      'Mua hoặc thuê dịch vụ bổ trợ. Gửi yêu cầu gia hạn, chuyển kho, trả kho và hỗ trợ.',
+      'Tự quản lý tài sản cá nhân trong kho. Theo dõi hồ sơ thuê, hóa đơn, lịch sử thanh toán, thông báo và tiến độ trên Customer Mobile.',
+    ],
+    limits: 'Chỉ truy cập hồ sơ và giao dịch của chính mình.',
   },
 };
+type RoleInfo = (typeof adminRoles)[keyof typeof adminRoles];
 
 function roleInfo(value: unknown) {
   return typeof value === 'string' && Object.hasOwn(adminRoles, value) ? adminRoles[value as keyof typeof adminRoles] : undefined;
 }
+
+export const accountRoleLabel = (value: string) => roleInfo(value)?.label ?? value;
 
 export function AccountRole({ value }: { value: unknown }) {
   const role = roleInfo(value);
@@ -37,9 +80,101 @@ export function AccountRole({ value }: { value: unknown }) {
 export function AccountRoleAccess({ value }: { value: unknown }) {
   const role = roleInfo(value);
   if (!role) return <p>Chưa xác định vai trò của tài khoản.</p>;
+  const icons = [Layers, ClipboardCheck, Database, ChartNoAxesColumn];
+  const cards = value === 'FACILITY_MANAGER' ? [
+    { title: 'Điều phối vận hành', copy: 'Giám sát hàng chờ, phân công và chuyển giao nhiệm vụ. Theo dõi kho, khách hàng và hồ sơ thuê tại cơ sở.' },
+    { title: 'Phê duyệt nghiệp vụ', copy: 'Xử lý yêu cầu ngoại lệ, hỗ trợ khách hàng và nghiệm thu bảo trì theo thẩm quyền.' },
+    { title: 'Thu và đặt cọc', copy: 'Kiểm tra hóa đơn, khoản thu, khấu trừ và hoàn tiền đặt cọc theo hồ sơ.' },
+    { title: 'Tài chính và báo cáo', copy: 'Theo dõi đơn giá, danh mục kho, dịch vụ bổ trợ và báo cáo hoạt động cơ sở.' },
+  ] : role.access.map((copy, index) => ({
+    title: (value === 'FACILITY_STAFF' ? ['Lịch phục vụ và nhận việc', 'Nhiệm vụ vận hành', 'Báo cáo và chuyển xử lý']
+      : value === 'SYSTEM_ADMINISTRATOR' ? ['Quản lý tài khoản', 'Quyền cơ sở và phiên', 'Nhật ký và lịch sử']
+      : value === 'BUSINESS_OPERATIONS_MANAGER' ? ['Quản lý cơ sở', 'Chính sách và khung giá', 'Dịch vụ và hiệu quả', 'Ngừng kinh doanh']
+      : ['Đặt và thuê kho', 'Dịch vụ và yêu cầu', 'Theo dõi hồ sơ'])[index],
+    copy,
+  }));
   return <div className="admin-role-access">
-    <h2><AccountRole value={value} /></h2>
-    <p>{role.description}</p>
-    <ul>{role.access.map(permission => <li key={permission}>{permission}</li>)}</ul>
+    <h2>Quyền nghiệp vụ hiện tại</h2>
+    <div className="admin-permission-role"><AccountRole value={value} /><span>{role.scope}</span></div>
+    <ul className="admin-permission-cards">{cards.map(({ title, copy }, index) => {
+      const Icon = icons[index % icons.length];
+      return <li key={title}><span className="admin-permission-icon"><Icon size={24} aria-hidden="true" /></span>
+        <div><h3>{title}</h3><p>{copy}</p></div>
+      </li>;
+    })}</ul>
   </div>;
+}
+function RolePermissions({ role }: { role: RoleInfo }) {
+  const permissions = role.access.flatMap(permission => permission.split(/(?<=\.) /));
+  return <div className="admin-role-permissions">
+    <h3>Quyền và trách nhiệm chính</h3>
+    <ul role="list">{permissions.map(permission => <li key={permission}>
+      <Check size={16} aria-hidden="true" />
+      <span>{permission}</span>
+    </li>)}</ul>
+    <div className="admin-role-limits">
+      <Info size={17} aria-hidden="true" />
+      <div><h3>Giới hạn quyền hạn</h3><p>{role.limits}</p></div>
+    </div>
+  </div>;
+}
+
+export function AdminRolesPage() {
+  const [modalHost, setModalHost] = useState<HTMLDivElement | null>(null);
+  return <section className="admin-roles-page">
+    <PageHeader title="Vai trò và phân quyền" />
+    <div className="manager-table-wrap admin-roles-table">
+      <table className="manager-table" aria-label="Danh sách vai trò">
+        <thead><tr>
+          <th scope="col">Vai trò</th><th scope="col">Phạm vi truy cập</th>
+          <th scope="col">Số tài khoản</th><th scope="col">Thao tác</th>
+        </tr></thead>
+        <tbody>{Object.entries(adminRoles).map(([value, role]) => <RoleRow key={value} value={value} role={role} modalHost={modalHost} />)}</tbody>
+      </table>
+    </div>
+    <div ref={setModalHost} />
+  </section>;
+}
+
+function RoleRow({ value, role, modalHost }: { value: string; role: RoleInfo; modalHost: HTMLDivElement | null }) {
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  const source = useApiResource<{ total: number }>(user?.id ? '/admin/users?limit=1&role=' + encodeURIComponent(value) : null, user?.id);
+  const total = source.data?.total;
+  const count = typeof total === 'number' && Number.isSafeInteger(total) && total >= 0 ? total.toLocaleString('vi-VN') : null;
+  const to = '/admin/users?' + new URLSearchParams({ role: value });
+  const { icon: Icon } = role;
+  const countState = source.loading || source.refreshing
+    ? <span className="admin-role-count-state" role="status">Đang tải…</span>
+    : <span className="admin-role-count-state">Chưa tải được
+      <button type="button" className="portal-text-button" aria-label={`Tải lại số tài khoản · ${role.label}`}
+        onClick={source.refresh}>Thử lại</button>
+    </span>;
+  return <tr>
+    <th scope="row">
+      <button type="button" className="admin-role-name" aria-haspopup="dialog" onClick={() => setOpen(true)}>
+        <span className="admin-role-icon"><Icon size={18} aria-hidden="true" /></span>
+        <span><strong>{role.label}</strong><small>{role.english}</small></span>
+      </button>
+    </th>
+    <td>{role.scope}</td>
+    <td>{count === null ? countState : <Link className="admin-role-account-count" to={to}
+      aria-label={`${count} tài khoản · ${role.label}`}>{count}</Link>}</td>
+    <td>
+      <button type="button" className="button-secondary icon-button" aria-label={`Xem chi tiết · ${role.label}`}
+        aria-haspopup="dialog" onClick={() => setOpen(true)}><Eye size={17} aria-hidden="true" /></button>
+      {open && modalHost && createPortal(<Modal title={role.label} titleBadge={<span className="admin-role-icon"><Icon size={18} aria-hidden="true" /></span>}
+        subtitle={<p className="admin-role-english">{role.english}</p>} focusTitle className="admin-role-dialog" onClose={() => setOpen(false)}
+        footer={<>
+          <button type="button" className="button-secondary" onClick={() => setOpen(false)}>Đóng</button>
+          <Link className="button-primary" to={to}>Xem danh sách tài khoản</Link>
+        </>}>
+        <dl className="admin-role-dialog-facts">
+          <div><dt>Phạm vi truy cập</dt><dd>{role.scope}</dd></div>
+          <div><dt>Số tài khoản</dt><dd>{count === null ? countState : count + ' tài khoản'}</dd></div>
+        </dl>
+        <RolePermissions role={role} />
+      </Modal>, modalHost)}
+    </td>
+  </tr>;
 }

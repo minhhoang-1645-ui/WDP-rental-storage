@@ -55,12 +55,13 @@ const navigation = [
   { to: "/customer/renewals", label: "Gia hạn", icon: Repeat2 },
   { to: "/customer/returns", label: "Trả kho & tiền cọc", icon: RotateCcw },
   { to: "/customer/transfers", label: "Chuyển đổi kho", icon: ArrowRightLeft },
+  { to: "/customer/policies", label: "Chính sách thuê kho", icon: CircleHelp },
   { to: "/customer/support", label: "Hỗ trợ", icon: CircleHelp },
 ] as const;
 const customerGroups = [
   { key: 'booking', icon: ClipboardList, title: 'Đặt kho & nhận kho', paths: ['/customer/reservations', '/customer/payments', '/customer/appointments', '/customer/contracts'] },
   { key: 'storage', icon: Warehouse, title: 'Kho & hàng của tôi', paths: ['/customer/rentals', '/customer/booking-history', '/customer/stock-movements', '/customer/stored-items'] },
-  { key: 'support', icon: CircleHelp, title: 'Thay đổi & hỗ trợ', paths: ['/customer/renewals', '/customer/returns', '/customer/transfers', '/customer/support', '/customer/damage-claims'] },
+  { key: 'support', icon: CircleHelp, title: 'Thay đổi & hỗ trợ', paths: ['/customer/renewals', '/customer/returns', '/customer/transfers', '/customer/support', '/customer/policies', '/customer/damage-claims'] },
 ];
 
 export const customerSections: WorkspaceSection[] = customerGroups.map(group => ({
@@ -141,7 +142,7 @@ export function CustomerLayout() {
         replace
       />
     );
-  if (user.role !== "CUSTOMER")
+  if (user.role !== "STORAGE_CUSTOMER")
     return <Navigate to={portalDestination(user.role)} replace />;
 
   const signOut = () => {

@@ -54,7 +54,7 @@ try {
     await test.page.screenshot({ path: 'artifacts/production-20261104/' + role.toLowerCase() + '-320.png', fullPage: true, animations: 'disabled' });
     await test.page.setViewportSize({ width: 1440, height: 960 });
     await test.page.getByRole('button', { name: 'Đăng xuất', exact: true }).click();
-    await test.page.waitForURL(url => url.pathname === (role === 'CUSTOMER' ? '/account/login' : '/portal/login'));
+    await test.page.waitForURL(url => url.pathname === '/account/login');
     assert.equal(await test.page.evaluate(async () => (await import('/src/services/browser-storage.ts')).safeLocalStorage.getItem('wdp-auth-token-v1')), null);
     checks.push(role + ': blocked browser storage still permits login, correct workspace and logout without stale bearer state');
     await test.context.close();
@@ -71,7 +71,7 @@ try {
   await reconnect.context.close();
   for (const [role, reason, message, loginPath] of [
     ['CUSTOMER', 'ACCOUNT_DISABLED', 'Tài khoản đã bị vô hiệu hóa.', '/account/login'],
-    ['STAFF', 'ACCOUNT_DISABLED', 'Tài khoản đã bị vô hiệu hóa.', '/portal/login'],
+    ['STAFF', 'ACCOUNT_DISABLED', 'Tài khoản đã bị vô hiệu hóa.', '/account/login'],
     ['CUSTOMER', 'SESSION_EXPIRED', 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.', '/account/login'],
     ['CUSTOMER', 'SESSION_INVALID', 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.', '/account/login'],
   ]) {
@@ -96,7 +96,7 @@ try {
   }
   for (const [role, loginPath, response] of [
     ['CUSTOMER', '/account/login', { code: 'ACCOUNT_DISABLED' }],
-    ['STAFF', '/portal/login', { message: 'Tài khoản đã bị vô hiệu hóa.' }],
+    ['STAFF', '/account/login', { message: 'Tài khoản đã bị vô hiệu hóa.' }],
   ]) {
     const test = await setup(role);
     await test.context.addInitScript(() => sessionStorage.setItem('wdp-session-expired', 'SESSION_EXPIRED'));

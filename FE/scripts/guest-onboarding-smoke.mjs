@@ -18,9 +18,10 @@ try {
   });
   const recoveryPage = await recovery.newPage();
   await recoveryPage.goto(base + '/portal/login');
+  await recoveryPage.waitForURL('**/account/login');
   await recoveryPage.getByRole('link', { name: 'Quên mật khẩu', exact: true }).click();
-  await recoveryPage.waitForURL('**/forgot-password?from=portal');
-  assert.equal(await recoveryPage.getByRole('link', { name: 'Quay lại đăng nhập' }).getAttribute('href'), '/portal/login');
+  await recoveryPage.waitForURL('**/forgot-password');
+  assert.equal(await recoveryPage.getByRole('link', { name: 'Quay lại đăng nhập' }).getAttribute('href'), '/account/login');
   await recoveryPage.goto(base + '/account/login');
   await recoveryPage.getByRole('link', { name: 'Quên mật khẩu', exact: true }).click();
   await recoveryPage.getByRole('heading', { name: 'Quên mật khẩu?' }).waitFor();

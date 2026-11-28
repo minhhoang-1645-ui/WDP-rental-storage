@@ -103,8 +103,8 @@ async function main() {
       });
       const marker = randomBytes(4).toString('hex').toUpperCase();
       const [manager, customer] = await Promise.all([
-        tx.user.create({ data: { email: managerEmail, fullName: 'WDP VNPay Sandbox Manager', phone: '0900000101', role: 'MANAGER', accountStatus: 'ACTIVE', passwordHash: managerHash } }),
-        tx.user.create({ data: { email: customerEmail, fullName: 'WDP VNPay Sandbox Customer', phone: '0900000102', role: 'CUSTOMER', accountStatus: 'ACTIVE', passwordHash: customerHash } }),
+        tx.user.create({ data: { email: managerEmail, fullName: 'WDP VNPay Sandbox Manager', phone: '0900000101', role: 'FACILITY_MANAGER', accountStatus: 'ACTIVE', passwordHash: managerHash } }),
+        tx.user.create({ data: { email: customerEmail, fullName: 'WDP VNPay Sandbox Customer', phone: '0900000102', role: 'STORAGE_CUSTOMER', accountStatus: 'ACTIVE', passwordHash: customerHash } }),
       ]);
       const reservation = await tx.reservation.create({
         data: {

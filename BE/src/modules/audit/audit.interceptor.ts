@@ -4,7 +4,7 @@ import { AuditService, disabledLoginAction, type AuditInput } from './audit.serv
 import { AccountDisabledException } from '../auth/auth.errors.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-const resources = new Set(['damage-claims', 'business-policies', 'users', 'storage-types', 'units', 'reservations', 'contracts', 'renewals', 'appointments', 'maintenance', 'returns', 'early-return-requests', 'transfers', 'stock-movements', 'stored-items', 'additional-services', 'payments', 'invoices', 'payment-submissions', 'online-payment-reconciliations', 'support-requests', 'deposit-settlements', 'unit-staff', 'staff-assignments', 'inquiries']);
+const resources = new Set(['facilities', 'facility-access', 'business-rules', 'pricing-rules', 'damage-claims', 'business-policies', 'users', 'storage-types', 'units', 'reservations', 'contracts', 'renewals', 'appointments', 'maintenance', 'returns', 'early-return-requests', 'transfers', 'stock-movements', 'stored-items', 'additional-services', 'payments', 'invoices', 'payment-submissions', 'online-payment-reconciliations', 'support-requests', 'deposit-settlements', 'unit-staff', 'staff-assignments', 'inquiries']);
 type AuditRequest = { method: string; route?: { path?: unknown }; params?: Record<string, string>; body?: Record<string, unknown>; user?: PublicUser; ip?: string; socket?: { remoteAddress?: string } };
 
 /** Server-owned route templates + explicit fields only; never serialize request/result bodies. */
@@ -22,13 +22,26 @@ export function auditTarget(request: AuditRequest): Pick<AuditInput, 'category' 
   if (request.method === 'POST' && route === '/customer/transfer-orders/:id/accept') {
     return { category: 'ACTIVITY', action: 'ACCEPT', resource: 'transfer-orders', route };
   }
-  const segments = route.replace(/^\/(?:customer|manager|admin|staff)(?:\/management)?(?=\/)/, '').split('/').filter(Boolean);
+  const adminAccessAction = request.method === 'POST' && route === '/admin/facility-access' ? 'GRANT_FACILITY_ACCESS'
+    : request.method === 'PATCH' && route === '/admin/facility-access/:id/revoke' ? 'REVOKE_FACILITY_ACCESS'
+    : request.method === 'PATCH' && route === '/admin/facility-access/users/:id/relocate' ? 'RELOCATE_FACILITY_ACCESS'
+    : request.method === 'PATCH' && route === '/admin/facility-access/users/:id/role' ? 'CHANGE_ROLE'
+    : request.method === 'PATCH' && route === '/admin/users/:id/sessions/:sessionId/revoke' ? 'REVOKE_SESSION'
+    : request.method === 'PATCH' && route === '/admin/users/:id/sessions/revoke' ? 'REVOKE_SESSIONS' : undefined;
+  if (adminAccessAction) return {
+    category: 'ACTIVITY', action: adminAccessAction,
+    resource: adminAccessAction === 'REVOKE_FACILITY_ACCESS' ? 'facility-access' : 'users', route,
+  };
+  const segments = route.replace(/^\/(?:customer|manager|admin|staff|operations)(?:\/management)?(?=\/)/, '').split('/').filter(Boolean);
   const resource = segments[0];
   if (!resources.has(resource)) return;
   const suffix = segments.at(-1)!;
   const action = segments.length > 2 && !suffix.startsWith(':') ? suffix.replace(/-/g, '_').toUpperCase() : ({ POST: 'CREATE', PATCH: 'UPDATE', PUT: 'UPDATE', DELETE: 'DELETE' }[request.method]!);
   return { category: 'ACTIVITY', action, resource, route };
 }
+
+const taskAssignmentRoutes = /^\/manager\/(?:appointments|returns|transfers|support-requests|maintenance|damage-claims)\/:id\/assign$/;
+const taskResultRoutes = /^\/staff\/(?:appointments\/:id\/complete-handover|returns\/:id\/finalize|transfers\/:id\/(?:complete|problem)|support-requests\/:id\/(?:escalate|resolve)|maintenance\/:id\/complete-work)$/;
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -37,7 +50,11 @@ export class AuditInterceptor implements NestInterceptor {
     const http = context.switchToHttp(), request = http.getRequest<AuditRequest>();
     const target = auditTarget(request);
     if (!target) return next.handle();
-    const record = (status: number, result?: unknown, error?: unknown) => {
+    const record = async (status: number, result?: unknown, error?: unknown) => {
+      // Successful IAM writes record their audit event inside the mutation transaction.
+      if (status < 400 && (['GRANT_FACILITY_ACCESS', 'REVOKE_FACILITY_ACCESS', 'RELOCATE_FACILITY_ACCESS', 'CHANGE_ROLE', 'REVOKE_SESSION', 'REVOKE_SESSIONS'].includes(target.action)
+        || taskAssignmentRoutes.test(target.route) || taskResultRoutes.test(target.route)
+        || target.route === '/staff/management/damage-claims/:id' && request.user?.role === 'FACILITY_STAFF')) return;
       const data = result && typeof result === 'object' ? result as { user?: PublicUser; id?: unknown; accountStatus?: unknown; statusChanged?: unknown } : undefined;
       const auth = target.resource === 'auth';
       const disabledLogin = target.action === 'AUTH_LOGIN' && error instanceof AccountDisabledException ? error : undefined;
@@ -48,10 +65,14 @@ export class AuditInterceptor implements NestInterceptor {
         if (data?.statusChanged === true && data.accountStatus === 'ACTIVE') action = 'REACTIVATE_ACCOUNT';
       }
       const resourceId = ['id', 'invoiceId', 'contractId', 'reservationId', 'renewalId', 'transferId', 'unitId', 'requestId', 'returnId', 'submissionId', 'bookingCode'].map(key => request.params?.[key]).find(value => typeof value === 'string') ?? data?.id;
+      const sessionId = request.params?.sessionId;
       return this.audit.record({ ...target, action, method: request.method, httpStatus: status,
         actor: disabledLogin?.verifiedAccount ?? request.user ?? (auth && status < 400 ? data?.user : undefined),
         attemptedEmail: auth && target.action !== 'AUTH_LOGOUT' ? request.body?.email : undefined,
         resourceId: auth ? undefined : resourceId,
+        ...(target.action === 'REVOKE_SESSION' && sessionId && /^[0-9a-f-]{36}$/.test(sessionId)
+          ? { metadata: { sessionId, count: 0 } }
+          : target.action === 'REVOKE_SESSIONS' ? { metadata: { count: 0 } } : {}),
         ipAddress: request.socket?.remoteAddress ?? request.ip,
       });
     };

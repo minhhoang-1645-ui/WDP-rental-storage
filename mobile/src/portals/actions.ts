@@ -17,8 +17,9 @@ export function returnSettlementAmount(row: Row) {
   return Number.isFinite(amount) && amount >= 0 ? amount : NaN;
 }
 export function returnSettlementReady(row: Row) {
-  if (text(row, 'returnReadiness.policy') === 'PERIOD_CLOSEOUT_V1') return object(row.returnReadiness).canReturn === true;
-  return object(row.returnReadiness).canReturn !== false && returnSettlementAmount(row) === 0;
+  const readiness = object(row.returnReadiness);
+  if (readiness.requiresFullSettlement === false) return readiness.canReturn === true;
+  return readiness.canReturn !== false && returnSettlementAmount(row) === 0;
 }
 export function handoverWindowIssue(row: Row, now: number) {
   const today = new Date(now + 25200000).toISOString().slice(0, 10);
@@ -28,7 +29,17 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
   const root = `/staff/${resource}/${encodeURIComponent(idOf(row))}`, result: FormAction[] = [];
   const add = (title: string, suffix: string, fields: FormField[] = [], idempotent = false, description?: string) => result.push({ title, path: root + suffix, method: 'POST', fields: [...fields, confirmation()], idempotent, description });
   const assigned = Boolean(userId) && text(row, 'assignedStaff.id') === userId;
-  if (resource === 'appointments' && assigned && row.status === 'CONFIRMED' && typeof row.scheduledAt === 'string' && Number.isFinite(Date.parse(row.scheduledAt)) && Date.parse(row.scheduledAt) <= now && !handoverWindowIssue(row, now)) {
+  if (resource === 'appointments' && assigned && row.canRecordCancellationRecovery === true) {
+    result.push({ title: 'Xác nhận thu hồi khi khách hủy đặt kho', method: 'POST',
+      path: '/reservations/' + encodeURIComponent(text(row, 'reservation.id')) + '/paid-cancellation',
+      fields: [note('note', 'Biên bản hoặc căn cứ kiểm tra', true, 500),
+        ...([['neverUsed', 'Đã xác minh kho chưa từng sử dụng'], ['unitEmpty', 'Đã kiểm tra kho trống'],
+          ['accessRevoked', 'Đã thu hồi toàn bộ chìa khóa, thẻ và quyền truy cập'], ['equipmentReturned', 'Đã kiểm tra thiết bị đã được thu hồi hoặc chưa giao']] as const)
+          .map(([name, title]) => ({ name, title, checkbox: true, required: true }))],
+      transform: input => ({ ...input, action: 'RECOVER' }),
+    });
+  }
+  if (resource === 'appointments' && assigned && row.cancellationPending !== true && row.status === 'CONFIRMED' && typeof row.scheduledAt === 'string' && Number.isFinite(Date.parse(row.scheduledAt)) && Date.parse(row.scheduledAt) <= now && !handoverWindowIssue(row, now)) {
     add('Hoàn tất bàn giao', '/complete-handover', [
       { name: 'recipientType', title: 'Người nhận bàn giao', required: true, initial: 'CUSTOMER', choices: [{ value: 'CUSTOMER', label: `Khách đứng tên: ${text(row, 'reservation.customer.fullName')}` }, { value: 'AUTHORIZED', label: 'Người được ủy quyền' }] },
       { name: 'recipientName', title: 'Tên người được ủy quyền', required: true, minLength: 2, maxLength: 120, visibleWhen: values => values.recipientType === 'AUTHORIZED' },
@@ -59,6 +70,7 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
     { name: 'recipientName', title: 'Người nhận kho mới', required: true, minLength: 2, maxLength: 120 },
     { name: 'returnedKeyCount', title: 'Số chìa khóa/thẻ kho cũ đã thu', required: true, numeric: true, minimum: 0, maximum: 50 },
     { name: 'deliveredKeyCount', title: 'Số chìa khóa/thẻ kho mới đã giao', required: true, numeric: true, minimum: 0, maximum: 50 },
+    { name: 'destinationReady', title: 'Đã kiểm tra kho đích và xác nhận sẵn sàng', checkbox: true, required: true },
     { name: 'goodsMoved', title: 'Đã kiểm tra kho cũ và xác nhận kho trống', checkbox: true, required: true },
     { name: 'oldKeysReturned', title: 'Đã thu chìa khóa/thẻ hoặc thu hồi mã truy cập kho cũ', checkbox: true, required: true },
     { name: 'newKeysDelivered', title: 'Đã giao chìa khóa/thẻ hoặc cấp mã truy cập kho mới', checkbox: true, required: true },
@@ -75,9 +87,17 @@ export function staffRecordActions(resource: string, row: Row, userId: string, n
         if (inspection.result !== 'ISSUE_FOUND') result.push({ title: `Ghi nhận kho ${unit} đạt`, path: base, method: 'PATCH', fields: [note('conditionNote', 'Hiện trạng kho'), confirmation('Tôi đã kiểm tra kho thực tế')], transform: input => ({ ...input, result: 'PASS' }) });
         result.push({ title: `Ghi nhận vấn đề kho ${unit}`, path: base, method: 'PATCH', fields: [choice('issueType', 'Phân loại vấn đề', issues, text(inspection, 'issueType') || undefined), note('issueNote', 'Mô tả vấn đề', true), note('conditionNote', 'Hiện trạng kho'), confirmation('Tôi đã kiểm tra kho thực tế')], transform: input => ({ ...input, result: 'ISSUE_FOUND' }), description: 'Chỉ ghi hiện trạng; quản lý xác định trách nhiệm và phí.' });
       }
-      if (object(row.returnReadiness).canReturn === true && Number(text(row, 'inventory.remainingItemTypes') || 0) === 0 && Number(text(row, 'inventory.pendingMovements') || 0) === 0 && inspections.length && inspections.every(item => ['PASS', 'ISSUE_FOUND'].includes(String(item.result)) && (item.result !== 'ISSUE_FOUND' || item.issueType))) {
+      if (object(row.returnReadiness).canReturn === true && inspections.length && inspections.every(item => ['PASS', 'ISSUE_FOUND'].includes(String(item.result)) && (item.result !== 'ISSUE_FOUND' || item.issueType))) {
         result.push({ title: 'Hoàn tất nhận kho trả', path: root + '/finalize', method: 'POST',
-          fields: [confirmation('Đã nhận kho, lưu kết quả kiểm tra và thu hồi quyền truy cập')], transform: input => ({ ...input, accessRevoked: true }) });
+          fields: [
+            { name: 'unitsEmpty', title: 'Đã kiểm tra và xác nhận kho đã dọn trống', checkbox: true, required: true },
+            { name: 'accessRevoked', title: 'Đã thu hồi chìa khóa, thẻ hoặc quyền truy cập', checkbox: true, required: true },
+            ...(row.servicesConfirmationRequired === true ? [{ name: 'servicesReturned', title: 'Đã thu hồi thiết bị và đối chiếu dịch vụ', checkbox: true, required: true }] : []),
+            ...(row.overdueReturnDateRequired === true ? [
+              { name: 'physicalReturnDate', title: 'Ngày nhận kho thực tế (YYYY-MM-DD)', required: true },
+              note('physicalReturnEvidence', 'Căn cứ nếu nhận kho vào ngày trước', false, 500),
+            ] : []),
+          ] });
       }
     }
   }
@@ -113,19 +133,23 @@ export function customerRentalActions(row: Row, returns: Row[], now: number, req
     }
     const otherUnits = contracts.filter(item => idOf(item) !== rentalContractId).map(item => text(item, 'unit.unitCode')).filter(Boolean);
     const scope = `Kho ${unit} · Hợp đồng ${text(contract, 'contractCode')}.${otherUnits.length ? ` Kho tiếp tục thuê: ${otherUnits.join(', ')}.` : ''}`;
+    const noticeDays = typeof contract.returnNoticeDays === 'number' ? contract.returnNoticeDays : 0;
+    const returnNotice = noticeDays > 0 ? ` Báo trước ${noticeDays} ngày để NestBox bố trí lịch trả kho.` : '';
     const early = endDate > vietnamCalendarDate(now);
     const legacyApproval = early && approved && text(contract, 'returnReadiness.policy') !== 'PERIOD_CLOSEOUT_V1'
       && !text(contract, 'returnReadiness.earlyReturnBlockReason');
-    if (endDate && (!early || approved) && (legacyApproval || returnSettlementReady(contract))) {
+    if (endDate && (legacyApproval || returnSettlementReady(contract))) {
       actions.push({ title: `Trả kho ${unit}`, path: '/customer/returns', method: 'POST', idempotent: true,
-        fields: [note(), confirmation(`Tôi xác nhận muốn trả kho ${unit}`)], transform: input => ({ ...input, reservationId, rentalContractId }),
-        description: scope + (early ? ' Quản lý đã chấp thuận trả trước hạn.' : '') });
+        fields: [note(), confirmation(`Tôi xác nhận muốn trả kho ${unit}`)],
+        transform: input => ({ ...input, reservationId, rentalContractId,
+          expectedReturnDate: endDate > vietnamCalendarDate(now) ? endDate : vietnamCalendarDate(now) }),
+        description: scope + returnNotice });
     }
     if (early && !approved && !pendingOrApproved.some(item => item.status !== 'RESOLVED')) {
       actions.push({ title: `Đề nghị trả trước hạn kho ${unit}`, path: '/customer/support-requests', method: 'POST', idempotent: true,
         fields: [note('description', 'Lý do trả trước hạn', true, 3000), confirmation()],
         transform: input => ({ ...input, reservationId, rentalContractId, category: 'OTHER', subject: EARLY_RETURN_SUBJECT }),
-        description: scope + ' Quản lý cần chấp thuận trước khi bạn gửi yêu cầu trả kho.' });
+        description: scope + ' Quản lý cần chấp thuận trước khi bạn gửi yêu cầu trả kho.' + returnNotice });
     }
   }
   actions.push(customerSupportAction(reservationId));
@@ -144,7 +168,7 @@ export function customerAppointmentAction(contract: Row, contracts: Row[], appoi
   const start = group.map(item => text(item, 'startDate')).sort().at(-1)!, end = group.map(item => text(item, 'endDate')).sort()[0];
   if (!start || !end || start >= end || Date.parse(`${end}T00:00:00+07:00`) <= now) return;
   const pickupStart = keyCollectionStartDate(start.slice(0, 10));
-  return { title: 'Đặt lịch nhận kho', path: '/customer/appointments', method: 'POST', idempotent: true, description: `Giờ cơ sở UTC+7. Từ ${formatDate(pickupStart)} đến trước ${formatDate(end)}. Giờ hẹn hợp lệ được xác nhận tự động, quản lý sẽ phân công nhân viên; chỉ sử dụng kho từ ${formatDate(start)}; nhập ngày giờ dạng YYYY-MM-DD HH:mm, ví dụ ${start} 10:00.`, fields: [{ name: 'scheduledAt', title: 'Ngày giờ nhận kho (YYYY-MM-DD HH:mm)', required: true, maxLength: 16, minLength: 16 }, note(), confirmation()], validateValues: input => {
+  return { title: 'Đặt lịch nhận kho', path: '/customer/appointments', method: 'POST', idempotent: true, description: `Giờ cơ sở UTC+7. Từ ${formatDate(pickupStart)} đến trước ${formatDate(end)}. Lịch được xác nhận theo khung phục vụ. Nếu cần xem xét thêm, quản lý sẽ xác nhận. Bạn được sử dụng kho từ ${formatDate(start)}; nhập ngày giờ dạng YYYY-MM-DD HH:mm, ví dụ ${start} 10:00.`, fields: [{ name: 'scheduledAt', title: 'Ngày giờ nhận kho (YYYY-MM-DD HH:mm)', required: true, maxLength: 16, minLength: 16 }, note(), confirmation()], validateValues: input => {
     const value = String(input.scheduledAt ?? '');
     if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$/.test(value)) return 'Nhập ngày giờ theo dạng YYYY-MM-DD HH:mm.';
     const instant = Date.parse(`${value.replace(' ', 'T')}+07:00`), normalized = new Date(instant + 25200000);
@@ -152,4 +176,23 @@ export function customerAppointmentAction(contract: Row, contracts: Row[], appoi
     if (instant <= Date.now()) return 'Lịch hẹn phải ở tương lai.';
     if (value.slice(0, 10) < pickupStart || value.slice(0, 10) >= end) return 'Chỉ đặt sớm tối đa 3 ngày trước kỳ thuê và trước ngày kết thúc.';
   }, transform: input => ({ ...input, reservationId: id, scheduledAt: new Date(`${String(input.scheduledAt).replace(' ', 'T')}+07:00`).toISOString() }) };
+}
+
+export function customerAppointmentReschedule(row: Row, now: number): FormAction | undefined {
+  const id = idOf(row), expectedScheduledAt = text(row, 'scheduledAt');
+  if (!id || !['REQUESTED', 'CONFIRMED'].includes(String(row.status)) || !(Date.parse(expectedScheduledAt) > now)) return;
+  const timestamp = (value: unknown) => String(value ?? '').replace(' ', 'T');
+  return {
+    title: 'Đổi lịch nhận kho', method: 'PATCH', path: '/customer/appointments/' + encodeURIComponent(id) + '/reschedule',
+    description: 'Giờ Việt Nam (UTC+7). Lịch hiện tại được giữ nếu khung giờ mới không còn chỗ.',
+    fields: [{ name: 'scheduledAt', title: 'Giờ hẹn mới (YYYY-MM-DD HH:mm)', minLength: 16, maxLength: 16, required: true }],
+    validateValues(input) {
+      const value = timestamp(input.scheduledAt), instant = Date.parse(value + '+07:00');
+      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) || !Number.isFinite(instant)
+        || new Date(instant + 25200000).toISOString().slice(0, 16) !== value || instant <= Date.now()) {
+        return 'Nhập ngày giờ hợp lệ trong tương lai theo định dạng YYYY-MM-DD HH:mm.';
+      }
+    },
+    transform: input => ({ scheduledAt: timestamp(input.scheduledAt) + '+07:00', expectedScheduledAt }),
+  };
 }

@@ -1,0 +1,10 @@
+.service-calendar-page { display: grid; gap: 1rem; }
+.service-calendar-page h1, .service-calendar-page p { margin: 0; }
+.service-calendar-toolbar label { display: grid; gap: .3rem; font-weight: 600; }
+.service-calendar-toolbar select, .service-calendar-toolbar input { min-height: 2.5rem; padding: .35rem .6rem; }
+.service-calendar-list { padding: 0; margin: 0; list-style: none; }
+.service-calendar-list > li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .75rem; padding: .8rem 0; border-top: 1px solid var(--border, #dce4ee); }
+.service-calendar-list p { margin: .2rem 0; }
+.service-calendar-warning { padding: .75rem; border: 1px solid var(--border, #dce4ee); border-radius: .5rem; }
+
+.service-calendar-toolbar { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }

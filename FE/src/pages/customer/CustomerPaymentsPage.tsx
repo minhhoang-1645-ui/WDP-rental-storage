@@ -16,6 +16,11 @@ import { InvoiceTransferDialog } from '../../components/customer/InvoiceTransfer
 import { usePaginatedResource } from '../../services/usePaginatedResource'
 import { invoicePaymentBlockedBySchedule, paymentWindowClosed } from '../../utils/payment-state'
 
+function submissionLabel(item: PaymentSubmission) {
+  if(item.reconciliation) return item.reconciliation.status==='RECONCILED'?'Đã xử lý đối soát':item.reconciliation.status==='REFUND_REQUIRED'?'Đang chờ hoàn tiền':'Khoản tiền cần đối soát'
+  return submissionStatus[item.status]
+}
+
 type View = 'invoices' | 'payments' | 'submissions'
 type LedgerRecord = { kind: 'payments' | 'payment-submissions'; id: string }
 
@@ -108,7 +113,7 @@ function InvoiceList({ items, submissions, onView, onOnlinePay, onlineInvoiceId,
 }) {
   const { items: visibleItems, pagination } = useListPagination(items)
   if (!items.length) return <PortalEmpty icon={<FileText size={30} />} title="Chưa có hóa đơn"><span>Hóa đơn sẽ xuất hiện khi yêu cầu đặt kho được xác nhận hoặc đến kỳ thanh toán.</span></PortalEmpty>
-  const pendingInvoiceIds = new Set(submissions.filter((submission) => submission.status === 'PENDING_VERIFICATION').map((submission) => submission.invoice.id))
+  const pendingInvoiceIds = new Set(submissions.filter((submission) => (submission.status === 'PENDING_VERIFICATION' || Boolean(submission.reconciliation && submission.reconciliation.status !== 'RECONCILED'))).map((submission) => submission.invoice.id))
   return <>
     <div className="customer-table-wrap customer-responsive-table"><table className="customer-table customer-invoices-table">
       <thead><tr><th>Hóa đơn</th><th>Kho</th><th>Ngày lập</th><th>Tổng tiền</th><th>Còn phải trả</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
@@ -143,7 +148,7 @@ function InvoiceList({ items, submissions, onView, onOnlinePay, onlineInvoiceId,
 function SubmissionList({ items, onView }: { items: PaymentSubmission[]; onView: (id: string) => void }) {
   const { items: visibleItems, pagination } = useListPagination(items)
   if (!items.length) return <PortalEmpty icon={<Wallet size={30} />} title="Chưa có yêu cầu xác nhận"><span>Sau khi chuyển khoản, yêu cầu xác nhận của bạn sẽ hiển thị tại đây. Yêu cầu đang chờ chưa được tính là khoản thanh toán đã ghi nhận.</span></PortalEmpty>
-  return <><div className="customer-table-wrap customer-responsive-table"><table className="customer-table"><thead><tr><th>Mã yêu cầu</th><th>Hóa đơn</th><th>Số tiền</th><th>Mã chuyển khoản</th><th>Thời gian gửi</th><th>Trạng thái</th></tr></thead><tbody>{visibleItems.map((item) => <DetailRow key={item.id} detail={{ open: () => onView(item.id), label: `Mở yêu cầu chuyển khoản ${item.submissionCode}` }}><td data-label="Mã yêu cầu"><strong>{item.submissionCode}</strong><small>{item.isDemo ? 'Bản ghi mô phỏng có sẵn · không có tiền thật' : 'Thông báo chuyển khoản'}</small></td><td data-label="Hóa đơn">{item.invoice.invoiceCode}</td><td data-label="Số tiền"><strong>{moneyLabel(item.amount, item.invoice.currency)}</strong></td><td data-label="Mã chuyển khoản">{item.transferReference || '—'}</td><td data-label="Thời gian gửi">{formatPortalDate(item.submittedAt, true)}</td><td data-label="Trạng thái"><span className={'payment-submission-status is-' + item.status.toLowerCase()}>{submissionStatus[item.status]}</span>{item.status === 'REJECTED' && item.rejectionReason && <small className="payment-rejection-reason">{item.rejectionReason}</small>}</td></DetailRow>)}</tbody></table></div>{pagination}</>
+  return <><div className="customer-table-wrap customer-responsive-table"><table className="customer-table"><thead><tr><th>Mã yêu cầu</th><th>Hóa đơn</th><th>Số tiền</th><th>Mã chuyển khoản</th><th>Thời gian gửi</th><th>Trạng thái</th></tr></thead><tbody>{visibleItems.map((item) => <DetailRow key={item.id} detail={{ open: () => onView(item.id), label: `Mở yêu cầu chuyển khoản ${item.submissionCode}` }}><td data-label="Mã yêu cầu"><strong>{item.submissionCode}</strong><small>{item.isDemo ? 'Bản ghi mô phỏng có sẵn · không có tiền thật' : 'Thông báo chuyển khoản'}</small></td><td data-label="Hóa đơn">{item.invoice.invoiceCode}</td><td data-label="Số tiền"><strong>{moneyLabel(item.amount, item.invoice.currency)}</strong></td><td data-label="Mã chuyển khoản">{item.transferReference || '—'}</td><td data-label="Thời gian gửi">{formatPortalDate(item.submittedAt, true)}</td><td data-label="Trạng thái"><span className={'payment-submission-status is-' + item.status.toLowerCase()}>{submissionLabel(item)}</span>{item.status === 'REJECTED' && item.rejectionReason && <small className="payment-rejection-reason">{item.rejectionReason}</small>}</td></DetailRow>)}</tbody></table></div>{pagination}</>
 }
 
 function PaymentList({ items, onView }: { items: CustomerPayment[]; onView: (id: string) => void }) {
@@ -164,8 +169,8 @@ function PaymentRecordDialog({ record, onClose }: { record: LedgerRecord; onClos
     ['Mã tham chiếu', data.reference], ['Ghi chú', data.note],
   ] : [
     ['Mã yêu cầu', data.submissionCode], ['Số tiền', moneyLabel(data.amount, data.invoice.currency)],
-    ['Trạng thái', submissionStatus[data.status]], ['Ngày gửi', formatPortalDate(data.submittedAt, true)],
-    ['Mã chuyển khoản', data.transferReference], ['Ghi chú', data.customerNote], ['Lý do từ chối', data.rejectionReason],
+    ['Trạng thái', submissionLabel(data)], ['Ngày gửi', formatPortalDate(data.submittedAt, true)],
+    ['Mã chuyển khoản', data.transferReference], ['Ghi chú', data.customerNote], [data.reconciliation ? 'Kết quả kiểm tra' : 'Lý do từ chối', data.reconciliation?.resolutionNote || data.rejectionReason],
   ]
   return <Modal title={title} onClose={onClose} footer={<button type="button" className="button-secondary" onClick={onClose}>Đóng</button>}>
     <LoadState loading={loading} error={error} retry={refresh} layout="detail" />

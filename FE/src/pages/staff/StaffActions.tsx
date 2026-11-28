@@ -1,5 +1,8 @@
+import { MaintenanceWorkForm } from './MaintenanceWorkForm';
+import { StaffTaskException } from './StaffTaskException';
+import { DatePicker } from '../../components/workspace/DateTimeFields';
+import { vietnamCalendarDate } from '../../utils/business-date';
 import { useId, useRef, useState, type FormEvent } from "react";
-import { Link } from 'react-router-dom';
 import { useAuth } from "../../auth/auth-context";
 import { mutate } from "../../services/portal";
 import {
@@ -14,6 +17,11 @@ import { handoverCompletionIssue } from '../../utils/handover';
 import { isEarlyReturnRequest } from '../../utils/early-return';
 import { isTransferRequest } from '../../utils/transfer-request';
 import { handoverCustomer, handoverTime, handoverUnits } from './staff-appointment';
+import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
+import { ApiError } from '../../services/api';
+
+import { useEvidencePhotoPicker } from '../../components/workspace/useEvidencePhotoPicker';
+import { inspectionPhotos } from '../../components/workspace/ReturnInspectionPhotos';
 
 export function StaffActions({
   resource,
@@ -29,11 +37,18 @@ export function StaffActions({
   onSuccess: (message: string, result?: Row) => void;
 }) {
   const { user } = useAuth();
-  const [busy, setBusy] = useState(false),
+  const confirm = useConfirmation();
+  const [pendingAction, setPendingAction] = useState<string>(),
     [error, setError] = useState("");
+  const { handoverPhotos, readingPhotos, photoPicker, photoReadLock } = useEvidencePhotoPicker(
+    resource === 'appointments' ? 'Ảnh bàn giao từ máy (tùy chọn)' : 'Ảnh kết quả hỗ trợ (tùy chọn)',
+    pendingAction !== undefined,
+  );
+  const busy = pendingAction !== undefined || readingPhotos;
   const lock = useRef(false);
   const returnRequirementsId = useId();
   const [supportDisposition, setSupportDisposition] = useState('ON_SITE_RESOLVED');
+  const supportOption = row.category === 'PAYMENT_SUPPORT' ? 'escalate' : supportDisposition;
   const [resolutionDraft, setResolutionDraft] = useState('');
   const [escalationDraft, setEscalationDraft] = useState('');
   const [recipientType, setRecipientType] = useState('CUSTOMER');
@@ -50,7 +65,13 @@ export function StaffActions({
   const progress = new Map([...rows(row.unitHandoverProgress), ...savedUnits].map(item => [first(item, 'unitId'), item]));
   const allUnitsRecorded = physicalUnits.every(unit => progress.has(unit.id));
   const root = `/staff/${resource}/${encodeURIComponent(id)}`;
-  const assigned = first(row, "assignedStaff.id") === user?.id;
+  const assigned = Boolean(user && first(row, 'assignedStaff.id') === user.id && first(row, 'assignedStaff.accountStatus') !== 'DISABLED');
+  function reportFailure(caught: unknown, fallback: string) {
+    const denied = caught instanceof ApiError && [403, 404].includes(caught.status);
+    setError(denied ? 'Hồ sơ không còn truy cập được. Đang kiểm tra lại phân công và quyền cơ sở.'
+      : caught instanceof Error ? caught.message : fallback);
+    if (denied || caught instanceof ApiError && caught.status === 409) refresh();
+  }
   async function recordPhysicalUnit(form: HTMLFormElement | null, unitId: string) {
     if (!form || !assigned || lock.current) return;
     const data = new FormData(form);
@@ -60,7 +81,7 @@ export function StaffActions({
       return;
     }
     lock.current = true;
-    setBusy(true);
+    setPendingAction(unitId);
     setError('');
     try {
       const result = await mutate(`${root}/units/${encodeURIComponent(unitId)}/handover`, 'PATCH', {
@@ -69,10 +90,10 @@ export function StaffActions({
       setSavedUnits(rows(result.unitHandoverProgress));
       refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Không thể lưu kết quả bàn giao kho.');
+      reportFailure(caught, 'Không thể lưu kết quả bàn giao kho.');
     } finally {
       lock.current = false;
-      setBusy(false);
+      setPendingAction(undefined);
     }
   }
   const run = async (
@@ -81,15 +102,25 @@ export function StaffActions({
     input?: Row,
     idempotent = false,
   ) => {
-    if (lock.current || user?.role !== "STAFF") return;
+    if (lock.current || user?.role !== 'FACILITY_STAFF' || !assigned) return;
     if (resource === 'appointments' && suffix === '/complete-handover') {
       const issue = handoverCompletionIssue(row.scheduledAt, undefined, handoverContracts, typeof handoverReadiness.leadDays === 'number' ? handoverReadiness.leadDays : undefined);
       if (issue) { setError(issue); return; }
     }
     lock.current = true;
-    setBusy(true);
+    setPendingAction(suffix);
     setError("");
     try {
+      if (suffix === '/complete-handover' && !await confirm({
+        title: 'Hoàn tất bàn giao?',
+        description: 'Xác nhận đã giao kho, quyền truy cập và giấy tờ cho người nhận ghi trên biên bản.',
+        confirmLabel: 'Hoàn tất bàn giao',
+      })) return;
+      if (suffix === '/finalize' && !await confirm({
+        title: 'Hoàn tất nhận kho trả?',
+        description: 'Hệ thống sẽ ghi nhận việc nhận kho thực tế theo kết quả kiểm tra đã lưu.',
+        confirmLabel: 'Xác nhận nhận kho',
+      })) return;
       const result = await mutate(root + suffix, method, input, idempotent);
       onSuccess(suffix === '/complete-handover'
         ? result?.usageStatus === 'WAITING_FOR_RENTAL_START'
@@ -98,14 +129,10 @@ export function StaffActions({
         : 'Đã lưu thao tác thành công.', result);
       refresh();
     } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Không thể thực hiện thao tác.",
-      );
+      reportFailure(caught, 'Không thể thực hiện thao tác.');
     } finally {
       lock.current = false;
-      setBusy(false);
+      setPendingAction(undefined);
     }
   };
   const submit = (
@@ -115,15 +142,24 @@ export function StaffActions({
     idempotent = false,
   ) => {
     event.preventDefault();
+    if (busy || photoReadLock.current || lock.current) return;
     const data = new FormData(event.currentTarget);
     const input: Row = { [field]: String(data.get(field) ?? "").trim() || undefined };
     if (suffix === '/complete-handover') {
+      const deliveredPurchaseIds = data.getAll('deliveredPurchaseIds').map(String);
+      if (deliveredPurchaseIds.length) input.deliveredPurchaseIds = deliveredPurchaseIds;
       if (tracksUnits && !allUnitsRecorded) { setError('Cần ghi nhận bàn giao từng kho trước khi hoàn tất lịch.'); return; }
       const unitChecks = perUnit && !tracksUnits ? physicalUnits.map(unit => ({
         unitId: unit.id,
         condition: String(data.get(`condition-${unit.id}`) ?? '').trim(),
         inspected: data.get(`checked-${unit.id}`) === 'on',
       })) : undefined;
+      const photoLinks = String(data.get('handoverPhotoLinks') ?? '').split(/\r?\n/).map(link => link.trim()).filter(Boolean);
+      if (photoLinks.length > 3 || photoLinks.some(link => !/^https:\/\/[^\s]+$/i.test(link) || link.length > 2000)) {
+        setError('Nhập tối đa 3 link HTTPS, mỗi link trên một dòng.');
+        return;
+      }
+      const photos = handoverPhotos.map(photo => photo.src);
       input.handoverReport = {
         recipientType,
         recipientName: recipientType === 'CUSTOMER' ? customerName : String(data.get('recipientName') ?? '').trim(),
@@ -135,6 +171,8 @@ export function StaffActions({
         accessDelivered: data.get('accessDelivered') === 'on',
         documentsDelivered: data.get('documentsDelivered') === 'on',
         ...(unitChecks ? { unitChecks } : {}),
+        ...(photos.length ? { photos } : {}),
+        ...(photoLinks.length ? { photoLinks } : {}),
       };
     }
     void run(suffix, 'POST', input, idempotent);
@@ -145,7 +183,8 @@ export function StaffActions({
   );
   const returnDebt = row.returnReadiness && typeof row.returnReadiness === 'object' ? row.returnReadiness as Row : undefined;
   const returnPaid = returnDebt?.canReturn === true;
-  const periodCloseout = returnDebt?.policy === 'PERIOD_CLOSEOUT_V1';
+  const returnBlocks = Array.isArray(returnDebt?.blockingReasons)
+    ? returnDebt.blockingReasons.filter((reason): reason is string => typeof reason === 'string') : [];
   const allInspected =
     inspections.length > 0 &&
     inspections.every(
@@ -153,17 +192,12 @@ export function StaffActions({
         ["PASS", "ISSUE_FOUND"].includes(String(item.result)) &&
         (item.result !== "ISSUE_FOUND" || first(item, "issueType")),
     );
-  const remainingItems = Number(first(row, 'inventory.remainingItemTypes') || 0);
-  const pendingMovements = Number(first(row, 'inventory.pendingMovements') || 0);
-  const canFinalize = returnPaid && allInspected && remainingItems === 0 && pendingMovements === 0;
-  const contractId = inspections.length === 1 ? first(inspections[0], 'contract.id') : '';
-  const storageUnitId = inspections.length === 1 ? first(inspections[0], 'unit.id') : '';
-  const stockMovementsPath = contractId
-    ? `/staff/stock-movements?${new URLSearchParams({ rentalContractId: contractId })}`
-    : '/staff/stock-movements';
-  const storedItemsPath = storageUnitId
-    ? `/staff/stored-items?${new URLSearchParams({ storageUnitId })}`
-    : '/staff/stored-items';
+  const canFinalize = returnPaid && allInspected;
+  const returnCanEscalate = resource === 'returns' && assigned && !row.physicallyReturnedAt &&
+    ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND'].includes(String(row.status));
+  if (returnCanEscalate && row.waitingForManager === true) {
+    return <StaffTaskException kind="returns" id={first(row, 'id')} waiting refresh={refresh} />;
+  }
   return (
     <section className="manager-section record-action-panel" id={resource === 'appointments' && row.status === 'REQUESTED' ? undefined : 'staff-processing'} tabIndex={-1}>
       <h2>{resource === 'support-requests' ? 'Kết quả hỗ trợ' : resource === 'maintenance' ? 'Kết quả sửa chữa' : resource === 'returns' ? 'Kiểm tra kho trả' : resource === 'appointments' ? 'Bàn giao kho' : 'Xử lý hồ sơ'}</h2>
@@ -172,6 +206,7 @@ export function StaffActions({
           {error}
         </div>
       )}
+      {returnCanEscalate && <StaffTaskException kind="returns" id={first(row, 'id')} waiting={false} refresh={refresh} />}
       <fieldset className="portal-action-fieldset" disabled={busy}>
         {resource === "appointments" && row.status === "CONFIRMED" && assigned && (
           missingUnits ? <p role="status">Chưa đủ thông tin các kho đã phân bổ. Hãy làm mới hồ sơ.</p> : (
@@ -200,29 +235,40 @@ export function StaffActions({
               {!perUnit && <label className="portal-checkbox"><input name="unitInspected" type="checkbox" required />Đã kiểm tra đúng mã kho và hiện trạng từng kho</label>}
               <label className="portal-checkbox"><input name="accessDelivered" type="checkbox" required />Đã bàn giao chìa khóa/thẻ hoặc hướng dẫn truy cập</label>
               <label className="portal-checkbox"><input name="documentsDelivered" type="checkbox" required />Đã giao giấy tờ bàn giao cho khách</label>
+              <PurchasedProducts row={row} confirm />
+              {photoPicker}
+              <label className="field-label">Link ảnh bàn giao (tùy chọn)
+                <textarea name="handoverPhotoLinks" rows={2} maxLength={6002} placeholder="https://..." disabled={busy} />
+                <small>Tối đa 3 link HTTPS, mỗi link một dòng.</small>
+              </label>
               <label className="field-label">
                 Ghi chú bàn giao
                 <textarea name="note" maxLength={1000} rows={3} />
               </label>
               {tracksUnits && !allUnitsRecorded && <p role="status">Đã ghi nhận {physicalUnits.filter(unit => progress.has(unit.id)).length}/{physicalUnits.length} kho.</p>}
-              <button type="submit" className="button-primary" disabled={tracksUnits && !allUnitsRecorded}>Xác nhận đã bàn giao giấy tờ và chìa khóa</button>
+              <button type="submit" className="button-primary" disabled={busy || tracksUnits && !allUnitsRecorded} aria-busy={busy || pendingAction === '/complete-handover'}>
+                {pendingAction === '/complete-handover' ? 'Đang ghi nhận bàn giao…' : 'Xác nhận đã bàn giao giấy tờ và chìa khóa'}
+              </button>
             </form>
           ))}
         {resource === "returns" && (
           <>
-            {!['PENDING_SETTLEMENT', 'COMPLETED'].includes(String(row.status)) && <div className="customer-inline-notice" role="status">
-              <strong>{periodCloseout ? 'Trả kho trước hạn' : 'Điều kiện thanh toán'}</strong>
-              <p>{periodCloseout ? 'Quyết toán dựa vào ngày nhận kho thực tế.' : returnPaid ? 'Khách đã trả đủ các hóa đơn hiện có.' : returnDebt ? 'Khách cần thanh toán số dư để hoàn tất nhận kho.' : 'Hãy làm mới hồ sơ để kiểm tra tình trạng thanh toán.'}</p>
-            </div>}
+            {first(row, 'inspectionStartBlock') && (row.status === 'REQUESTED' || inspecting) && (
+              <div className="booking-alert is-warning return-requirements" role="status">
+                <strong>Chưa thể bắt đầu kiểm tra</strong>
+                <p>{first(row, 'inspectionStartBlock')}</p>
+              </div>
+            )}
             {row.status === "REQUESTED" && (
               <button
                 className="button-primary"
+                disabled={busy || Boolean(first(row, 'inspectionStartBlock'))}
                 onClick={() => void run("/start-inspection")}
               >
                 Bắt đầu kiểm tra
               </button>
             )}
-            {inspecting && (
+            {inspecting && !first(row, 'inspectionStartBlock') && (
               <>
                 <p>
                   Ghi nhận hiện trạng từng kho. Việc xác định trách nhiệm và chi
@@ -232,6 +278,7 @@ export function StaffActions({
                   <InspectionEditor
                     key={`${first(item, "id")}:${item.result}:${item.inspectedAt}`}
                     inspection={item}
+                    disabled={busy}
                     save={(input) =>
                       run(
                         `/inspections/${encodeURIComponent(first(item, "id"))}`,
@@ -245,29 +292,37 @@ export function StaffActions({
                   className="portal-form"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    if (canFinalize) void run('/finalize', 'POST', periodCloseout ? { accessRevoked: true } : undefined);
+                    const checks = new FormData(event.currentTarget);
+                    if (canFinalize && checks.get('unitsEmpty') === 'on' && checks.get('accessRevoked') === 'on') {
+                      void run('/finalize', 'POST', { unitsEmpty: true, accessRevoked: true, servicesReturned: checks.get('servicesReturned') === 'on',
+                        physicalReturnDate: checks.get('physicalReturnDate') ?? undefined, physicalReturnEvidence: checks.get('physicalReturnEvidence') ?? undefined });
+                    }
                   }}
                 >
                   {!canFinalize && (
                     <div id={returnRequirementsId} className="booking-alert is-warning return-requirements" role="status">
                       <strong>Chưa thể xác nhận nhận kho trả</strong>
                       <ul>
-                        {!returnPaid && <li>{returnDebt?.facilityFaultReviewRequired ? 'Chờ quản lý xác minh lỗi cơ sở.' : 'Cần kiểm tra các hóa đơn liên quan đến kho trả.'}</li>}
+                        {!returnPaid && (returnBlocks.length
+                          ? returnBlocks.map(reason => <li key={reason}>{reason}</li>)
+                          : <li>{returnDebt?.facilityFaultReviewRequired ? 'Chờ quản lý xác minh lỗi cơ sở.'
+                            : returnDebt ? 'Hồ sơ chưa đủ điều kiện nhận kho. Liên hệ quản lý để kiểm tra.' : 'Làm mới hồ sơ để kiểm tra điều kiện nhận kho.'}</li>)}
                         {!allInspected && <li>Bấm “Lưu kết quả kho” cho từng kho chưa lưu kết quả kiểm tra.</li>}
-                        {remainingItems > 0 && <li>Còn {remainingItems} loại hàng trong kho. Khách cần gửi yêu cầu lấy hàng và nhân viên cần hoàn tất phiếu xuất.</li>}
-                        {pendingMovements > 0 && <li>Còn {pendingMovements} phiếu nhập hoặc xuất chưa hoàn tất.</li>}
                       </ul>
-                      {(remainingItems > 0 || pendingMovements > 0) && <div className="portal-actions">
-                        {remainingItems > 0 && <Link className="button-secondary" to={storedItemsPath}>Xem hàng đang lưu</Link>}
-                        {pendingMovements > 0 && <Link className="button-secondary" to={stockMovementsPath}>Mở phiếu nhập – xuất</Link>}
-                      </div>}
                     </div>
                   )}
                   <label className="portal-checkbox">
-                    <input type="checkbox" required disabled={!canFinalize}
+                    <input name="unitsEmpty" type="checkbox" required disabled={!canFinalize}
                       aria-describedby={!canFinalize ? returnRequirementsId : undefined} />
-                    {periodCloseout ? 'Đã nhận kho, lưu kết quả kiểm tra và thu hồi chìa khóa, thẻ hoặc quyền truy cập' : 'Đã nhận lại kho trong hồ sơ và ghi đủ kết quả kiểm tra'}
+                    Đã kiểm tra thực tế và xác nhận tất cả kho trong hồ sơ đã trống
                   </label>
+                  <label className="portal-checkbox"><input name="accessRevoked" type="checkbox" required disabled={!canFinalize} />
+                    Đã thu hồi chìa khóa, thẻ hoặc quyền truy cập kho</label>
+                  {row.servicesConfirmationRequired === true && <label className="portal-checkbox"><input name="servicesReturned" type="checkbox" required disabled={!canFinalize} /> Đã thu hồi thiết bị thuê và đối chiếu sản phẩm chưa bàn giao</label>}
+                  {row.overdueReturnDateRequired === true && <>
+                    <DatePicker label="Ngày nhận kho thực tế" name="physicalReturnDate" max={vietnamCalendarDate()} required />
+                    <label>Căn cứ nếu nhận kho vào ngày trước<input name="physicalReturnEvidence" maxLength={500} /></label>
+                  </>}
                   <button type="submit" className="button-primary" disabled={!canFinalize}
                     aria-describedby={!canFinalize ? returnRequirementsId : undefined}>
                     Hoàn tất nhận kho trả
@@ -290,7 +345,9 @@ export function StaffActions({
               ) && (
                 <p>Chỉ nhân viên được phân công mới được xử lý hồ sơ này.</p>
               )}
-            {assigned && row.status === "OPEN" && (
+            {assigned && row.repairPlanReady !== true && ["OPEN", "IN_PROGRESS"].includes(String(row.status)) &&
+              <p role="status">Chờ quản lý lưu khảo sát và phương án xử lý.</p>}
+            {assigned && row.repairPlanReady === true && row.status === "OPEN" && (
               <button
                 className="button-primary"
                 onClick={() => void run("/start", "POST", undefined, true)}
@@ -298,30 +355,13 @@ export function StaffActions({
                 Bắt đầu sửa chữa
               </button>
             )}
-            {assigned && row.status === "IN_PROGRESS" && (
-              <form
-                className="portal-form"
-                onSubmit={(event) =>
-                  submit(event, "/complete-work", "workNote", true)
-                }
-              >
-                <label className="field-label">
-                  Nội dung kiểm tra hoặc sửa chữa
-                  <textarea
-                    name="workNote"
-                    required
-                    minLength={3}
-                    maxLength={4000}
-                    rows={4}
-                  />
-                </label>
-                <button className="button-primary">
-                  Gửi kết quả nghiệm thu
-                </button>
-              </form>
+            {assigned && row.repairPlanReady === true && row.status === "IN_PROGRESS" && (
+              <MaintenanceWorkForm path={root + '/complete-work'}
+                onSaved={result => { setError(''); onSuccess('Đã gửi kết quả để nghiệm thu.', result); refresh(); }}
+                onError={caught => reportFailure(caught, 'Không thể gửi kết quả sửa chữa.')} />
             )}
             {row.status === "AWAITING_VERIFICATION" && (
-              <p>Đang chờ quản lý nghiệm thu. Kho vẫn ở trạng thái bảo trì.</p>
+              <p>Đang chờ quản lý nghiệm thu.</p>
             )}
             {row.status === "COMPLETED" && (
               <p>Đã nghiệm thu và hoàn tất bảo trì.</p>
@@ -343,31 +383,41 @@ export function StaffActions({
                 Bắt đầu hỗ trợ
               </button>
             )}
-            {assigned && row.status === 'IN_PROGRESS' && (
+            {assigned && row.status === 'IN_PROGRESS' && row.customerWaitReason && <div className="portal-form">
+              <p>Chờ khách phản hồi · {String(row.customerWaitReason)}</p>
+              <button className="button-primary" disabled={busy} onClick={() => void run('/resume', 'POST', undefined, true)}>Tiếp tục xử lý</button>
+            </div>}
+            {assigned && row.status === 'IN_PROGRESS' && !row.customerWaitReason && (
               <form className="portal-form" onSubmit={event => {
                 event.preventDefault();
                 const data = new FormData(event.currentTarget);
+                if (busy || photoReadLock.current) return;
                 const note = String(data.get('supportNote') ?? '').trim();
                 if (note.length < 3) { setError('Vui lòng nhập ít nhất 3 ký tự.'); return; }
-                if (supportDisposition === 'escalate') void run('/escalate', 'POST', { reason: note }, true);
-                else void run('/resolve', 'POST', { resolutionType: supportDisposition, resolutionNote: note }, true);
+                if (supportOption === 'wait-customer') void run('/wait-customer', 'POST', { reason: note }, true);
+                else if (supportOption === 'escalate') void run('/escalate', 'POST', { reason: note }, true);
+                else void run('/resolve', 'POST', { resolutionType: supportOption, resolutionNote: note, resolutionPhotos: handoverPhotos.map(photo => photo.src), identityVerified: data.get('identityVerified') === 'on' }, true);
               }}>
                 <label className="field-label">Hướng xử lý
-                  <select value={supportDisposition} onChange={event => { setSupportDisposition(event.target.value); setError(''); }} required>
+                  <select value={supportOption} onChange={event => { setSupportDisposition(event.target.value); setError(''); }} required>
                     <option value="">Chọn hướng xử lý</option>
-                    {['ON_SITE_RESOLVED', 'CUSTOMER_GUIDANCE', 'ACCESS_RESTORED', 'PAYMENT_GUIDANCE', 'NO_ACTION_REQUIRED', 'OTHER'].map(value =>
+                    {row.category !== 'PAYMENT_SUPPORT' && ['ON_SITE_RESOLVED', 'CUSTOMER_GUIDANCE', 'ACCESS_RESTORED', 'NO_ACTION_REQUIRED', 'OTHER'].map(value =>
                       <option key={value} value={value}>{label(value)}</option>)}
                     <option value="escalate">Cần quản lý xem xét</option>
+                    <option value="wait-customer">Chờ khách phản hồi</option>
                   </select>
                 </label>
                 <label className="field-label">
-                  {supportDisposition === 'escalate' ? 'Lý do chuyển quản lý' : 'Mô tả kết quả xử lý'}
-                  <textarea name="supportNote" required minLength={3} maxLength={4000} rows={3}
-                    value={supportDisposition === 'escalate' ? escalationDraft : resolutionDraft}
-                    onChange={event => (supportDisposition === 'escalate' ? setEscalationDraft : setResolutionDraft)(event.target.value)} />
+                  {supportOption === 'wait-customer' ? 'Lý do chờ khách' : supportOption === 'escalate' ? 'Lý do chuyển quản lý' : 'Mô tả kết quả xử lý'}
+                  <textarea name="supportNote" required minLength={3} maxLength={supportOption === 'wait-customer' ? 1000 : 4000} rows={3}
+                    value={supportOption === 'escalate' ? escalationDraft : resolutionDraft}
+                    onChange={event => (supportOption === 'escalate' ? setEscalationDraft : setResolutionDraft)(event.target.value)} />
                 </label>
-                <button className="button-primary" disabled={busy || !supportDisposition}>
-                  {busy ? 'Đang lưu…' : supportDisposition === 'escalate' ? 'Chuyển quản lý xem xét' : 'Hoàn tất hỗ trợ'}
+                {(supportOption === 'ACCESS_RESTORED' || supportOption === 'ON_SITE_RESOLVED' && ['LOCK_OR_KEY_ISSUE', 'ACCESS_CODE_ISSUE'].includes(String(row.category))) &&
+                  <label className="portal-checkbox"><input name="identityVerified" type="checkbox" required />Đã đối chiếu danh tính khách và quyền truy cập kho</label>}
+                {supportOption && !['wait-customer', 'escalate'].includes(supportOption) && photoPicker}
+                <button className="button-primary" disabled={busy || !supportOption}>
+                  {busy ? 'Đang lưu…' : supportOption === 'wait-customer' ? 'Ghi nhận chờ khách' : supportOption === 'escalate' ? 'Chuyển quản lý xem xét' : 'Hoàn tất hỗ trợ'}
                 </button>
               </form>
             )}
@@ -391,16 +441,25 @@ export function StaffActions({
 
 function InspectionEditor({
   inspection,
+  disabled,
   save,
 }: {
   inspection: Row;
+  disabled: boolean;
   save: (input: Row) => Promise<void>;
 }) {
   const [result, setResult] = useState(
     inspection.result === "ISSUE_FOUND" ? "ISSUE_FOUND" : "PASS",
   );
+  const { handoverPhotos, readingPhotos, photoPicker, photoReadLock } = useEvidencePhotoPicker(
+    'Ảnh kiểm tra từ máy (tùy chọn)', disabled, inspectionPhotos(inspection),
+  );
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (disabled || photoReadLock.current) {
+      event.currentTarget.removeAttribute('data-wdp-submitting');
+      return;
+    }
     const data = new FormData(event.currentTarget);
     void save({
       result,
@@ -412,6 +471,8 @@ function InspectionEditor({
         : {}),
       conditionNote:
         String(data.get("conditionNote") ?? "").trim() || undefined,
+      evidenceLink: String(data.get('evidenceLink') ?? '').trim() || undefined,
+      inspectionPhotos: handoverPhotos.map(photo => photo.src),
     });
   };
   return (
@@ -440,6 +501,10 @@ function InspectionEditor({
           rows={3}
         />
       </label>
+      <label className="field-label">Liên kết ảnh kiểm tra (tùy chọn)
+        <input name="evidenceLink" type="url" pattern="https://.+" maxLength={1000} placeholder="https://…" />
+      </label>
+      {photoPicker}
       {result === "ISSUE_FOUND" && (
         <>
           <label className="field-label">
@@ -476,9 +541,30 @@ function InspectionEditor({
           </label>
         </>
       )}
-      <button className="button-secondary">
+      <button className="button-secondary" disabled={disabled || readingPhotos}>
         Lưu kết quả kho {first(inspection, "unit.unitCode")}
       </button>
     </form>
   );
+}
+
+export function PurchasedProducts({ row, confirm }: { row: Row; confirm: boolean }) {
+  const products = rows(row.purchasedProducts);
+  if (!products.length) return null;
+  return <fieldset>
+    <legend>Sản phẩm bàn giao cho khách</legend>
+    {products.map(product => {
+      const id = first(product, 'id');
+      const description = [first(product, 'name'), [product.quantity, first(product, 'physicalUnit')].filter(Boolean).join(' ')].join(' · ');
+      const status = first(product, 'fulfillmentStatus');
+      const statusText = status === 'FULFILLED' ? 'Đã bàn giao' : status === 'RESERVED' ? 'Chờ bàn giao'
+        : status === 'RELEASED' ? 'Đã giải phóng số lượng giữ' : 'Chưa ghi nhận';
+      return confirm && status === 'RESERVED' ?
+        <label className="portal-checkbox" key={id}><input type="checkbox" name="deliveredPurchaseIds" value={id} />
+          {description} · {statusText}</label> :
+        <p key={id}>{description} · {statusText}</p>;
+    })}
+    {confirm && products.some(product => product.fulfillmentStatus === 'RESERVED') &&
+      <small>Chỉ chọn sản phẩm đã giao đủ số lượng. Mục chưa giao vẫn được giữ cho khách.</small>}
+  </fieldset>;
 }

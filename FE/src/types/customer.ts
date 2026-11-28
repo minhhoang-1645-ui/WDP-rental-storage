@@ -22,9 +22,9 @@ export interface CustomerContract {
   status: 'PENDING_PAYMENT' | 'READY_FOR_HANDOVER' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
   startDate: string
   endDate: string
-  reservation: { id: string; reference: string; status: string; quantity: number }
+  reservation: { id: string; reference: string; status: string; quantity: number; facility?: { name: string; code: string; address: string } | null }
   storageType: CustomerStorageType
-  storageUnit: { id: string; unitCode: string; floor: string | null; zone: string | null; row: string | null; position: string | null; physicalStatus: string }
+  storageUnit: { id: string; unitCode: string; floor: string | null; zone: string | null; row: string | null; position: string | null; physicalStatus: string; maintenanceNotice?: string }
   activatedAt: string | null
   completedAt: string | null
   terms: { version: string; acceptedAt: string | null; acceptanceName: string | null; acceptanceNote: string | null; document: Record<string, unknown>; snapshotHash: string; signatureImage: string | null; otp?: { required: boolean; emailConfigured: boolean }; verification?: { method: string; verifiedAt: string; recipient: string } | null }
@@ -41,6 +41,8 @@ export interface ReturnReadiness {
 }
 
 export interface RentalContractSummary {
+  returnNoticeDays?: number | null
+  overdueOccupancy?: { days: number; withinGrace: boolean; estimatedAmount: number } | null
   returnReadiness?: ReturnReadiness
   earlyReturnEstimate?: { effectiveDate: string; outstandingAmount: number | null; waivedAmount: number; refundAmount: number } | null
   returnInProgress?: boolean
@@ -80,6 +82,7 @@ export interface CustomerRental {
 }
 
 export interface CustomerInvoice {
+  overduePayment?: { days: number; graceDays?: number; withinGrace: boolean }
   closeoutPaymentAllowed?: boolean
   voidReason?: string | null
   voidedAt?: string | null
@@ -179,7 +182,7 @@ export interface CustomerSupportRequest {
   earlyReturnFinancialReview?: import('../components/customer/EarlyReturnFinancialNotice').EarlyReturnFinancialDecision | null
   earlyReturnDecision?: 'APPROVED' | 'REJECTED' | null
   earlyReturnForEndDate?: string | null
-  transfers?: Array<{ id: string; transferCode: string; status: string; rejectionReason?: string | null; requiresAcceptance?: boolean; contractId: string; fromUnit: { id: string; unitCode: string }; toUnit: { id: string; unitCode: string } | null; createdAt: string; approvedAt: string | null; completedAt: string | null }>
+  transfers?: Array<{ id: string; transferCode: string; status: string; rejectionReason?: string | null; requiresAcceptance?: boolean; customerMoveAction?: 'WAITING_FOR_DESTINATION' | 'READY_TO_REPORT' | 'REPORTED' | null; contractId: string; fromUnit: { id: string; unitCode: string }; toUnit: { id: string; unitCode: string } | null; createdAt: string; approvedAt: string | null; completedAt: string | null }>
   id: string
   supportCode: string
   category: SupportCategory
@@ -200,6 +203,12 @@ export interface CustomerSupportRequest {
 }
 
 export interface CustomerReturnRequest {
+  expectedReturnDate?: string | null
+  actualReturnDate?: string | null
+  inspectionScheduledAt?: string | null
+  overdueDays?: number
+  debtStatus?: 'OUTSTANDING' | 'NEEDS_RECONCILIATION' | 'CLEAR'
+  outstandingBalance?: number | null
   returnReadiness?: ReturnReadiness
   earlyReturnCloseout?: { effectiveDate: string; outstandingAmount: number | null; waivedAmount: number; refundAmount: number } | null
   rentRefund?: { approvedAt: string | null; refundedAt: string | null; reference: string | null } | null

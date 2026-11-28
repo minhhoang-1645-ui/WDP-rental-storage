@@ -6,6 +6,9 @@ import { BookingService } from './booking.service.js';
 function fixture({ paid = 0n, pendingPayment = false, released = false, status = 'CONFIRMED' } = {}) {
   const allocation = { reservationStatus: status, expiresAt: new Date(Date.now() - 60_000), releasedAt: released ? new Date() : null as Date | null };
   const db = {
+    $queryRawUnsafe: vi.fn().mockResolvedValue([]),
+    storageType: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility-1' }) },
+    facility: { findUnique: vi.fn().mockResolvedValue({ bookingEnabled: true, operationalStatus: 'OPEN' }) },
     $queryRaw: vi.fn().mockResolvedValue([{ id: 'unit-1', unitNumber: 'A1', floor: '1', zone: 'A', row: 1, position: 1 }]),
     storageUnit: { findMany: vi.fn().mockResolvedValue([{ id: 'unit-1' }]), count: vi.fn().mockResolvedValue(0) },
     renewalRequest: { findMany: vi.fn().mockResolvedValue([]) },
@@ -15,9 +18,9 @@ function fixture({ paid = 0n, pendingPayment = false, released = false, status =
     },
     reservationUnit: {
       findMany: vi.fn().mockImplementation(async ({ where }) => {
-        if (allocation.releasedAt || allocation.reservationStatus !== where.reservation.status) return [];
+        if (allocation.releasedAt || (where.reservation?.status && allocation.reservationStatus !== where.reservation.status)) return [];
         // Emulate Prisma's optional deadline filter against a still-live allocation.
-        const alternatives = where.reservation.OR as { expiresAt: null | { gt: Date } }[] | undefined;
+        const alternatives = where.reservation?.OR as { expiresAt: null | { gt: Date } }[] | undefined;
         if (alternatives && !alternatives.some(filter => filter.expiresAt === null ? allocation.expiresAt === null : allocation.expiresAt > filter.expiresAt.gt)) return [];
         return [{ storageUnitId: 'unit-1' }];
       }),
@@ -64,14 +67,14 @@ describe('Booking allocation expiration without database', () => {
     expect(await test.availability()).toMatchObject({ available: true });
   });
 
-  it('ignores allocations already released or attached to expired reservations', async () => {
+  it('keeps expired allocations blocked until they have actually been released', async () => {
     expect(await fixture({ released: true }).availability()).toMatchObject({ available: true });
-    expect(await fixture({ status: 'EXPIRED' }).availability()).toMatchObject({ available: true });
+    expect(await fixture({ status: 'EXPIRED' }).availability()).toMatchObject({ available: false });
   });
 
   it('checks still-held allocations again when choosing physical units for confirmation', async () => {
     const test = fixture({ paid: 100000n });
-    vi.spyOn(test.service as never, 'checkAvailabilityForDraft' as never).mockResolvedValue({ available: true, endDateExclusive: '2099-02-01', quote: { services: [] } } as never);
+    vi.spyOn(test.service as any, 'checkAvailabilityForDraft').mockResolvedValue({ available: true, endDateExclusive: '2099-02-01', quote: { services: [] } } as never);
     const reservation = { id: 'new', quantity: 1, units: [], storageTypeId: 'type-1', periodMode: 'CUSTOM_DATES', startDate: new Date('2099-01-01'), endDate: new Date('2099-02-01'), quoteSnapshot: {}, adjacentPreference: false };
     await expect(Reflect.get(test.service, 'confirmReservation').call(test.service, test.db, reservation)).rejects.toBeInstanceOf(ConflictException);
     expect(test.db.reservationUnit.createMany).not.toHaveBeenCalled();

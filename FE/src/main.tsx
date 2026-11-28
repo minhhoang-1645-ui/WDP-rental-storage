@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./app/App";
+import { ConfirmationProvider } from './components/workspace/ConfirmationProvider';
 import "./styles/index.css";
 import "./styles/portal.css";
 import "./styles/refresh.css";
@@ -16,7 +17,7 @@ import "./styles/record-detail.css";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
-      <App />
+      <ConfirmationProvider><App /></ConfirmationProvider>
     </BrowserRouter>
   </StrictMode>,
 );

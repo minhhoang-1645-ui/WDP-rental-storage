@@ -37,11 +37,11 @@ async function api(method: string, path: string, role?: string, body?: any, expe
   return response.body;
 }
 async function pay(invoice: any, existingNotice?: any) {
-  const notice = existingNotice ?? await api('POST', `/customer/invoices/${invoice.id}/payment-submissions`, 'CUSTOMER', { method: 'BANK_TRANSFER', amount: Number(invoice.balanceDue), reference: `LOCAL-NOT-A-REAL-PAYMENT-${tag}` });
-  expect((await api('GET', `/customer/invoices/${invoice.id}`, 'CUSTOMER')).status).not.toBe('PAID');
-  await api('POST', `/manager/payment-submissions/${notice.id}/verify`, 'STAFF', { reference: 'not-allowed' }, 403);
-  await api('POST', `/manager/payment-submissions/${notice.id}/verify`, 'MANAGER', { reference: `LOCAL-VERIFICATION-${randomUUID()}` });
-  expect((await api('GET', `/customer/invoices/${invoice.id}`, 'CUSTOMER')).status).toBe('PAID');
+  const notice = existingNotice ?? await api('POST', `/customer/invoices/${invoice.id}/payment-submissions`, 'STORAGE_CUSTOMER', { method: 'BANK_TRANSFER', amount: Number(invoice.balanceDue), reference: `LOCAL-NOT-A-REAL-PAYMENT-${tag}` });
+  expect((await api('GET', `/customer/invoices/${invoice.id}`, 'STORAGE_CUSTOMER')).status).not.toBe('PAID');
+  await api('POST', `/manager/payment-submissions/${notice.id}/verify`, 'FACILITY_STAFF', { reference: 'not-allowed' }, 403);
+  await api('POST', `/manager/payment-submissions/${notice.id}/verify`, 'FACILITY_MANAGER', { reference: `LOCAL-VERIFICATION-${randomUUID()}` });
+  expect((await api('GET', `/customer/invoices/${invoice.id}`, 'STORAGE_CUSTOMER')).status).toBe('PAID');
 }
 async function callback(session: any, amountDelta = 0n, invalidSignature = false) {
   const params = new URL(session.paymentUrl).searchParams;
@@ -52,13 +52,13 @@ async function callback(session: any, amountDelta = 0n, invalidSignature = false
   return api('GET', '/payments/vnpay/ipn?' + canonical + '&vnp_SecureHash=' + signature);
 }
 async function payOnline(invoice: any) {
-  const session = await api('POST', `/customer/invoices/${invoice.id}/online-payment`, 'CUSTOMER', { bankCode: 'VNPAYQR' });
+  const session = await api('POST', `/customer/invoices/${invoice.id}/online-payment`, 'STORAGE_CUSTOMER', { bankCode: 'VNPAYQR' });
   expect((await callback(session, 0n, true)).RspCode).toBe('97');
   expect((await callback(session, 100n)).RspCode).toBe('04');
-  expect((await api('GET', `/customer/invoices/${invoice.id}`, 'CUSTOMER')).status).not.toBe('PAID');
+  expect((await api('GET', `/customer/invoices/${invoice.id}`, 'STORAGE_CUSTOMER')).status).not.toBe('PAID');
   expect((await callback(session)).RspCode).toBe('00');
   expect((await callback(session)).RspCode).toBe('00');
-  expect((await api('GET', `/customer/invoices/${invoice.id}`, 'CUSTOMER')).status).toBe('PAID');
+  expect((await api('GET', `/customer/invoices/${invoice.id}`, 'STORAGE_CUSTOMER')).status).toBe('PAID');
   expect(await db.payment.count({ where: { invoiceId: invoice.id } })).toBe(1);
 }
 
@@ -67,12 +67,12 @@ async function signDocument(resource: 'contracts' | 'renewals', row: any, otherC
   vi.setSystemTime(new Date(Date.now() + 61_000));
   const terms = resource === 'contracts' ? row.terms : row.appendix;
   const base = `/customer/${resource}/${row.id}/${resource === 'contracts' ? '' : 'appendix/'}`;
-  const body = { agreed: true, acceptanceName: users.CUSTOMER.fullName, signatureImage, snapshotHash: terms.snapshotHash };
-  await api('POST', base + 'accept', 'CUSTOMER', body, 400);
-  const receipt = await api('POST', base + 'signature-otp', 'CUSTOMER', body);
+  const body = { agreed: true, acceptanceName: users.STORAGE_CUSTOMER.fullName, signatureImage, snapshotHash: terms.snapshotHash };
+  await api('POST', base + 'accept', 'STORAGE_CUSTOMER', body, 400);
+  const receipt = await api('POST', base + 'signature-otp', 'STORAGE_CUSTOMER', body);
   expect(receipt).not.toHaveProperty('otp'); expect(receipt).not.toHaveProperty('code');
-  await api('POST', base + 'accept', otherCustomer, { ...body, challengeId: receipt.challengeId, otp: mailbox.get(users.CUSTOMER.email) }, 404);
-  const signed = await api('POST', base + 'accept', 'CUSTOMER', { ...body, challengeId: receipt.challengeId, otp: mailbox.get(users.CUSTOMER.email) });
+  await api('POST', base + 'accept', otherCustomer, { ...body, challengeId: receipt.challengeId, otp: mailbox.get(users.STORAGE_CUSTOMER.email) }, 404);
+  const signed = await api('POST', base + 'accept', 'STORAGE_CUSTOMER', { ...body, challengeId: receipt.challengeId, otp: mailbox.get(users.STORAGE_CUSTOMER.email) });
   const result = resource === 'contracts' ? signed.terms : signed.appendix;
   expect(result.verification.method).toBe('EMAIL_OTP'); expect(result.snapshotHash).toBe(terms.snapshotHash);
   return signed;
@@ -87,7 +87,7 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
     vi.spyOn(EmailService.prototype, 'sendSignatureOtp').mockImplementation(async (message: any) => { mailbox.set(message.to, message.code); });
     app = await NestFactory.create(AppModule, { logger: false }); app.setGlobalPrefix('api'); await app.init();
     db = app.get(PrismaService); const auth = app.get(AuthService);
-    for (const role of ['ADMIN', 'MANAGER', 'STAFF', 'OTHER_STAFF', 'CUSTOMER', 'OTHER_CUSTOMER']) {
+    for (const role of ['SYSTEM_ADMINISTRATOR', 'FACILITY_MANAGER', 'FACILITY_STAFF', 'OTHER_STAFF', 'STORAGE_CUSTOMER', 'OTHER_CUSTOMER']) {
       const registered = await auth.register({ fullName: 'Local ' + role, email: `${tag}-${role.toLowerCase()}@example.test`, password, phone: '0900000000' });
       users[role] = await db.user.update({ where: { id: registered.user.id }, data: { role: role.startsWith('OTHER_') ? role.slice(6) : role } });
       tokens[role] = (await auth.login({ email: users[role].email, password })).token;
@@ -96,245 +96,246 @@ describe('Four roles through real HTTP + disposable PostgreSQL, no email/payment
   afterAll(async () => { if (app) await app.close(); vi.useRealTimers(); });
 
   it('completes booking, signatures, verified payment, handover, stock, support, renewal, transfer, maintenance, early return and settlement', async () => {
-    const paymentChannels = await api('GET', '/customer/payment-config', 'CUSTOMER');
+    const paymentChannels = await api('GET', '/customer/payment-config', 'STORAGE_CUSTOMER');
     expect(paymentChannels.vnpayConfigured).toBe(true);
     expect(paymentChannels).not.toHaveProperty('hashSecret');
     expect(paymentChannels).not.toHaveProperty('VNPAY_HASH_SECRET');
     const facility = await db.facility.create({ data: { code: `LOCAL-${tag}`, name: 'Disposable local flow test', address: 'Local test only' } });
     const type = await db.storageType.create({ data: { id: `flow-${tag}`, facilityId: facility.id, code: `FLOW-${tag}`, name: 'Kho kiểm thử tạm', sizeId: 'small', sizeName: 'Kho nhỏ', kicker: 'Local test only', condition: 'STANDARD', widthCm: 150, lengthCm: 200, heightCm: 240, roomEquivalent: 'Local', capacity: 'Local', boxCount: '20', suitableItems: ['Thùng'], image: '/local-only.png', imageAlt: 'Local test', floor: 'Tầng trệt', access: 'Local', features: ['Local'], monthlyRate: 1500000, depositMonths: 1, minRentalDays: 7, allowDailyRental: true } });
     const units = await Promise.all([1,2,3].map(n => db.storageUnit.create({ data: { storageTypeId: type.id, unitNumber: `LOCAL-${tag}-${n}`, floor: 'Tầng trệt', zone: 'A', row: 1, position: n } })));
-    for (const unit of units) await api('PATCH', `/manager/units/${unit.id}/staff-assignment`, 'MANAGER', { staffUserId: users.STAFF.id, expectedAssignmentId: null });
+    for (const unit of units) await api('PATCH', `/manager/units/${unit.id}/staff-assignment`, 'FACILITY_MANAGER', { staffUserId: users.FACILITY_STAFF.id, expectedAssignmentId: null });
     expect((await api('GET', '/staff/assigned-units', 'OTHER_STAFF')).items).toHaveLength(0);
-    await api('PATCH', `/manager/units/${units[0].id}/staff-assignment`, 'STAFF', { staffUserId: users.OTHER_STAFF.id, expectedAssignmentId: null }, 403);
+    await api('PATCH', `/manager/units/${units[0].id}/staff-assignment`, 'FACILITY_STAFF', { staffUserId: users.OTHER_STAFF.id, expectedAssignmentId: null }, 403);
     const bookingBody = { productId: type.id, startDate, periodMode: 'duration', durationMonths: 3, quantity: 1, paymentPlan: 'PAY_MONTHLY', paymentChoice: 'pay-later', addonIds: [], services: [] };
     expect((await api('POST', '/booking/availability', undefined, bookingBody)).available).toBe(true);
-    await api('POST', '/reservations', 'MANAGER', bookingBody, 403);
-    const booking = await api('POST', '/reservations', 'CUSTOMER', bookingBody);
-    expect(booking.status).toBe('CONFIRMED'); expect((await api('POST', '/reservations', 'CUSTOMER', bookingBody)).id).toBe(booking.id);
-    await api('GET', '/manager/units', 'ADMIN', undefined, 403);
-    await api('GET', `/reservations/${booking.id}`, 'ADMIN', undefined, 403);
-    await api('GET', '/manager/payment-submissions', 'ADMIN', undefined, 403);
-    const contracts = (await api('GET', '/customer/contracts?limit=100', 'CUSTOMER')).items;
+    await api('POST', '/reservations', 'FACILITY_MANAGER', bookingBody, 403);
+    const booking = await api('POST', '/reservations', 'STORAGE_CUSTOMER', bookingBody);
+    expect(booking.status).toBe('CONFIRMED'); expect((await api('POST', '/reservations', 'STORAGE_CUSTOMER', bookingBody)).id).toBe(booking.id);
+    await api('GET', '/manager/units', 'SYSTEM_ADMINISTRATOR', undefined, 403);
+    await api('GET', `/reservations/${booking.id}`, 'SYSTEM_ADMINISTRATOR', undefined, 403);
+    await api('GET', '/manager/payment-submissions', 'SYSTEM_ADMINISTRATOR', undefined, 403);
+    const contracts = (await api('GET', '/customer/contracts?limit=100', 'STORAGE_CUSTOMER')).items;
     expect(contracts).toHaveLength(1); const contract = contracts[0];
     await api('GET', `/customer/contracts/${contract.id}`, 'OTHER_CUSTOMER', undefined, 404);
-    let invoice = (await api('GET', '/customer/invoices?limit=100', 'CUSTOMER')).items.find((i: any) => i.type === 'INITIAL');
+    let invoice = (await api('GET', '/customer/invoices?limit=100', 'STORAGE_CUSTOMER')).items.find((i: any) => i.type === 'INITIAL');
     expect(invoice.signing.complete).toBe(false);
-    await api('POST', `/customer/invoices/${invoice.id}/online-payment`, 'CUSTOMER', {}, 409);
+    await api('POST', `/customer/invoices/${invoice.id}/online-payment`, 'STORAGE_CUSTOMER', {}, 409);
     // A notice can report an accidental transfer, but must never settle an unsigned invoice.
-    const unsignedNotice = await api('POST', `/customer/invoices/${invoice.id}/payment-submissions`, 'CUSTOMER', { method: 'BANK_TRANSFER', amount: invoice.balanceDue });
-    await api('POST', `/manager/payment-submissions/${unsignedNotice.id}/verify`, 'MANAGER', { reference: 'LOCAL-UNSIGNED-BLOCK' }, 409);
+    const unsignedNotice = await api('POST', `/customer/invoices/${invoice.id}/payment-submissions`, 'STORAGE_CUSTOMER', { method: 'BANK_TRANSFER', amount: invoice.balanceDue });
+    await api('POST', `/manager/payment-submissions/${unsignedNotice.id}/verify`, 'FACILITY_MANAGER', { reference: 'LOCAL-UNSIGNED-BLOCK' }, 409);
     emailConfigured = false;
-    await api('POST', `/customer/contracts/${contract.id}/signature-otp`, 'CUSTOMER', { agreed: true, acceptanceName: users.CUSTOMER.fullName, signatureImage, snapshotHash: contract.terms.snapshotHash }, 503);
-    expect((await api('GET', `/customer/contracts/${contract.id}`, 'CUSTOMER')).terms.acceptedAt).toBeNull();
+    await api('POST', `/customer/contracts/${contract.id}/signature-otp`, 'STORAGE_CUSTOMER', { agreed: true, acceptanceName: users.STORAGE_CUSTOMER.fullName, signatureImage, snapshotHash: contract.terms.snapshotHash }, 503);
+    expect((await api('GET', `/customer/contracts/${contract.id}`, 'STORAGE_CUSTOMER')).terms.acceptedAt).toBeNull();
     emailConfigured = true;
     await signDocument('contracts', contract);
-    const file = await request(app.getHttpServer()).get(`/api/customer/documents/contracts/${contract.id}`).set('Authorization', 'Bearer ' + tokens.CUSTOMER);
+    const file = await request(app.getHttpServer()).get(`/api/customer/documents/contracts/${contract.id}`).set('Authorization', 'Bearer ' + tokens.STORAGE_CUSTOMER);
     expect(file.status).toBe(200); expect(file.headers['content-type']).toContain('application/pdf'); expect(file.headers['cache-control']).toContain('no-store'); expect(file.body.subarray(0, 5).toString()).toBe('%PDF-');
-    for (const role of ['OTHER_CUSTOMER', 'MANAGER', 'STAFF', 'ADMIN']) {
+    for (const role of ['OTHER_CUSTOMER', 'FACILITY_MANAGER', 'FACILITY_STAFF', 'SYSTEM_ADMINISTRATOR']) {
       await api('GET', `/customer/documents/contracts/${contract.id}`, role, undefined, role === 'OTHER_CUSTOMER' ? 404 : 403);
     }
     await api('GET', `/customer/documents/contracts/${contract.id}`, undefined, undefined, 401);
-    const invoiceFile = await request(app.getHttpServer()).get(`/api/customer/documents/invoices/${invoice.id}`).set('Authorization', 'Bearer ' + tokens.CUSTOMER);
+    const invoiceFile = await request(app.getHttpServer()).get(`/api/customer/documents/invoices/${invoice.id}`).set('Authorization', 'Bearer ' + tokens.STORAGE_CUSTOMER);
     expect(invoiceFile.status).toBe(200); expect(invoiceFile.body.subarray(0, 5).toString()).toBe('%PDF-');
 
-    invoice = await api('GET', `/customer/invoices/${invoice.id}`, 'CUSTOMER'); expect(invoice.signing.complete).toBe(true); await pay(invoice, unsignedNotice);
-    const appointment = await api('POST', '/customer/appointments', 'CUSTOMER', { reservationId: booking.id, scheduledAt: new Date(Math.max(Date.parse(appointmentAt), Date.now() + 60_000)).toISOString() });
+    invoice = await api('GET', `/customer/invoices/${invoice.id}`, 'STORAGE_CUSTOMER'); expect(invoice.signing.complete).toBe(true); await pay(invoice, unsignedNotice);
+    const appointment = await api('POST', '/customer/appointments', 'STORAGE_CUSTOMER', { reservationId: booking.id, scheduledAt: new Date(Math.max(Date.parse(appointmentAt), Date.now() + 60_000)).toISOString() });
     expect(appointment.status).toBe('CONFIRMED');
     const handover = { note: 'Local test, not a real handover', handoverReport: { recipientType: 'CUSTOMER', recipientName: users.CUSTOMER.fullName, condition: 'Sạch và khóa hoạt động', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true } };
     vi.setSystemTime(new Date(Date.parse(startDate + 'T00:00:00+07:00') - 4 * 86_400_000));
-    await api('POST', `/staff/appointments/${appointment.id}/complete-handover`, 'STAFF', handover, 409);
+    await api('POST', `/staff/appointments/${appointment.id}/complete-handover`, 'FACILITY_STAFF', handover, 409);
     vi.setSystemTime(new Date(appointment.scheduledAt));
-    expect((await api('POST', `/staff/appointments/${appointment.id}/complete-handover`, 'STAFF', handover)).status).toBe('COMPLETED');
-    expect((await api('GET', '/customer/rentals', 'CUSTOMER')).items[0].rentalState).toBe('ACTIVE');
-    const support = await api('POST', '/customer/support-requests', 'CUSTOMER', { reservationId: booking.id, rentalContractId: contract.id, storageUnitId: contract.storageUnit.id, category: 'UNIT_ISSUE', subject: 'Local support', description: 'Kiểm tra hỗ trợ tạm trên local' });
-    expect((await api('GET', `/manager/support-requests/${support.id}`, 'MANAGER')).assignedStaff.id).toBe(users.STAFF.id);
+    expect((await api('POST', `/staff/appointments/${appointment.id}/complete-handover`, 'FACILITY_STAFF', handover)).status).toBe('COMPLETED');
+    expect((await api('GET', '/customer/rentals', 'STORAGE_CUSTOMER')).items[0].rentalState).toBe('ACTIVE');
+    const support = await api('POST', '/customer/support-requests', 'STORAGE_CUSTOMER', { reservationId: booking.id, rentalContractId: contract.id, storageUnitId: contract.storageUnit.id, category: 'UNIT_ISSUE', subject: 'Local support', description: 'Kiểm tra hỗ trợ tạm trên local' });
+    expect((await api('GET', `/manager/support-requests/${support.id}`, 'FACILITY_MANAGER')).assignedStaff.id).toBe(users.FACILITY_STAFF.id);
     await api('POST', `/staff/support-requests/${support.id}/start`, 'OTHER_STAFF', {}, 403);
-    await api('POST', `/staff/support-requests/${support.id}/start`, 'STAFF', {});
-    await api('POST', `/staff/support-requests/${support.id}/escalate`, 'STAFF', { reason: 'Cần quản lý kiểm tra' });
-    await api('POST', `/manager/support-requests/${support.id}/resolve`, 'STAFF', { resolutionType: 'MANAGER_RESOLVED', resolutionNote: 'Không có quyền' }, 403);
-    await api('POST', `/manager/support-requests/${support.id}/resolve`, 'MANAGER', { resolutionType: 'MANAGER_RESOLVED', resolutionNote: 'Đã đối chiếu trên môi trường local' });
-    expect((await api('GET', `/customer/support-requests/${support.id}`, 'CUSTOMER')).status).toBe('RESOLVED');
-    const incoming = await api('POST', '/customer/stock-movements', 'CUSTOMER', { rentalContractId: contract.id, type: 'IN', lines: [{ name: 'Thùng local', unit: 'thùng', quantity: 2 }] });
-    expect(incoming.status).toBe('ASSIGNED');
-    const counted = { lines: [{ lineId: incoming.lines[0].id, actualQty: 2 }], note: 'Local count' };
-    await api('POST', `/staff/stock-movements/${incoming.id}/complete`, 'OTHER_STAFF', counted, 403);
-    await api('POST', `/staff/stock-movements/${incoming.id}/complete`, 'STAFF', counted);
-    await api('POST', `/staff/stock-movements/${incoming.id}/complete`, 'STAFF', counted);
-    const stored = (await api('GET', '/customer/stored-items', 'CUSTOMER'))[0]; expect(stored.balance).toBe(2);
-    const outgoing = await api('POST', '/customer/stock-movements', 'CUSTOMER', { rentalContractId: contract.id, type: 'OUT', lines: [{ storedItemId: stored.id, quantity: 2 }] });
-    await api('POST', `/staff/stock-movements/${outgoing.id}/complete`, 'STAFF', { lines: [{ lineId: outgoing.lines[0].id, actualQty: outgoing.lines[0].requestedQty }] });
-    expect(await api('GET', '/customer/stored-items', 'CUSTOMER')).toHaveLength(0);
-    let renewal = await api('POST', '/customer/renewals', 'CUSTOMER', { reservationId: booking.id, termMonths: 3, paymentPlan: 'PREPAID' });
+    await api('POST', `/staff/support-requests/${support.id}/start`, 'FACILITY_STAFF', {});
+    await api('POST', `/staff/support-requests/${support.id}/escalate`, 'FACILITY_STAFF', { reason: 'Cần quản lý kiểm tra' });
+    await api('POST', `/manager/support-requests/${support.id}/resolve`, 'FACILITY_STAFF', { resolutionType: 'MANAGER_RESOLVED', resolutionNote: 'Không có quyền' }, 403);
+    await api('POST', `/manager/support-requests/${support.id}/resolve`, 'FACILITY_MANAGER', { resolutionType: 'MANAGER_RESOLVED', resolutionNote: 'Đã đối chiếu trên môi trường local' });
+    expect((await api('GET', `/customer/support-requests/${support.id}`, 'STORAGE_CUSTOMER')).status).toBe('RESOLVED');
+    const retired = await api('POST', '/customer/stock-movements', 'STORAGE_CUSTOMER', { rentalContractId: contract.id }, 410);
+    expect(retired.code).toBe('PERSONAL_INVENTORY_RETIRED');
+    await api('GET', '/customer/stored-items', 'STORAGE_CUSTOMER', undefined, 410);
+    let renewal = await api('POST', '/customer/renewals', 'STORAGE_CUSTOMER', { reservationId: booking.id, termMonths: 3, paymentPlan: 'PREPAID' });
     expect(renewal.status).toBe('APPROVED_PENDING_PAYMENT');
     await signDocument('renewals', renewal);
-    const renewalInvoice = (await api('GET', '/customer/invoices?limit=100', 'CUSTOMER')).items.find((i: any) => i.type === 'RENEWAL' && i.renewalCycle === 1); await payOnline(renewalInvoice);
-    renewal = await api('GET', `/customer/renewals/${renewal.id}`, 'CUSTOMER'); expect(renewal.status).toBe('COMPLETED');
-    const transferRequest = await api('POST', '/customer/support-requests', 'CUSTOMER', { reservationId: booking.id, rentalContractId: contract.id, storageUnitId: contract.storageUnit.id, category: 'UNIT_ISSUE', subject: 'Yêu cầu chuyển kho', description: 'Local transfer request' });
-    const transfer = await api('POST', '/staff/management/transfers', 'STAFF', { rentalContractId: contract.id, supportRequestId: transferRequest.id, reason: 'UNIT_ISSUE' });
+    const renewalInvoice = (await api('GET', '/customer/invoices?limit=100', 'STORAGE_CUSTOMER')).items.find((i: any) => i.type === 'RENEWAL' && i.renewalCycle === 1); await payOnline(renewalInvoice);
+    renewal = await api('GET', `/customer/renewals/${renewal.id}`, 'STORAGE_CUSTOMER'); expect(renewal.status).toBe('COMPLETED');
+    const transferRequest = await api('POST', '/customer/support-requests', 'STORAGE_CUSTOMER', { reservationId: booking.id, rentalContractId: contract.id, storageUnitId: contract.storageUnit.id, category: 'UNIT_ISSUE', subject: 'Yêu cầu chuyển kho', description: 'Local transfer request' });
+    const transfer = await api('POST', '/staff/management/transfers', 'FACILITY_STAFF', { rentalContractId: contract.id, supportRequestId: transferRequest.id, reason: 'UNIT_ISSUE' });
     const destination = units.find(u => u.id !== contract.storageUnit.id)!;
-    await api('POST', `/staff/management/transfers/${transfer.id}/approve`, 'STAFF', { toStorageUnitId: destination.id }, 403);
-    await api('POST', `/manager/transfers/${transfer.id}/approve`, 'MANAGER', { toStorageUnitId: destination.id });
-    await api('PATCH', `/manager/transfers/${transfer.id}/assign`, 'MANAGER', { staffUserId: users.STAFF.id });
-    await api('POST', `/staff/transfers/${transfer.id}/complete`, 'STAFF', {
-      goodsMoved: true, oldKeysReturned: true, newKeysDelivered: true, recipientName: users.CUSTOMER.fullName, returnedKeyCount: 1, deliveredKeyCount: 1,
+    await api('POST', `/staff/management/transfers/${transfer.id}/approve`, 'FACILITY_STAFF', { toStorageUnitId: destination.id }, 403);
+    await api('POST', `/manager/transfers/${transfer.id}/approve`, 'FACILITY_MANAGER', { toStorageUnitId: destination.id });
+    await api('PATCH', `/manager/transfers/${transfer.id}/assign`, 'FACILITY_MANAGER', { staffUserId: users.FACILITY_STAFF.id });
+    await api('POST', `/staff/transfers/${transfer.id}/complete`, 'FACILITY_STAFF', {
+      destinationReady: true, goodsMoved: true, oldKeysReturned: true, newKeysDelivered: true, recipientName: users.STORAGE_CUSTOMER.fullName, returnedKeyCount: 1, deliveredKeyCount: 1,
     });
-    expect((await api('GET', `/customer/support-requests/${transferRequest.id}`, 'CUSTOMER')).status).toBe('RESOLVED');
-    expect((await api('GET', `/customer/contracts/${contract.id}`, 'CUSTOMER')).storageUnit.id).toBe(destination.id);
-    const maintenance = (await api('GET', '/manager/maintenance', 'MANAGER')).items.find((m: any) => m.unit.id === contract.storageUnit.id);
-    expect(maintenance.assignedStaff.id).toBe(users.STAFF.id);
-    await api('POST', `/staff/maintenance/${maintenance.id}/start`, 'STAFF', {});
-    await api('POST', `/staff/maintenance/${maintenance.id}/complete-work`, 'STAFF', { workNote: 'Đã sửa khóa và vệ sinh trong bài test local' });
-    await api('POST', `/manager/maintenance/${maintenance.id}/verify`, 'STAFF', {}, 403);
-    await api('POST', `/manager/maintenance/${maintenance.id}/verify`, 'MANAGER', { note: 'Local verification' });
+    expect((await api('GET', `/customer/support-requests/${transferRequest.id}`, 'STORAGE_CUSTOMER')).status).toBe('RESOLVED');
+    expect((await api('GET', `/customer/contracts/${contract.id}`, 'STORAGE_CUSTOMER')).storageUnit.id).toBe(destination.id);
+    const maintenance = (await api('GET', '/manager/maintenance', 'FACILITY_MANAGER')).items.find((m: any) => m.unit.id === contract.storageUnit.id);
+    await api('PATCH', `/manager/maintenance/${maintenance.id}/repair-plan`, 'FACILITY_MANAGER', {
+      surveyResult: 'Đã kiểm tra ô kho sau khi chuyển.',
+      repairMethod: 'INTERNAL',
+      repairPlan: 'Sửa khóa và vệ sinh ô kho.',
+      expectedUpdatedAt: maintenance.updatedAt,
+    });
+    await api('PATCH', `/manager/maintenance/${maintenance.id}/assign`, 'FACILITY_MANAGER', {
+      staffUserId: users.FACILITY_STAFF.id, expectedAssignedStaffUserId: maintenance.assignedStaff?.id ?? null,
+    });
+    await api('POST', `/staff/maintenance/${maintenance.id}/start`, 'FACILITY_STAFF', {});
+    await api('POST', `/staff/maintenance/${maintenance.id}/complete-work`, 'FACILITY_STAFF', { workNote: 'Đã sửa khóa và vệ sinh trong bài test local' });
+    await api('POST', `/manager/maintenance/${maintenance.id}/verify`, 'FACILITY_STAFF', {}, 403);
+    await api('POST', `/manager/maintenance/${maintenance.id}/verify`, 'FACILITY_MANAGER', { note: 'Local verification', safetyVerified: true });
     expect((await db.storageUnit.findUnique({ where: { id: contract.storageUnit.id } })).status).toBe('AVAILABLE');
-    const proposal = await api('POST', '/customer/support-requests', 'CUSTOMER', { reservationId: booking.id, category: 'OTHER', subject: 'Đề nghị trả kho trước hạn', description: 'Local early return proposal' });
-    const review = (await api('GET', '/manager/early-return-requests', 'MANAGER')).items.find((r: any) => r.id === proposal.id);
-    await api('POST', `/manager/early-return-requests/${proposal.id}/decision`, 'MANAGER', { decision: 'APPROVED', financialReviewConfirmed: true, reviewedEndDate: review.reservation.effectiveEndDate, reviewedOutstandingAmount: review.financialSummary.outstandingAmount, reviewedPaidAmount: review.financialSummary.paidAmount, note: 'Local review; no new fee or refund policy' });
-    await api('POST', '/customer/returns', 'CUSTOMER', { reservationId: booking.id }, 409);
-    const unpaid = (await api('GET', '/customer/invoices?limit=100', 'CUSTOMER')).items
+    const proposal = await api('POST', '/customer/support-requests', 'STORAGE_CUSTOMER', { reservationId: booking.id, category: 'OTHER', subject: 'Đề nghị trả kho trước hạn', description: 'Local early return proposal' });
+    const review = (await api('GET', '/manager/early-return-requests', 'FACILITY_MANAGER')).items.find((r: any) => r.id === proposal.id);
+    await api('POST', `/manager/early-return-requests/${proposal.id}/decision`, 'FACILITY_MANAGER', { decision: 'APPROVED', financialReviewConfirmed: true, reviewedEndDate: review.reservation.effectiveEndDate, reviewedOutstandingAmount: review.financialSummary.outstandingAmount, reviewedPaidAmount: review.financialSummary.paidAmount, note: 'Local review; no new fee or refund policy' });
+    await api('POST', '/customer/returns', 'STORAGE_CUSTOMER', { reservationId: booking.id }, 409);
+    const unpaid = (await api('GET', '/customer/invoices?limit=100', 'STORAGE_CUSTOMER')).items
       .filter((invoice: any) => invoice.reservation.id === contract.reservation.id && invoice.status === 'OPEN' && invoice.balanceDue > 0);
     expect(unpaid.length).toBeGreaterThan(0);
     for (const invoice of unpaid) {
-      await api('POST', `/manager/invoices/${invoice.id}/payments`, 'MANAGER', { amount: invoice.balanceDue, method: 'CASH' });
+      await api('POST', `/manager/invoices/${invoice.id}/payments`, 'FACILITY_MANAGER', { amount: invoice.balanceDue, method: 'CASH' });
     }
-    const returned = await api('POST', '/customer/returns', 'CUSTOMER', { reservationId: booking.id });
-    await api('PATCH', `/manager/returns/${returned.id}/assign`, 'MANAGER', { staffUserId: users.STAFF.id });
-    await api('POST', `/staff/returns/${returned.id}/start-inspection`, 'STAFF', {});
-    for (const inspection of returned.inspections) await api('PATCH', `/staff/returns/${returned.id}/inspections/${inspection.id}`, 'STAFF', { result: 'ISSUE_FOUND', issueType: 'FACILITY_FAULT', issueNote: 'Khóa cần kiểm tra, không phải lỗi khách', conditionNote: 'Kho đã lấy hết hàng' });
-    const pendingGoods = await api('POST', '/customer/stock-movements', 'CUSTOMER', { rentalContractId: contract.id, type: 'IN', lines: [{ name: 'Local final item', unit: 'thùng', quantity: 1 }] });
-    await api('POST', `/staff/returns/${returned.id}/finalize`, 'STAFF', {}, 409);
-    await api('POST', `/staff/stock-movements/${pendingGoods.id}/complete`, 'STAFF', { lines: [{ lineId: pendingGoods.lines[0].id, actualQty: pendingGoods.lines[0].requestedQty }] });
-    await api('POST', `/staff/returns/${returned.id}/finalize`, 'STAFF', {}, 409);
-    const lastItem = (await api('GET', '/customer/stored-items', 'CUSTOMER'))[0];
-    const finalOut = await api('POST', '/customer/stock-movements', 'CUSTOMER', { rentalContractId: contract.id, type: 'OUT', lines: [{ storedItemId: lastItem.id, quantity: 1 }] });
-    await api('POST', `/staff/stock-movements/${finalOut.id}/complete`, 'STAFF', { lines: [{ lineId: finalOut.lines[0].id, actualQty: finalOut.lines[0].requestedQty }] });
-    await api('POST', `/staff/returns/${returned.id}/finalize`, 'STAFF', {});
-    const settlement = (await api('GET', '/manager/deposit-settlements', 'MANAGER')).items.find((s: any) => s.reservation.id === contract.reservation.id);
-    await api('POST', `/manager/deposit-settlements/${settlement.id}/review`, 'STAFF', { issues: [] }, 403);
-    const reviewed = await api('POST', `/manager/deposit-settlements/${settlement.id}/review`, 'MANAGER', { issues: returned.inspections.map((i: any) => ({ inspectionId: i.id, issueType: 'FACILITY_FAULT', approvedChargeAmount: 0, reason: 'Lỗi thiết bị cơ sở, không thu phí khách' })), note: 'Local review' });
-    if (reviewed.refundAmount > 0) await api('POST', `/manager/deposit-settlements/${settlement.id}/refund`, 'MANAGER', { method: 'BANK_TRANSFER', reference: 'LOCAL-ONLY-NO-REAL-REFUND', note: 'No real bank call' });
-    const customerSettlement = await api('GET', `/customer/deposit-settlements/${settlement.id}`, 'CUSTOMER');
+    const returned = await api('POST', '/customer/returns', 'STORAGE_CUSTOMER', { reservationId: booking.id });
+    await api('PATCH', `/manager/returns/${returned.id}/assign`, 'FACILITY_MANAGER', { staffUserId: users.FACILITY_STAFF.id });
+    await api('POST', `/staff/returns/${returned.id}/start-inspection`, 'FACILITY_STAFF', {});
+    for (const inspection of returned.inspections) await api('PATCH', `/staff/returns/${returned.id}/inspections/${inspection.id}`, 'FACILITY_STAFF', { result: 'ISSUE_FOUND', issueType: 'FACILITY_FAULT', issueNote: 'Khóa cần kiểm tra, không phải lỗi khách', conditionNote: 'Kho đã lấy hết hàng' });
+    await api('POST', '/staff/returns/' + returned.id + '/finalize', 'FACILITY_STAFF', { unitsEmpty: false, accessRevoked: true }, 400);
+    await api('POST', '/staff/returns/' + returned.id + '/finalize', 'FACILITY_STAFF', { unitsEmpty: true, accessRevoked: true });
+    const settlement = (await api('GET', '/manager/deposit-settlements', 'FACILITY_MANAGER')).items.find((s: any) => s.reservation.id === contract.reservation.id);
+    await api('POST', `/manager/deposit-settlements/${settlement.id}/review`, 'FACILITY_STAFF', { issues: [] }, 403);
+    const reviewed = await api('POST', `/manager/deposit-settlements/${settlement.id}/review`, 'FACILITY_MANAGER', { issues: returned.inspections.map((i: any) => ({ inspectionId: i.id, issueType: 'FACILITY_FAULT', approvedChargeAmount: 0, reason: 'Lỗi thiết bị cơ sở, không thu phí khách' })), note: 'Local review' });
+    if (reviewed.refundAmount > 0) await api('POST', `/manager/deposit-settlements/${settlement.id}/refund`, 'FACILITY_MANAGER', { method: 'BANK_TRANSFER', reference: 'LOCAL-ONLY-NO-REAL-REFUND', note: 'No real bank call' });
+    const customerSettlement = await api('GET', `/customer/deposit-settlements/${settlement.id}`, 'STORAGE_CUSTOMER');
     expect(customerSettlement).toMatchObject({ status: 'SETTLED', returnId: returned.id, unitCodes: [destination.unitNumber] });
     if (reviewed.refundAmount > 0) expect(customerSettlement.refundRecord).toMatchObject({ method: 'BANK_TRANSFER' });
     await api('GET', `/customer/deposit-settlements/${settlement.id}`, 'OTHER_CUSTOMER', undefined, 404);
-    expect((await api('GET', `/customer/contracts/${contract.id}`, 'CUSTOMER')).status).toBe('COMPLETED');
-    await api('POST', '/customer/stock-movements', 'CUSTOMER', { rentalContractId: contract.id, type: 'IN', lines: [{ name: 'Not allowed', unit: 'thùng', quantity: 1 }] }, 409);
-    const lateBooking = await api('POST', '/reservations', 'CUSTOMER', { ...bookingBody, startDate: new Date(baseTime + 86400000 + 25200000).toISOString().slice(0, 10), durationMonths: 1 });
-    const lateContract = (await api('GET', '/customer/contracts?limit=100', 'CUSTOMER')).items.find((c: any) => c.reservation.reference === lateBooking.id);
+    expect((await api('GET', `/customer/contracts/${contract.id}`, 'STORAGE_CUSTOMER')).status).toBe('COMPLETED');
+    const lateBooking = await api('POST', '/reservations', 'STORAGE_CUSTOMER', { ...bookingBody, startDate: new Date(baseTime + 86400000 + 25200000).toISOString().slice(0, 10), durationMonths: 1 });
+    const lateContract = (await api('GET', '/customer/contracts?limit=100', 'STORAGE_CUSTOMER')).items.find((c: any) => c.reservation.reference === lateBooking.id);
     await signDocument('contracts', lateContract);
-    const lateInvoice = (await api('GET', '/customer/invoices?limit=100', 'CUSTOMER')).items.find((i: any) => i.reservation.reference === lateBooking.id);
-    const lateSession = await api('POST', `/customer/invoices/${lateInvoice.id}/online-payment`, 'CUSTOMER', {});
+    const lateInvoice = (await api('GET', '/customer/invoices?limit=100', 'STORAGE_CUSTOMER')).items.find((i: any) => i.reservation.reference === lateBooking.id);
+    const lateSession = await api('POST', `/customer/invoices/${lateInvoice.id}/online-payment`, 'STORAGE_CUSTOMER', {});
     // Simulate a cancellation racing a provider callback, only in this disposable database.
     await db.invoice.update({ where: { id: lateInvoice.id }, data: { status: 'VOID' } });
-    await api('POST', `/customer/invoices/${lateInvoice.id}/online-payment`, 'CUSTOMER', {}, 409);
+    await api('POST', `/customer/invoices/${lateInvoice.id}/online-payment`, 'STORAGE_CUSTOMER', {}, 409);
     expect((await callback(lateSession)).RspCode).toBe('00');
-    expect((await api('GET', `/customer/invoices/${lateInvoice.id}`, 'CUSTOMER')).status).toBe('VOID');
+    expect((await api('GET', `/customer/invoices/${lateInvoice.id}`, 'STORAGE_CUSTOMER')).status).toBe('VOID');
     expect(await db.payment.count({ where: { invoiceId: lateInvoice.id } })).toBe(0);
-    const reconciliation = (await api('GET', '/manager/online-payment-reconciliations', 'MANAGER')).items.find((r: any) => r.transaction.invoice.invoiceCode === lateInvoice.invoiceCode);
+    const reconciliation = (await api('GET', '/manager/online-payment-reconciliations', 'FACILITY_MANAGER')).items.find((r: any) => r.transaction.invoice.invoiceCode === lateInvoice.invoiceCode);
     expect(reconciliation.status).toBe('PENDING_REVIEW');
-    await api('POST', `/manager/online-payment-reconciliations/${reconciliation.id}/resolve`, 'STAFF', { resolution: 'RECONCILED', resolutionNote: 'Not allowed' }, 403);
-    await api('POST', `/manager/online-payment-reconciliations/${reconciliation.id}/resolve`, 'MANAGER', { resolution: 'REFUND_REQUIRED', resolutionNote: 'Local callback after cancellation' });
-    await api('POST', `/manager/online-payment-reconciliations/${reconciliation.id}/resolve`, 'MANAGER', { resolution: 'RECONCILED', resolutionNote: 'Missing evidence' }, 400);
-    await api('POST', `/manager/online-payment-reconciliations/${reconciliation.id}/resolve`, 'MANAGER', { resolution: 'RECONCILED', resolutionNote: 'Local evidence only, no real bank call', refundConfirmed: true, refundReference: 'LOCAL-REFUND-ONLY' });
+    await api('POST', `/manager/online-payment-reconciliations/${reconciliation.id}/resolve`, 'FACILITY_STAFF', { resolution: 'RECONCILED', resolutionNote: 'Not allowed' }, 403);
+    await api('POST', `/manager/online-payment-reconciliations/${reconciliation.id}/resolve`, 'FACILITY_MANAGER', { resolution: 'REFUND_REQUIRED', resolutionNote: 'Local callback after cancellation' });
+    await api('POST', `/manager/online-payment-reconciliations/${reconciliation.id}/resolve`, 'FACILITY_MANAGER', { resolution: 'RECONCILED', resolutionNote: 'Missing evidence' }, 400);
+    await api('POST', `/manager/online-payment-reconciliations/${reconciliation.id}/resolve`, 'FACILITY_MANAGER', { resolution: 'RECONCILED', resolutionNote: 'Local evidence only, no real bank call', refundConfirmed: true, refundReference: 'LOCAL-REFUND-ONLY' });
     expect((await db.onlinePaymentReconciliation.findUnique({ where: { id: reconciliation.id } })).status).toBe('RECONCILED');
-    await api('PATCH', `/admin/users/${users.ADMIN.id}/status`, 'ADMIN', { accountStatus: 'DISABLED' }, 400);
-    await api('PATCH', `/admin/users/${users.OTHER_STAFF.id}/status`, 'MANAGER', { accountStatus: 'DISABLED' }, 403);
-    await api('PATCH', `/admin/users/${users.OTHER_STAFF.id}/status`, 'ADMIN', { accountStatus: 'DISABLED' });
+    await api('PATCH', `/admin/users/${users.SYSTEM_ADMINISTRATOR.id}/status`, 'SYSTEM_ADMINISTRATOR', { accountStatus: 'DISABLED' }, 400);
+    await api('PATCH', `/admin/users/${users.OTHER_STAFF.id}/status`, 'FACILITY_MANAGER', { accountStatus: 'DISABLED' }, 403);
+    await api('PATCH', `/admin/users/${users.OTHER_STAFF.id}/status`, 'SYSTEM_ADMINISTRATOR', { accountStatus: 'DISABLED' });
     await api('GET', '/auth/me', 'OTHER_STAFF', undefined, 401);
-    await api('PATCH', `/admin/users/${users.OTHER_STAFF.id}/status`, 'ADMIN', { accountStatus: 'ACTIVE' });
-    const accountList = await api('GET', '/admin/users', 'ADMIN'); expect(JSON.stringify(accountList)).not.toContain('passwordHash');
-    await db.user.update({ where: { id: users.OTHER_CUSTOMER.id }, data: { role: 'ADMIN' } });
+    await api('PATCH', `/admin/users/${users.OTHER_STAFF.id}/status`, 'SYSTEM_ADMINISTRATOR', { accountStatus: 'ACTIVE' });
+    const accountList = await api('GET', '/admin/users', 'SYSTEM_ADMINISTRATOR'); expect(JSON.stringify(accountList)).not.toContain('passwordHash');
+    await db.user.update({ where: { id: users.OTHER_CUSTOMER.id }, data: { role: 'SYSTEM_ADMINISTRATOR' } });
     const secondAdmin = await app.get(AuthService).login({ email: users.OTHER_CUSTOMER.email, password });
     const outcomes = await Promise.all([
-      request(app.getHttpServer()).patch(`/api/admin/users/${users.OTHER_CUSTOMER.id}/status`).set('Authorization', 'Bearer ' + tokens.ADMIN).send({ accountStatus: 'DISABLED' }),
-      request(app.getHttpServer()).patch(`/api/admin/users/${users.ADMIN.id}/status`).set('Authorization', 'Bearer ' + secondAdmin.token).send({ accountStatus: 'DISABLED' }),
+      request(app.getHttpServer()).patch(`/api/admin/users/${users.OTHER_CUSTOMER.id}/status`).set('Authorization', 'Bearer ' + tokens.SYSTEM_ADMINISTRATOR).send({ accountStatus: 'DISABLED' }),
+      request(app.getHttpServer()).patch(`/api/admin/users/${users.SYSTEM_ADMINISTRATOR.id}/status`).set('Authorization', 'Bearer ' + secondAdmin.token).send({ accountStatus: 'DISABLED' }),
     ]);
     expect(outcomes.map(result => result.status).sort((a, b) => a - b)).toEqual([200, 403]);
-    expect(await db.user.count({ where: { id: { in: [users.ADMIN.id, users.OTHER_CUSTOMER.id] }, accountStatus: 'ACTIVE', role: 'ADMIN' } })).toBe(1);
+    expect(await db.user.count({ where: { id: { in: [users.SYSTEM_ADMINISTRATOR.id, users.OTHER_CUSTOMER.id] }, accountStatus: 'ACTIVE', role: 'SYSTEM_ADMINISTRATOR' } })).toBe(1);
     console.log('Real local HTTP flow passed: four-role permissions, signed booking/payment/handover, inventory, escalation, renewal appendix/payment, transfer sync/maintenance, early return and deposit settlement. No external provider calls.');
   }, 120000);
 
   it('keeps signature challenges across service instances and consumes them with the signed write', async () => {
-    const { SigningOtpService } = await import('../dist/modules/signing/signing-otp.service.js');
-    const context = { userId: users.CUSTOMER.id, email: users.CUSTOMER.email, kind: 'transfer', documentId: 'restart-' + tag, documentHash: 'test-document-hash', signatureImage, acceptanceName: users.CUSTOMER.fullName } as const;
+    const { SigningOtpService: RuntimeSigningOtpService } = await import('../dist/modules/signing/signing-otp.service.js');
+    const SigningOtpService=RuntimeSigningOtpService as unknown as typeof import('../src/modules/signing/signing-otp.service.js').SigningOtpService;
+    const context = { userId: users.STORAGE_CUSTOMER.id, email: users.STORAGE_CUSTOMER.email, kind: 'transfer', documentId: 'restart-' + tag, documentHash: 'test-document-hash', signatureImage, acceptanceName: users.STORAGE_CUSTOMER.fullName } as const;
     vi.setSystemTime(new Date(Date.now() + 3_600_001));
     const receipt = await app.get(SigningOtpService).issue(context);
-    const fresh = new SigningOtpService(app.get(EmailService), db), code = mailbox.get(users.CUSTOMER.email)!;
+    const fresh = new SigningOtpService(app.get(EmailService), db), code = mailbox.get(users.STORAGE_CUSTOMER.email)!;
     await expect(fresh.verifyAndSave(context, { challengeId: receipt.challengeId, otp: 'invalid' }, async () => null)).rejects.toThrow();
     expect((await db.signingChallenge.findUnique({ where: { id: receipt.challengeId } })).attempts).toBe(1);
     await expect(fresh.verifyAndSave(context, { challengeId: receipt.challengeId, otp: code }, async () => { throw new Error('document write rollback'); })).rejects.toThrow('rollback');
     expect((await db.signingChallenge.findUnique({ where: { id: receipt.challengeId } })).consumedAt).toBeNull();
-    await fresh.verifyAndSave(context, { challengeId: receipt.challengeId, otp: code }, async (_proof: unknown, tx: any) => tx.user.update({ where: { id: users.CUSTOMER.id }, data: { phone: '0900000001' } }));
+    await fresh.verifyAndSave(context, { challengeId: receipt.challengeId, otp: code }, async (_proof: unknown, tx: any) => tx.user.update({ where: { id: users.STORAGE_CUSTOMER.id }, data: { phone: '0900000001' } }));
     await expect(fresh.verifyAndSave(context, { challengeId: receipt.challengeId, otp: code }, async () => null)).rejects.toThrow();
   });
 
   it('preserves the actual warehouse on completed stock movements after transfer', async () => {
-    const movement = await db.stockMovement.findFirst({ where: { status: 'COMPLETED' }, orderBy: { createdAt: 'asc' } });
+    const contract = await db.rentalContract.findFirstOrThrow({ where: { reservation: { customerId: users.STORAGE_CUSTOMER.id } }, include: { reservationUnit: { include: { storageUnit: true } } } });
+    const unit = contract.reservationUnit.storageUnit;
+    const movement = await db.stockMovement.create({ data: {
+      movementCode: 'HIST-' + contract.id, idempotencyKey: 'historical-read-' + contract.id, type: 'IN',
+      status: 'COMPLETED', rentalContractId: contract.id, customerUserId: users.STORAGE_CUSTOMER.id,
+      storageUnitId: unit.id, unitCodeSnapshot: unit.unitNumber, locationRecordedAt: new Date(), completedAt: new Date(),
+    } });
     expect(movement.unitCodeSnapshot).toBeTruthy();
-    const viewed = await api('GET', `/customer/stock-movements/${movement.id}`, 'CUSTOMER');
+    const viewed = await api('GET', `/customer/stock-movements/${movement.id}`, 'STORAGE_CUSTOMER');
     expect(viewed.storageUnit.unitNumber).toBe(movement.unitCodeSnapshot);
     expect(viewed.locationEvidence).toBe('RECORDED');
     await db.stockMovement.update({ where: { id: movement.id }, data: { locationRecordedAt: null, unitCodeSnapshot: null, storageUnitId: null } });
-    const legacy = await api('GET', `/customer/stock-movements/${movement.id}`, 'CUSTOMER');
+    const legacy = await api('GET', `/customer/stock-movements/${movement.id}`, 'STORAGE_CUSTOMER');
     expect(legacy.storageUnit).toBeNull(); expect(legacy.locationEvidence).toBe('UNKNOWN_LEGACY');
   });
 
   it('provides server reports with safe filters and a separate claim decision workflow', async () => {
-    const report = await api('GET', '/manager/reports?group=week', 'MANAGER');
+    const report = await api('GET', '/manager/reports?group=week', 'FACILITY_MANAGER');
     expect(report.rent).toBeGreaterThan(0); expect(report.deposit).toBeGreaterThanOrEqual(0);
     expect(report.times.length).toBeGreaterThan(0); expect(report).not.toHaveProperty('invoices');
-    await api('GET', '/manager/reports', 'STAFF', undefined, 403);
-    await api('GET', '/manager/reports?from=2026-02-31', 'MANAGER', undefined, 400);
-    await api('GET', '/manager/reports?group=month%27%3BDROP', 'MANAGER', undefined, 400);
+    await api('GET', '/manager/reports', 'FACILITY_STAFF', undefined, 403);
+    await api('GET', '/manager/reports?from=2026-02-31', 'FACILITY_MANAGER', undefined, 400);
+    await api('GET', '/manager/reports?group=month%27%3BDROP', 'FACILITY_MANAGER', undefined, 400);
     const closed = await db.rentalContract.findFirstOrThrow({
-      where: { reservation: { customerId: users.CUSTOMER.id }, status: 'COMPLETED' },
+      where: { reservation: { customerId: users.STORAGE_CUSTOMER.id }, status: 'COMPLETED' },
       include: { reservation: true },
     });
     const today = new Date(Date.now() + 25_200_000).toISOString().slice(0, 10);
-    const claimBody = { discoveredOn: today, description: 'Tài liệu bị ẩm, đề nghị kiểm tra thực tế tại kho.', storedItemIds: [], evidenceLinks: ['https://example.test/evidence.jpg'], estimatedValue: 150000 };
-    await api('POST', '/customer/damage-claims', 'CUSTOMER', { ...claimBody, rentalContractId: closed.id }, 404);
+    const claimBody = { discoveredOn: today, description: 'Tài liệu bị ẩm, đề nghị kiểm tra thực tế tại kho.', evidenceLinks: ['https://example.test/evidence.jpg'], estimatedValue: 150000 };
+    await api('POST', '/customer/damage-claims', 'STORAGE_CUSTOMER', { ...claimBody, rentalContractId: closed.id }, 404);
 
-    const booking = await api('POST', '/reservations', 'CUSTOMER', {
+    const booking = await api('POST', '/reservations', 'STORAGE_CUSTOMER', {
       productId: closed.reservation.storageTypeId, startDate: today, periodMode: 'duration', durationMonths: 1,
       quantity: 1, paymentPlan: 'PREPAID', paymentChoice: 'pay-later', addonIds: [], services: [],
     });
-    const contract = (await api('GET', '/customer/contracts?limit=100', 'CUSTOMER')).items.find((item: any) => item.reservation.reference === booking.id);
+    const contract = (await api('GET', '/customer/contracts?limit=100', 'STORAGE_CUSTOMER')).items.find((item: any) => item.reservation.reference === booking.id);
     tokens.CLAIM_OTHER = (await app.get(AuthService).register({ email: `${tag}-claim-other@example.test`, fullName: 'Khách khác trong kiểm thử', password, phone: '0900000000' })).token;
     await signDocument('contracts', contract, 'CLAIM_OTHER');
-    const invoice = (await api('GET', '/customer/invoices?limit=100', 'CUSTOMER')).items.find((item: any) => item.reservation.reference === booking.id && item.type === 'INITIAL');
+    const invoice = (await api('GET', '/customer/invoices?limit=100', 'STORAGE_CUSTOMER')).items.find((item: any) => item.reservation.reference === booking.id && item.type === 'INITIAL');
     await payOnline(invoice);
-    const appointment = await api('POST', '/customer/appointments', 'CUSTOMER', {
+    const appointment = await api('POST', '/customer/appointments', 'STORAGE_CUSTOMER', {
       reservationId: booking.id, scheduledAt: new Date(Date.now() + 60_000).toISOString(),
     });
     vi.setSystemTime(new Date(appointment.scheduledAt));
-    await api('POST', `/staff/appointments/${appointment.id}/complete-handover`, 'STAFF', {
+    await api('POST', `/staff/appointments/${appointment.id}/complete-handover`, 'FACILITY_STAFF', {
       handoverReport: { recipientType: 'CUSTOMER', recipientName: users.CUSTOMER.fullName, condition: 'Sạch và khóa hoạt động', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true },
     });
 
-    const claim = await api('POST', '/customer/damage-claims', 'CUSTOMER', { ...claimBody, rentalContractId: contract.id });
+    const claim = await api('POST', '/customer/damage-claims', 'STORAGE_CUSTOMER', { ...claimBody, rentalContractId: contract.id });
     expect(claim.status).toBe('REPORTED');
     expect((await api('GET', '/customer/damage-claims', 'CLAIM_OTHER')).items).toEqual([]);
-    await api('PATCH', `/manager/damage-claims/${claim.id}`, 'CUSTOMER', { decision: 'APPROVED' }, 403);
-    const assigned = await api('PATCH', `/manager/damage-claims/${claim.id}/assign`, 'MANAGER', { staffUserId: users.STAFF.id });
-    const facts = await api('PATCH', `/staff/management/damage-claims/${claim.id}`, 'STAFF', { expectedUpdatedAt: assigned.updatedAt, staffFacts: 'Đã kiểm tra hiện trường và ghi nhận tài liệu bị ẩm.' });
+    await api('PATCH', `/manager/damage-claims/${claim.id}`, 'STORAGE_CUSTOMER', { decision: 'APPROVED' }, 403);
+    const assigned = await api('PATCH', `/manager/damage-claims/${claim.id}/assign`, 'FACILITY_MANAGER', { staffUserId: users.FACILITY_STAFF.id });
+    const facts = await api('PATCH', `/staff/management/damage-claims/${claim.id}`, 'FACILITY_STAFF', { expectedUpdatedAt: assigned.updatedAt, staffFacts: 'Đã kiểm tra hiện trường và ghi nhận tài liệu bị ẩm.' });
     expect(facts.status).toBe('INVESTIGATING');
-    const decision = await api('PATCH', `/manager/damage-claims/${claim.id}`, 'MANAGER', { expectedUpdatedAt: facts.updatedAt, decision: 'APPROVED', decisionReason: 'Chấp thuận kiểm tra xử lý, chưa quyết định trách nhiệm hoặc tiền bồi thường.' });
+    const decision = await api('PATCH', `/manager/damage-claims/${claim.id}`, 'FACILITY_MANAGER', { expectedUpdatedAt: facts.updatedAt, decision: 'APPROVED', decisionReason: 'Chấp thuận kiểm tra xử lý, chưa quyết định trách nhiệm hoặc tiền bồi thường.' });
     expect(decision.status).toBe('APPROVED');
-    const resolved = await api('PATCH', `/manager/damage-claims/${claim.id}`, 'MANAGER', { expectedUpdatedAt: decision.updatedAt, action: 'resolve', resolutionNote: 'Đã trao đổi hướng xử lý và lưu chứng cứ cùng khách.' });
+    const resolved = await api('PATCH', `/manager/damage-claims/${claim.id}`, 'FACILITY_MANAGER', { expectedUpdatedAt: decision.updatedAt, action: 'resolve', resolutionNote: 'Đã trao đổi hướng xử lý và lưu chứng cứ cùng khách.' });
     expect(resolved.status).toBe('RESOLVED'); expect(resolved.history).toHaveLength(4);
   });
 
   it('allows only bounded non-secret Admin policies and audits the change', async () => {
-    await db.user.update({ where: { id: users.ADMIN.id }, data: { accountStatus: 'ACTIVE' } });
-    tokens.ADMIN = (await app.get(AuthService).login({ email: users.ADMIN.email, password })).token;
-    const policies = await api('GET', '/admin/business-policies', 'ADMIN');
+    await db.user.update({ where: { id: users.SYSTEM_ADMINISTRATOR.id }, data: { accountStatus: 'ACTIVE' } });
+    tokens.SYSTEM_ADMINISTRATOR = (await app.get(AuthService).login({ email: users.SYSTEM_ADMINISTRATOR.email, password })).token;
+    const policies = await api('GET', '/admin/business-policies', 'SYSTEM_ADMINISTRATOR');
     expect(policies.items).toHaveLength(2);
-    await api('GET', '/admin/business-policies', 'MANAGER', undefined, 403);
-    await api('PATCH', '/admin/business-policies/SMTP_PASS', 'ADMIN', { value: 10, expectedUpdatedAt: null }, 400);
-    await api('PATCH', '/admin/business-policies/handoverLeadDays', 'ADMIN', { value: 99, expectedUpdatedAt: null }, 400);
-    const changed = await api('PATCH', '/admin/business-policies/handoverLeadDays', 'ADMIN', { value: 2, expectedUpdatedAt: null });
-    expect(changed.updatedById).toBe(users.ADMIN.id);
-    await api('PATCH', '/admin/business-policies/handoverLeadDays', 'ADMIN', { value: 3, expectedUpdatedAt: null }, 409);
+    await api('GET', '/admin/business-policies', 'FACILITY_MANAGER', undefined, 403);
+    await api('PATCH', '/admin/business-policies/SMTP_PASS', 'SYSTEM_ADMINISTRATOR', { value: 10, expectedUpdatedAt: null }, 400);
+    await api('PATCH', '/admin/business-policies/handoverLeadDays', 'SYSTEM_ADMINISTRATOR', { value: 99, expectedUpdatedAt: null }, 400);
+    const changed = await api('PATCH', '/admin/business-policies/handoverLeadDays', 'SYSTEM_ADMINISTRATOR', { value: 2, expectedUpdatedAt: null });
+    expect(changed.updatedById).toBe(users.SYSTEM_ADMINISTRATOR.id);
+    await api('PATCH', '/admin/business-policies/handoverLeadDays', 'SYSTEM_ADMINISTRATOR', { value: 3, expectedUpdatedAt: null }, 409);
     expect(await db.auditEvent.count({ where: { resource: 'business-policies', outcome: 'SUCCESS' } })).toBeGreaterThan(0);
   });
 });

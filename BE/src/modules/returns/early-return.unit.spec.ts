@@ -7,14 +7,19 @@ import { EARLY_RETURN_APPROVAL_MESSAGE, PERIOD_CLOSEOUT } from './early-return-c
 
 // Memory-only dependencies: these tests never construct PrismaService or load credentials.
 function setup() {
-  const actor = { id: 'manager', role: 'MANAGER', fullName: 'Quản lý', email: 'manager@example.test', phone: '' } satisfies PublicUser;
+  const actor = { id: 'manager', role: 'FACILITY_MANAGER', fullName: 'Quản lý', email: 'manager@example.test', phone: '' } satisfies PublicUser;
   const end = new Date('2030-04-01T00:00:00Z');
   const allocation = { id: 'allocation-current', reservationId: 'rental', storageUnitId: 'unit-new', releasedAt: null, storageUnit: { status: 'OCCUPIED', unitNumber: 'B02' } };
   const reservation = { id: 'rental', reservationCode: 'RES-1', customerId: 'customer', status: 'CONFIRMED', quantity: 1, endDate: end, storageType: { id: 'type', name: 'Kho nhỏ' }, units: [allocation],
     contracts: [{ id: 'contract', contractCode: 'CON-1', status: 'ACTIVE', endDate: end, reservationUnitId: allocation.id, reservationUnit: allocation }], renewals: [] as { status: string }[], supportRequests: [] as any[],
     invoices: [{ invoiceCode: 'INV-1', totalAmount: 300n, amountPaid: 200n, balanceDue: 100n, depositAmount: 50n }] };
-  const request = { id: 'proposal', rentalContractId: null, supportCode: 'SUP-1', subject: 'Đề nghị trả kho trước hạn', category: 'OTHER', description: 'Không còn nhu cầu sử dụng', status: 'OPEN', createdAt: new Date(), resolutionNote: null as string | null, resolvedAt: null as Date | null, resolvedBy: null as any, lastAction: null as string | null, lastActionIdempotencyKey: null as string | null, customer: { id: 'customer', fullName: 'Khách' }, reservation };
-  const tx = { $queryRaw: vi.fn(async () => []), supportRequest: {
+  const request = { id: 'proposal', reservationId: reservation.id, rentalContractId: null, supportCode: 'SUP-1', subject: 'Đề nghị trả kho trước hạn', category: 'OTHER', description: 'Không còn nhu cầu sử dụng', status: 'OPEN', createdAt: new Date(), resolutionNote: null as string | null, resolvedAt: null as Date | null, resolvedBy: null as any, lastAction: null as string | null, lastActionIdempotencyKey: null as string | null, customer: { id: 'customer', fullName: 'Khách' }, reservation };
+  const tx = {
+    $queryRawUnsafe: vi.fn(),
+    user: { findFirst: vi.fn(async ({ where }) => ({ id: where.id })) },
+    facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
+    reservation: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
+    $queryRaw: vi.fn(async () => []), supportRequest: {
     findFirst: vi.fn(async () => ({ id: request.id, reservationId: reservation.id })), findUniqueOrThrow: vi.fn(async () => request),
     update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { Object.assign(request, data); request.resolvedBy = actor; return request; }),
   }, returnRequest: { findFirst: vi.fn(async () => null as any) } };
@@ -26,7 +31,7 @@ function setup() {
 
 describe('Early return approval with memory-only persistence', () => {
   it('only allows Manager decisions', async () => {
-    for (const role of ['STAFF', 'CUSTOMER', 'ADMIN'] as const) { const app = setup(); await expect(app.service.decideEarlyReturn('proposal', app.input, { ...app.actor, role })).rejects.toThrow('Chỉ quản lý'); expect(app.prisma.$transaction).not.toHaveBeenCalled(); }
+    for (const role of ['FACILITY_STAFF', 'STORAGE_CUSTOMER', 'SYSTEM_ADMINISTRATOR'] as const) { const app = setup(); await expect(app.service.decideEarlyReturn('proposal', app.input, { ...app.actor, role })).rejects.toThrow('Chỉ quản lý'); expect(app.prisma.$transaction).not.toHaveBeenCalled(); }
   });
   it('records an approval scoped to the reviewed end date without changing invoices or allocations', async () => {
     const app = setup(), before = structuredClone(app.reservation); const result = await app.service.decideEarlyReturn('proposal', app.input, app.actor);
@@ -45,13 +50,13 @@ describe('Early return approval with memory-only persistence', () => {
       const legacy = { ...record, resolutionNote: saved + ' Chấp nhận.' };
       const expected = EARLY_RETURN_APPROVAL_MESSAGE + ' Chấp nhận.';
       expect(app.internal.toEarlyReturn(legacy).resolutionNote).toBe(expected);
-      expect(support.toView(legacy, 'CUSTOMER').resolutionNote).toBe(expected);
-      expect(support.toView({ ...legacy, lastAction: 'EARLY_RETURN_REJECTED' }, 'CUSTOMER').resolutionNote).toBe(legacy.resolutionNote);
+      expect(support.toView(legacy, 'STORAGE_CUSTOMER').resolutionNote).toBe(expected);
+      expect(support.toView({ ...legacy, lastAction: 'EARLY_RETURN_REJECTED' }, 'STORAGE_CUSTOMER').resolutionNote).toBe(legacy.resolutionNote);
     }
     const current = { ...record, earlyReturnFinancialReview: { policy: PERIOD_CLOSEOUT },
       resolutionNote: 'Đã chấp thuận trả trước hạn. Các kỳ chưa bắt đầu được điều chỉnh khi hoàn tất bàn giao. Chấp nhận.' };
     expect(app.internal.toEarlyReturn(current).resolutionNote).toBe(EARLY_RETURN_APPROVAL_MESSAGE + ' Chấp nhận.');
-    expect(support.toView(current, 'CUSTOMER').resolutionNote).toBe(EARLY_RETURN_APPROVAL_MESSAGE + ' Chấp nhận.');
+    expect(support.toView(current, 'STORAGE_CUSTOMER').resolutionNote).toBe(EARLY_RETURN_APPROVAL_MESSAGE + ' Chấp nhận.');
   });
   it('requires explicit financial review and rejects stale end dates or ledger values', async () => {
     for (const change of [{ financialReviewConfirmed: false }, { reviewedEndDate: '2030-05-01' }, { reviewedOutstandingAmount: 99 }, { reviewedPaidAmount: 199 }]) { const app = setup(); await expect(app.service.decideEarlyReturn('proposal', { ...app.input, ...change }, app.actor)).rejects.toThrow(); expect(app.tx.supportRequest.update).not.toHaveBeenCalled(); }
@@ -72,7 +77,7 @@ describe('Early return approval with memory-only persistence', () => {
     await app.service.decideEarlyReturn('proposal', app.input, app.actor); app.reservation.supportRequests.push(app.request);
     expect(app.internal.assertReturnEligible(app.reservation, 'customer', now).closeout).toMatchObject({ policy: 'PERIOD_CLOSEOUT_V1' });
     expect(app.internal.assertReturnEligible(app.reservation, 'customer', now).unitIds).toEqual(['unit-new']);
-    app.request.resolvedBy = { role: 'STAFF' }; expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', now)).toThrow();
+    app.request.resolvedBy = { role: 'FACILITY_STAFF' }; expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', now)).toThrow();
     app.request.resolvedBy = app.actor; app.request.lastActionIdempotencyKey = 'early-return:proposal:2029-04-01'; expect(() => app.internal.assertReturnEligible(app.reservation, 'customer', now)).toThrow();
     expect(() => app.internal.assertReturnEligible(app.reservation, 'another-customer', now)).toThrow('thuộc khách hàng');
   });
@@ -101,7 +106,7 @@ describe('Early return approval with memory-only persistence', () => {
   it('prevents ordinary support transitions from modifying early-return approval state', async () => {
     const app = setup(); const prisma = { supportRequest: { findFirst: vi.fn(async () => ({ id: 'proposal' })) }, $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run({ ...app.tx, supportRequest: { ...app.tx.supportRequest, findUnique: vi.fn(async () => app.request) } })) };
     const support = new SupportService(prisma as unknown as PrismaService);
-    await expect(support.priority('proposal', { priority: 'HIGH' }, 'isolated-test-key-12345678', { ...app.actor, role: 'STAFF' })).rejects.toThrow('Chỉ Manager');
+    await expect(support.priority('proposal', { priority: 'HIGH' }, 'isolated-test-key-12345678', { ...app.actor, role: 'FACILITY_STAFF' })).rejects.toThrow('Chỉ quản lý cơ sở');
     await expect(support.priority('proposal', { priority: 'HIGH' }, 'isolated-test-key-12345678', app.actor)).rejects.toThrow('trả trước hạn');
     expect(app.tx.supportRequest.update).not.toHaveBeenCalled();
   });
@@ -110,7 +115,7 @@ describe('Early return approval with memory-only persistence', () => {
     const tx = { $queryRaw: vi.fn(async () => []), reservation: { findUnique: vi.fn(async () => ({ ...app.reservation, invoices: [] })) }, supportRequest: { findUnique: vi.fn(async () => null), findFirst: vi.fn(async () => duplicate ? { id: 'existing' } : null), create: vi.fn(async ({ data }: any) => ({ id: 'new', ...data })) } };
     const prisma = { reservation: { findFirst: vi.fn(async () => ({ id: app.reservation.id })) }, supportRequest: { findUnique: vi.fn(async () => null) }, $transaction: vi.fn(async (run: any) => run(tx)) };
     const service = new SupportService(prisma as unknown as PrismaService); vi.spyOn(service as any, 'toView').mockImplementation(record => record);
-    const customer = { ...app.actor, id: 'customer', role: 'CUSTOMER' as const }, input = { reservationId: 'rental', category: 'OTHER', subject: 'Đề nghị trả kho trước hạn', description: 'Tôi không còn nhu cầu sử dụng.' };
+    const customer = { ...app.actor, id: 'customer', role: 'STORAGE_CUSTOMER' as const }, input = { reservationId: 'rental', category: 'OTHER', subject: 'Đề nghị trả kho trước hạn', description: 'Tôi không còn nhu cầu sử dụng.' };
     await expect(service.createCustomer(customer, input, 'isolated-proposal-123')).resolves.toMatchObject({ rentalContractId: 'contract' });
     duplicate = true; await expect(service.createCustomer(customer, input, 'isolated-proposal-456')).rejects.toThrow('đã có đề nghị'); expect(tx.supportRequest.create).toHaveBeenCalledTimes(1);
     duplicate = false;

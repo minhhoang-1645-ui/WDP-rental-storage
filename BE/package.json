@@ -17,7 +17,7 @@
     "start:prod": "node dist/main.js",
     "lint": "oxlint --type-aware src/ test/",
     "test": "vitest run",
-    "test:unit": "vitest run src/modules/notifications/notifications.spec.ts src/modules/billing/closeout-payment.unit.spec.ts src/modules/returns/early-return-finance.spec.ts src/modules/claims/claim-amendment.unit.spec.ts src/modules/transfers/transfer-rejection.unit.spec.ts src/modules/billing/rental-account-summary.spec.ts src/modules/claims/damage-claims.unit.spec.ts src/modules/appointments/appointment-assignment.unit.spec.ts src/modules/manager/manager-analytics.unit.spec.ts src/modules/manager/manager-assignment.unit.spec.ts src/modules/additional-services/service-units.unit.spec.ts src/modules/billing/vnpay.service.spec.ts src/modules/billing/online-payment.service.spec.ts src/cors-origins.spec.ts src/modules/auth/admin-safety.spec.ts src/modules/auth/auth.service.spec.ts src/modules/auth/roles.guard.spec.ts src/modules/auth/operation-access.spec.ts src/modules/contracts/signature.spec.ts src/modules/billing/signature-gate.spec.ts src/modules/billing/payment-eligibility.spec.ts src/modules/billing/reconciliation-followup.spec.ts src/modules/appointments/handover-report.spec.ts src/modules/unit-staff/unit-staff.spec.ts src/modules/stock-movements/stock-safety.spec.ts src/modules/stock-movements/rv3-stock-read.unit.spec.ts src/modules/appointments/handover-recipient.unit.spec.ts src/modules/pricing/pricing-boundaries.spec.ts src/modules/billing/service-installments.spec.ts src/modules/booking/booking-access.spec.ts src/modules/booking/booking-expiration.unit.spec.ts src/modules/transfers/transfer-completion.unit.spec.ts src/modules/returns/early-return.unit.spec.ts src/modules/signing/signing-otp.spec.ts src/modules/documents/pdf-document.spec.ts src/modules/transfers/transfer-destinations.unit.spec.ts src/modules/documents/transfer-record.unit.spec.ts src/modules/manager/inventory-management.spec.ts src/modules/audit/audit.spec.ts src/modules/guest-booking/account-onboarding.spec.ts src/modules/guest-booking/guest-booking.service.spec.ts src/modules/appointments/scheduled-activation.spec.ts src/modules/auth/auth-production.spec.ts src/modules/health/health.spec.ts src/business-date.spec.ts src/modules/manager/unit-occupancy.spec.ts src/modules/renewals/renewal-activity.unit.spec.ts src/modules/booking/customer-lifecycle.unit.spec.ts",
+    "test:unit": "vitest run src/modules/notifications/notifications.spec.ts src/modules/billing/closeout-payment.unit.spec.ts src/modules/returns/early-return-finance.spec.ts src/modules/claims/claim-amendment.unit.spec.ts src/modules/transfers/transfer-rejection.unit.spec.ts src/modules/billing/rental-account-summary.spec.ts src/modules/claims/damage-claims.unit.spec.ts src/modules/appointments/appointment-assignment.unit.spec.ts src/modules/manager/manager-analytics.unit.spec.ts src/modules/manager/manager-assignment.unit.spec.ts src/modules/additional-services/service-units.unit.spec.ts src/modules/billing/vnpay.service.spec.ts src/modules/billing/online-payment.service.spec.ts src/cors-origins.spec.ts src/modules/auth/admin-safety.spec.ts src/modules/auth/auth.service.spec.ts src/modules/auth/roles.guard.spec.ts src/modules/auth/operation-access.spec.ts src/modules/contracts/signature.spec.ts src/modules/billing/signature-gate.spec.ts src/modules/billing/payment-eligibility.spec.ts src/modules/billing/reconciliation-followup.spec.ts src/modules/appointments/handover-report.spec.ts src/modules/facility-access/task-access.unit.spec.ts src/modules/stock-movements/stock-safety.spec.ts src/modules/stock-movements/rv3-stock-read.unit.spec.ts src/modules/appointments/handover-recipient.unit.spec.ts src/modules/pricing/pricing-boundaries.spec.ts src/modules/billing/service-installments.spec.ts src/modules/booking/booking-access.spec.ts src/modules/booking/booking-expiration.unit.spec.ts src/modules/transfers/transfer-completion.unit.spec.ts src/modules/returns/early-return.unit.spec.ts src/modules/signing/signing-otp.spec.ts src/modules/documents/pdf-document.spec.ts src/modules/transfers/transfer-destinations.unit.spec.ts src/modules/documents/transfer-record.unit.spec.ts src/modules/manager/inventory-management.spec.ts src/modules/audit/audit.spec.ts src/modules/guest-booking/account-onboarding.spec.ts src/modules/guest-booking/guest-booking.service.spec.ts src/modules/appointments/scheduled-activation.spec.ts src/modules/auth/auth-production.spec.ts src/modules/health/health.spec.ts src/business-date.spec.ts src/modules/manager/unit-occupancy.spec.ts src/modules/renewals/renewal-activity.unit.spec.ts src/modules/booking/customer-lifecycle.unit.spec.ts",
     "test:flows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-four-role-flows.ps1",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
@@ -44,7 +44,10 @@
     "demo:rv3:restore": "node scripts/rv3-demo.mjs restore",
     "demo:rv3:verify": "node scripts/rv3-demo.mjs verify",
     "test:rv3-demo": "node --test scripts/rv3-demo/safety.test.mjs",
-    "test:rv3-demo:integration": "node scripts/rv3-demo/integration.mjs"
+    "test:rv3-demo:integration": "node scripts/rv3-demo/integration.mjs",
+    "release:check": "node scripts/release/foundation-release.mjs check",
+    "release:migrate": "node scripts/release/foundation-release.mjs migrate",
+    "test:release-safety": "node --test scripts/release/guards.test.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
@@ -52,6 +55,7 @@
     "@nestjs/core": "^12.0.1",
     "@nestjs/platform-express": "^12.0.1",
     "@nestjs/swagger": "^12.0.2",
+    "@payos/node": "2.0.6",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "nodemailer": "^10.1.0",
@@ -60,6 +64,7 @@
     "reflect-metadata": "^0.2.2",
     "resend": "^6.32.1",
     "rxjs": "^7.8.1",
+    "sharp": "^0.35.5",
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {

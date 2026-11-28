@@ -4,7 +4,7 @@ const money = (value: number) => `${new Intl.NumberFormat('vi-VN').format(value)
 const date = (value: string | null) => value ? new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric', ...(value.includes('T') ? { hour: '2-digit', minute: '2-digit' } : {}) }).format(new Date(value)) : 'Chưa ghi nhận';
 
 export function transferAddendumContent(snapshot: any, transferCode: string) {
-  const { issuer, customer, from, to, financialReview: review } = snapshot;
+  const { issuer, customer, from, to, financialReview: review, adjustmentTerms: settlement } = snapshot;
   const sections: Section[] = [
     { title: 'Bên cho thuê', rows: [['Tên pháp nhân', issuer.legalName || 'Chưa cấu hình pháp nhân'], ['Mã số thuế', issuer.taxCode || 'Chưa cấu hình'], ['Địa chỉ', issuer.address || 'Chưa cấu hình'], ['Người đại diện', issuer.representative || 'Chưa cấu hình']] },
     { title: 'Khách thuê', rows: [['Họ và tên', customer?.fullName ?? 'Chưa cấu hình'], ['Email', customer?.email ?? 'Chưa cấu hình'], ['Điện thoại', customer?.phone || 'Chưa cung cấp']] },
@@ -13,14 +13,20 @@ export function transferAddendumContent(snapshot: any, transferCode: string) {
   if (review) sections.push({ title: 'Đối chiếu tại thời điểm lập phụ lục', rows: [
     ['Thời hạn giữ nguyên', `${date(review.leaseStart)} đến trước ${date(review.leaseEnd)}`], ['Lịch khách đề xuất', date(review.requestedMoveDate)],
     ['Đã thanh toán theo hóa đơn', money(review.paidAmount)], ['Còn phải trả', money(review.outstandingAmount)],
-    ['Công nợ đến hạn cần thanh toán trước bàn giao', money(review.dueAmount)], ['Cọc giữ nguyên', money(review.depositAmount)],
-    ['Tăng tiền thuê kỳ sau', money(review.futureRentIncrease)], ['Giảm tiền thuê kỳ sau', money(review.futureRentReduction)], ['Phí chuyển kho thu ngay', money(0)],
+    ['Công nợ đến hạn cần thanh toán trước bàn giao', money(review.dueAmount)], [settlement ? 'Tiền cọc đang giữ' : 'Cọc giữ nguyên', money(settlement?.currentDeposit ?? review.depositAmount)],
+    ['Tăng tiền thuê kỳ sau', money(review.futureRentIncrease)], ['Giảm tiền thuê kỳ sau', money(review.futureRentReduction)],
   ], paragraphs: [
     ...review.renewals.map((renewal: { appendixCode: string; start: string; end: string }) => `Giữ nguyên phụ lục gia hạn ${renewal.appendixCode} (${date(renewal.start)} đến trước ${date(renewal.end)}).`),
-    'Số dư được kiểm tra lại khi bàn giao. Giảm giá của kỳ chưa thu làm giảm hóa đơn kỳ đó. Các khoản đã thanh toán và tiền cọc được giữ nguyên.',
+    'Số dư được kiểm tra lại khi bàn giao. Chênh lệch của kỳ chưa thu được ghi trên hóa đơn thay thế. Các khoản đã thanh toán được lưu nguyên.',
   ] });
+  if (settlement) sections.push({ title: 'Quyết toán khi bàn giao kho mới', rows: [
+    ['Ngày tính dự kiến', date(settlement.moveDate)], ['Phí chuyển kho', money(settlement.fee)],
+    ['Chênh lệch tiền thuê còn lại', money(settlement.rentalAdjustment)], ['Cọc kho đích', money(settlement.targetDeposit)],
+    ['Điều chỉnh cọc', money(settlement.depositAdjustment)], ['Dự kiến thu thêm', money(settlement.amountDue)], ['Dự kiến hoàn', money(settlement.refundAmount)],
+  ], paragraphs: ['Chênh lệch thuê được tính theo số ngày còn lại trong kỳ đã ghi trên phụ lục, từ ngày bàn giao thực tế. Hệ thống lập hóa đơn hoặc hồ sơ hoàn riêng sau khi bàn giao.',
+    'Nếu thanh toán một phần, tiền được phân bổ cho chênh lệch thuê và phí trước, sau đó đến tiền cọc. Khi kết thúc sử dụng, phần cọc bổ sung chưa thu được loại khỏi số phải trả.'] });
   sections.push({ title: 'Điều khoản áp dụng', paragraphs: [
-    'Kỳ thu hiện tại giữ nguyên. Giá mới áp dụng từ kỳ thu tiếp theo nêu trên; tiền cọc giữ nguyên để quyết toán theo hợp đồng. Hóa đơn kỳ tương lai chưa thu được thay bằng hóa đơn mới có liên kết, không xóa hóa đơn hoặc chứng cứ cũ.',
+    settlement ? 'Giá mới áp dụng cho phần còn lại của kỳ hiện tại theo cách tính trên phụ lục và cho kỳ thu sau tại ngày đã ghi. Hóa đơn kỳ sau chưa thu được thay bằng hóa đơn có liên kết.' : 'Kỳ thu hiện tại giữ nguyên. Giá mới áp dụng từ kỳ thu tiếp theo nêu trên; tiền cọc giữ nguyên để quyết toán theo hợp đồng. Hóa đơn kỳ tương lai chưa thu được thay bằng hóa đơn mới có liên kết, không xóa hóa đơn hoặc chứng cứ cũ.',
     snapshot.smaller ? 'Kho đích có diện tích nhỏ hơn. Khách tự kiểm tra khả năng xếp hàng; không có bảo đảm mọi hàng hóa đều vừa kho mới.' : 'Khách kiểm tra kích thước và nhu cầu lưu trữ trước khi chấp thuận.',
     'Chuyển thực tế chỉ được hoàn tất sau khi khách ký phụ lục và nhân viên đối chiếu hàng hóa. Chữ ký hợp đồng ban đầu được giữ nguyên.',
   ] });

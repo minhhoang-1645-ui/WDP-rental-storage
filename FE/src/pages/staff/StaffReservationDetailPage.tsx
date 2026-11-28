@@ -70,12 +70,12 @@ export function StaffReservationDetailPage() {
   const { id = '' } = useParams();
   const { user } = useAuth();
   const data = useApiResource<ReservationDetail>(
-    user?.role === 'STAFF' && id ? `/staff/management/reservations/${encodeURIComponent(id)}` : null, user?.id, true, true,
+    user?.role === 'FACILITY_STAFF' && id ? `/staff/management/reservations/${encodeURIComponent(id)}` : null, user?.id, true, true,
   );
   const row = data.data;
   const back = useInternalListReturn('/staff/appointments');
   const { pathname } = useLocation();
-  if (user?.role !== 'STAFF') return null;
+  if (user?.role !== 'FACILITY_STAFF') return null;
 
   const backLink = <Link className="booking-back" to={back}><ArrowLeft size={16} aria-hidden="true" />Về danh sách</Link>;
   const load = <LoadState loading={data.loading} error={data.error} retry={data.refresh} placeholder={<DetailSkeleton single />} />;
@@ -106,6 +106,7 @@ export function StaffReservationDetailPage() {
     {backLink}
     {load}
     <PageHeader title={title} meta={<><CopyRecordCode value={code(row)} /><Status value={row.status} /></>}>
+      <Link className="button-secondary" to="/staff/policies">Tra cứu chính sách</Link>
       <button type="button" className="button-secondary" onClick={() => window.print()}><Printer size={16} aria-hidden="true" />In hồ sơ</button>
       <button type="button" className="button-secondary" disabled={data.refreshing} onClick={data.refresh}><RefreshCw size={16} aria-hidden="true" />Làm mới</button>
       <RefreshStatus active={data.refreshing} />

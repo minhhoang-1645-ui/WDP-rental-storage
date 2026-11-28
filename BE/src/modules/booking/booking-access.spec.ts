@@ -4,7 +4,7 @@ import { BookingService } from './booking.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
 describe('reservation customer access', () => {
-  it.each(['STAFF', 'MANAGER', 'ADMIN'] as const)('rejects %s before validating or querying inventory', async role => {
+  it.each(['FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'] as const)('rejects %s before validating or querying inventory', async role => {
     const findUnique = vi.fn();
     const service = new BookingService({ reservation: { findUnique } } as never);
     await expect(service.createReservation({ id: 'actor', role } as PublicUser, {})).rejects.toBeInstanceOf(ForbiddenException);
@@ -13,12 +13,12 @@ describe('reservation customer access', () => {
   it('scopes Staff booking lookups to their handover and closes the shared customer lookup', async () => {
     const findFirst = vi.fn().mockResolvedValue(null);
     const service = new BookingService({ reservation: { findFirst } } as never);
-    const staff = { id: 'actor', role: 'STAFF' } as PublicUser;
+    const staff = { id: 'actor', role: 'FACILITY_STAFF' } as PublicUser;
     await expect(service.getReservation(staff, 'reservation')).rejects.toBeInstanceOf(ForbiddenException);
     await expect(service.getManagerReservation('reservation', staff)).rejects.toThrow();
     expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { AND: [
       { OR: [{ id: 'reservation' }, { reservationCode: 'reservation' }] },
-      { appointments: { some: { assignedStaffUserId: staff.id, status: { in: ['REQUESTED', 'CONFIRMED'] } } } },
+      { appointments: { some: { assignedStaffUserId: staff.id, status: { in: ['REQUESTED', 'CONFIRMED'] } } }, facility: { facilityAccess: { some: { userId:staff.id,revokedAt:null,user:{role:'FACILITY_STAFF',accountStatus:'ACTIVE'} } } } },
     ] } }));
     await expect(service.updateManagerReservationStatus('reservation', { status: 'CONFIRMED' }, staff)).rejects.toBeInstanceOf(ForbiddenException);
     expect(findFirst).toHaveBeenCalledOnce();
@@ -29,7 +29,7 @@ describe('reservation customer access', () => {
       contactInquiry: { findFirst: vi.fn().mockResolvedValue(null) },
       reservation: { findFirst: vi.fn().mockResolvedValue({ id: 'reservation' }) },
     } as never);
-    const staff = { id: 'actor', role: 'STAFF' } as PublicUser;
+    const staff = { id: 'actor', role: 'FACILITY_STAFF' } as PublicUser;
     await expect(service.updateManagerInquiry('reservation', { status: 'CONFIRMED' }, staff)).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

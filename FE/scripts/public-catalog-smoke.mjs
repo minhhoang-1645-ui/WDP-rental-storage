@@ -7,7 +7,9 @@ import { launchTestBrowser } from './browser-test.mjs';
 const base = process.env.WDP_FE_URL || 'http://127.0.0.1:5173';
 const source = ts.transpileModule(await readFile(new URL('../src/catalog/public-catalog.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const { publicCatalog, isFixtureProduct } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
-const raw = await fetch((process.env.WDP_API_URL || 'http://127.0.0.1:3000/api') + '/booking/catalog').then(response => { assert(response.ok); return response.json(); });
+const raw = process.env.WDP_CATALOG_FIXTURE
+  ? JSON.parse(await readFile(process.env.WDP_CATALOG_FIXTURE, 'utf8'))
+  : await fetch((process.env.WDP_API_URL || 'http://127.0.0.1:3000/api') + '/booking/catalog').then(response => { assert(response.ok); return response.json(); });
 raw.products.find(product => !isFixtureProduct(product)).image = '/missing-photo-for-review.jpg';
 const catalog = publicCatalog(raw), checks = [], errors = [], blockedWrites = [], reservedImages = [];
 assert(catalog.products.length > 0);
@@ -16,6 +18,9 @@ assert(!isFixtureProduct({ id: 'real-new-type', image: 'https://example.test/a.j
 assert(!isFixtureProduct({ id: 'appointment-product-1234abcd', image: 'https://images.example.org/real.jpg' }));
 assert(!catalog.sizes.some(size => /\btest\b/i.test(JSON.stringify(size))));
 const first = catalog.products[0];
+const secondFacility = { id: 'browser-demo-secondary', name: 'NestBox kiểm thử B', address: 'Địa chỉ kiểm thử B', bookingEnabled: true, officeHours: '08:00–17:00', accessHours: '07:00–20:00' };
+const secondProduct = { ...catalog.products[1], facilityId: secondFacility.id };
+const browserProducts = raw.products.map(item => item.id === secondProduct.id ? secondProduct : item);
 const single = publicCatalog({ ...raw, products: [first] });
 assert.equal(single.products.length, 1);
 assert.equal(single.sizes.length, 1);
@@ -23,16 +28,18 @@ checks.push('Only known integration-fixture IDs with reserved test images are ex
 
 const browser = await launchTestBrowser();
 try {
-  for (const width of [1440, 390]) {
+  for (const width of [1440, 1024, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 960 } });
     await context.route(/\/api\//, async route => {
       const request = route.request(), url = new URL(request.url());
       if (request.method() === 'OPTIONS') return route.fulfill({ status: 204 });
       if (request.method() !== 'GET') { blockedWrites.push(url.pathname); return route.fulfill({ status: 400, json: {} }); }
-      if (url.pathname === '/api/booking/catalog') return route.fulfill({ json: raw });
+      if (url.pathname === '/api/booking/catalog') return route.fulfill({ json: {
+        ...raw, facilities: [...(raw.facilities ?? []), secondFacility], products: browserProducts,
+      } });
       if (url.pathname === '/api/storage') {
-        const size = url.searchParams.get('size'), type = url.searchParams.get('type');
-        const items = raw.products.filter(item => (!size || size === 'all' || item.sizeId === size) && (!type || type === 'all' || item.condition === type));
+        const size = url.searchParams.get('size'), type = url.searchParams.get('type'), facilityId = url.searchParams.get('facilityId');
+        const items = browserProducts.filter(item => (!facilityId || item.facilityId === facilityId) && (!size || size === 'all' || item.sizeId === size) && (!type || type === 'all' || item.condition === type));
         return route.fulfill({ json: { items, total: items.length, checkedPeriod: false } });
       }
       throw new Error(`Unexpected public API: ${url.pathname}`);
@@ -46,7 +53,7 @@ try {
     const cards = page.locator('.storage-listing-card');
     await cards.first().waitFor();
     assert.equal(await cards.count(), catalog.products.length);
-    await page.getByText(`${catalog.products.length} lựa chọn phù hợp`, { exact: false }).waitFor();
+    await page.getByText(`${catalog.products.length} loại kho`, { exact: true }).waitFor();
     for (const card of await cards.all()) {
       await card.scrollIntoViewIfNeeded();
       await card.locator('img').waitFor();
@@ -68,6 +75,7 @@ try {
     assert.equal(new URL(await action.getAttribute('href'), page.url()).searchParams.get('product'), first.id);
     await page.goto(base + '/size-guide', { waitUntil: 'domcontentloaded' });
     await page.getByRole('heading', { name: 'So sánh kho', exact: true }).waitFor();
+    await page.getByRole('heading', { name: 'Chưa chọn kho để so sánh' }).waitFor();
     await page.getByRole('button', { name: 'Chuyển sang giao diện tối' }).click();
     assert.equal(await page.locator('.wdp-public').getAttribute('data-workspace-theme'), 'dark');
     assert.equal(await page.locator('.comparison-candidate').first().evaluate(card => getComputedStyle(card).backgroundColor), 'rgb(25, 31, 42)');
@@ -103,19 +111,67 @@ try {
     await page.evaluate(() => localStorage.setItem('wdp-booking-step-v1', '2'));
     await page.getByRole('link', { name: `Chọn kho ${first.name}`, exact: true }).click();
     await page.locator('.booking-preview-heading h2').waitFor();
-    assert.equal(await page.locator('.booking-preview-heading h2').innerText(), first.name);
+    assert.equal(await page.locator('.booking-preview-heading h2').innerText(), `1 kho · ${first.name}`);
     assert.equal(await page.locator('.booking-preview-visual img').getAttribute('data-catalog-image'), first.image);
     assert.equal(await page.locator('.wdp-public').getAttribute('data-workspace-theme'), 'dark');
     assert.equal(await page.locator('.booking-preview').evaluate(card => getComputedStyle(card).backgroundColor), 'rgb(25, 31, 42)');
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     if (process.env.WDP_SCREENSHOTS_DIR) await page.screenshot({ path: `${process.env.WDP_SCREENSHOTS_DIR}/nestbox-booking-${width}.png`, fullPage: true });
     await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
-    await page.locator('.landing-size-card').first().waitFor();
+    await page.locator('.landing-product').first().waitFor();
     assert.equal(await page.locator('.wdp-public').getAttribute('data-workspace-theme'), 'dark');
     await page.getByRole('button', { name: 'Chuyển sang giao diện sáng' }).click();
     assert.equal(await page.locator('.wdp-public').getAttribute('data-workspace-theme'), 'light');
-    assert.equal(await page.locator('.landing-size-card').count(), catalog.sizes.length);
+    assert.equal(await page.locator('.wdp-public').evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(246, 248, 252)');
+    assert.equal(await page.locator('.landing-product').count(), catalog.products.length);
+    assert.equal(await page.locator('.landing-timeline li').count(), 4);
+    assert.equal(await page.locator('.landing-perks > div').count(), 4);
+    assert.equal(await page.locator('.public-footer-grid > div').count(), 4);
+    await page.waitForFunction(() => document.querySelector('.landing-hero-media img')?.naturalWidth > 0);
+    await page.waitForFunction(() => document.querySelector('.public-brand-mark img')?.naturalWidth > 0);
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+    await page.getByRole('link', { name: 'Tìm kho phù hợp', exact: true }).click();
+    await page.waitForURL(url => url.hash === '#find-storage');
+    if (width < 1024) {
+      await page.getByRole('button', { name: 'Mở menu' }).click();
+      assert(await page.getByRole('navigation', { name: 'Điều hướng di động' }).getByRole('link', { name: 'Hỗ trợ', exact: true }).isVisible());
+      await page.getByRole('button', { name: 'Đóng menu' }).click();
+    }
+    for (const summary of await page.locator('#faq summary').all()) {
+      await summary.click();
+      assert.equal(await summary.locator('..').getAttribute('open'), '');
+      await summary.click();
+    }
+    if (width < 1024) await page.getByRole('button', { name: 'Mở menu' }).click();
+    await page.locator('.public-header').getByRole('link', { name: 'Đặt kho nhanh', exact: true }).filter({ visible: true }).click();
+    await page.waitForURL(url => url.pathname === '/booking' && url.searchParams.get('mode') === 'quick');
+    await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+    await page.locator('.landing-product').first().waitFor();
+    const clearComparison = page.getByRole('button', { name: 'Bỏ chọn tất cả' });
+    if (await clearComparison.isVisible()) await clearComparison.click();
+    const cardsToCompare = page.locator('.landing-product input[type=checkbox]');
+    await cardsToCompare.nth(0).check();
+    await cardsToCompare.nth(1).check();
+    await page.getByRole('link', { name: 'So sánh ngay', exact: true }).click();
+    await page.waitForURL(url => url.pathname === '/size-guide' && url.searchParams.get('compare')?.split(',').length === 2);
+    await page.getByRole('region', { name: 'Bảng so sánh kho đã chọn' }).waitFor();
+    await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+    await page.locator('.landing-product').first().waitFor();
+    await page.getByRole('button', { name: 'Bỏ chọn tất cả' }).click();
     assert(!/Test room|Test capacity|Test only/.test(await page.locator('main').innerText()));
+    await page.getByRole('link', { name: 'Xem toàn bộ cơ sở', exact: true }).click();
+    await page.getByRole('heading', { name: 'Cơ sở NestBox', exact: true }).waitFor();
+    assert.equal(await page.locator('.facility-directory-card').count(), (raw.facilities?.length ?? 0) + 1);
+    await page.getByText('Địa chỉ kiểm thử B', { exact: true }).waitFor();
+    await page.getByText('07:00–20:00', { exact: true }).waitFor();
+    await page.locator('.facility-directory-card').filter({ hasText: secondFacility.name }).getByText(secondProduct.name, { exact: true }).waitFor();
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+    await page.getByRole('link', { name: `Xem kho tại ${secondFacility.name}` }).click();
+    await page.getByText(`1 loại kho tại ${secondFacility.name}`, { exact: true }).waitFor();
+    assert.equal(await page.locator('.storage-listing-card').count(), 1);
+    await page.locator('.storage-listing-card').getByText(`Cơ sở: ${secondFacility.name}`, { exact: true }).waitFor();
+    assert.equal(await page.getByLabel('Cơ sở', { exact: true }).inputValue(), secondFacility.id);
+    assert(!/Long Bình|\(minh họa\)/.test(await page.locator('.landing-footer').innerText()));
     if (process.env.WDP_SCREENSHOTS_DIR) {
       await mkdir(process.env.WDP_SCREENSHOTS_DIR, { recursive: true });
       await page.goto(base + '/storage');

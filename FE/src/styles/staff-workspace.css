@@ -206,6 +206,61 @@ a.staff-metric:hover {
   font-size: 13px;
 }
 .staff-panel-empty { padding-top: 16px; }
+.work-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr));
+  gap: var(--space-12);
+  margin: 0 0 var(--space-16);
+}
+.work-summary > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 10px;
+  background: var(--workspace-surface);
+}
+.work-summary dt { color: var(--workspace-secondary); font-size: var(--type-control); }
+.work-summary dd { margin: 0; color: var(--workspace-text); font-weight: 730; font-size: 1.35rem; }
+.work-view-switch { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 0 var(--space-12); }
+.work-view-switch button {
+  min-height: 40px;
+  padding: 7px 12px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  background: var(--workspace-surface);
+  color: var(--workspace-secondary);
+  font-size: var(--type-control);
+  font-weight: 650;
+}
+.work-view-switch button:hover:not([aria-pressed="true"]) { background: var(--workspace-hover); color: var(--workspace-text); }
+.work-view-switch button[aria-pressed="true"] {
+  border-color: var(--workspace-primary);
+  background: var(--workspace-selected);
+  color: var(--workspace-primary);
+}
+.workspace-themed .staff-work-page .manager-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 20px 12px;
+  text-align: center;
+}
+.staff-work-page .manager-empty :is(h2, p) { margin: 0; }
+.staff-work-page .staff-queue .staff-table-options { display: block; padding: 0; }
+.staff-work-page .staff-queue .staff-table-options .staff-table-toolbar { margin: 0; }
+@media (max-width: 650px) {
+  .staff-work-page .work-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .staff-work-page .work-summary > div { padding: 8px; }
+  .staff-work-page .staff-queue .manager-table :is(th, td):last-child {
+    position: sticky;
+    right: 0;
+    border-inline-start: 1px solid var(--workspace-border);
+    background: var(--workspace-surface);
+  }
+}
 .internal-web.workspace-themed .manager-table .button-secondary { min-height: 36px; padding: 7px 12px; }
 
 .workspace-themed[data-workspace-role="staff"] .staff-table-toolbar {
@@ -407,4 +462,128 @@ a.staff-metric:hover {
   .staff-metrics { grid-template-columns: minmax(0, 1fr); }
   .staff-metric-heading { min-height: auto; }
   .workspace-themed[data-workspace-role="staff"] .portal-breadcrumb-root { display: none; }
+}
+.staff-incident-page { width: 100%; max-width: 960px; margin-inline: auto; }
+.staff-incident-page .incident-location { display: grid; gap: 10px; padding-block: 14px; border-block: 1px solid var(--workspace-border); }
+.staff-incident-page .incident-location h2 { font-size: 16px; font-weight: 700; }
+.incident-choice { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.incident-choice label { display: flex; align-items: center; gap: 6px; }
+.incident-booking-impact > p { margin: 0; }
+.incident-booking-impact .incident-booking-group {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 0 0;
+  border: 0;
+}
+.incident-booking-impact .incident-booking-group legend { padding: 0; font-weight: 650; }
+.incident-booking-impact .incident-booking-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(112px, 100%), 1fr));
+  gap: 8px;
+}
+.incident-booking-impact .incident-booking-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 8px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  background: var(--workspace-surface);
+  cursor: pointer;
+}
+.incident-booking-impact .incident-booking-choice small { display: block; color: var(--workspace-muted); }
+.incident-booking-impact .incident-booking-choice > span { min-width: 0; overflow-wrap: anywhere; }
+.incident-booking-impact .incident-booking-choice:has(input:checked) {
+  border-color: var(--workspace-primary);
+  background: var(--workspace-selected);
+}
+.incident-booking-impact .incident-booking-choice:has(input:focus-visible) {
+  outline: 2px solid var(--workspace-focus);
+  outline-offset: -2px;
+}
+.incident-booking-impact .incident-booking-choice:has(input:disabled) { cursor: default; }
+.incident-booking-impact .incident-booking-choice > input[type="checkbox"] {
+  appearance: auto;
+  width: 21px;
+  height: 21px;
+  min-width: 21px;
+  min-height: 21px;
+  flex: 0 0 21px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--workspace-primary);
+}
+.manager-processing .maintenance-verification-form { padding-bottom: 14px; border-bottom: 1px solid var(--workspace-border); }
+.incident-unit-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: 8px; max-height: 240px; overflow: auto; }
+.incident-unit-options label { display: flex; align-items: center; gap: 6px; padding: 7px; border: 1px solid var(--workspace-border); border-radius: 6px; }
+.incident-two-fields { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.incident-photos { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.incident-photos li { display: grid; align-content: start; gap: 6px; }
+.incident-photos img { display: block; width: 120px; height: 92px; border-radius: 8px; object-fit: cover; }
+.maintenance-evidence { display: grid; gap: 8px; margin-top: 14px; }
+.maintenance-evidence h3 { font-weight: 700; }
+@media (max-width: 560px) { .incident-two-fields { grid-template-columns: 1fr; } }
+
+.workspace-themed[data-workspace-role="staff"] .workspace-nav-heading {
+  margin-block: 10px 9px;
+}
+.staff-facility-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 0 0 12px;
+  padding: 7px 11px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  color: var(--workspace-secondary);
+  font-weight: 600;
+}
+.staff-filter-help { margin: -4px 0 14px; color: var(--workspace-secondary); font-size: 14px; }
+.incident-location-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.staff-incident-page .incident-location-options label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 48px;
+  padding: 9px 12px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.staff-incident-page .incident-location-options label:has(:checked) {
+  color: var(--workspace-primary);
+  border-color: var(--workspace-primary);
+  background: color-mix(in srgb, var(--workspace-primary) 10%, transparent);
+}
+.staff-incident-page :is(.incident-location-options, .incident-unit-options) input {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  padding: 0;
+  flex: 0 0 auto;
+  accent-color: var(--workspace-primary);
+}
+.incident-location-options svg { flex: 0 0 auto; }
+.incident-report-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.incident-booking-clear { color: var(--workspace-secondary); }
+.incident-report-search { align-items: end; margin-block: 0 14px; }
+.incident-report-search .field-label { flex: 1 1 190px; max-width: 340px; }
+.incident-detail-link { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.incident-booking-hold { font-weight: 650; }
+.staff-incident-page .manager-table th:last-child { min-width: 132px; }
+@media (max-width: 420px) {
+  .incident-location-options { grid-template-columns: 1fr; }
 }

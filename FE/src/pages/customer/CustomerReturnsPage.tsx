@@ -83,14 +83,18 @@ export function CustomerReturnsPage() {
   const today = vietnamCalendarDate(checkedAt);
   const available = (rentals.data?.items ?? []).flatMap(rental => rental.pendingRenewal ? [] : rental.contracts
     .filter(contract => contract.unit.status === 'OCCUPIED' && !contract.pendingRenewal && !contract.returnInProgress && !activeReturnIds.has(contract.id))
-    .filter(contract => contract.endDate <= today || approvals.data?.items.some(request =>
-      earlyReturnAppliesTo(request, rental.reservationId, contract.id) && isCurrentEarlyReturnApproval(request, contract.endDate)))
     .map(contract => ({ contract, rental })));
   const current = view === "returns" ? returns : settlements;
   const [contractId, setContractId] = useScopedSelection('contract', available.map(({ contract }) => ({ value: contract.id, aliases: [contract.contractCode] })));
   const selected = available.find(item => item.contract.id === contractId);
+  const [returnDateDraft, setReturnDateDraft] = useState('');
+  const earlyApproved = selected && approvals.data?.items.some(request =>
+    earlyReturnAppliesTo(request, selected.rental.reservationId, selected.contract.id) &&
+    isCurrentEarlyReturnApproval(request, selected.contract.endDate));
+  const minimumReturnDate = selected && !earlyApproved && selected.contract.endDate > today ? selected.contract.endDate : today;
+  const expectedReturnDate = returnDateDraft || minimumReturnDate;
   const selectedDebt = selected?.contract.returnReadiness?.totalOutstanding ?? null;
-  const canSubmitReturn = selected?.contract.returnReadiness?.canReturn === true;
+  const canSubmitReturn = selected?.contract.returnReadiness?.canReturn === true && expectedReturnDate >= minimumReturnDate;
   const earlyCloseout = selected?.contract.returnReadiness?.policy === 'PERIOD_CLOSEOUT_V1';
   const otherUnits = selected?.rental.contracts.filter(contract => contract.id !== contractId).map(contract => contract.unit.unitCode) ?? [];
   const refresh = () => {
@@ -116,7 +120,7 @@ export function CustomerReturnsPage() {
       await mutate<CustomerReturnRequest>(
         "/customer/returns",
         "POST",
-        { reservationId: selected.rental.reservationId, rentalContractId: selected.contract.id, note: note.trim() || undefined },
+        { reservationId: selected.rental.reservationId, rentalContractId: selected.contract.id, expectedReturnDate, note: note.trim() || undefined },
         true,
       );
       setMessage({ kind: "ok", text: "Đã gửi yêu cầu trả kho." });
@@ -212,7 +216,7 @@ export function CustomerReturnsPage() {
                 aria-label="Kho muốn trả"
                 required
                 value={contractId}
-                onValueChange={setContractId}
+                onValueChange={value => { setContractId(value); setReturnDateDraft(''); }}
               >
                 <option value="">Chọn kho muốn trả</option>
                 {available.map(({ rental, contract }) => (
@@ -222,10 +226,21 @@ export function CustomerReturnsPage() {
                 ))}
               </EntitySelect>
             </label>
+            {selected && <label className="field-label">Ngày dự kiến trả kho
+              <input type="date" min={minimumReturnDate} value={expectedReturnDate} required
+                onChange={event => setReturnDateDraft(event.target.value)} />
+            </label>}
             {selected && <div className={`return-payment-state ${canSubmitReturn ? 'is-settled' : ''}`} role="region" aria-label="Thanh toán của kho muốn trả">
-              <strong>{canSubmitReturn ? 'Có thể gửi yêu cầu trả kho' : earlyCloseout ? 'Cần kiểm tra điều kiện bàn giao' : selected.contract.returnReadiness?.awaitingRenewalInvoices ? 'Đang chờ hóa đơn gia hạn' : selectedDebt === null || selectedDebt === 0 ? 'Cần đối soát trước khi trả kho' : 'Cần thanh toán trước khi trả kho'}</strong>
-              <p>{earlyCloseout ? (canSubmitReturn ? 'Tiền thuê được tính đến ngày nhân viên nhận lại kho. Tiền cọc được xử lý riêng.' : 'Hãy liên hệ NestBox để kiểm tra tiền cọc và các yêu cầu đang xử lý.') : canSubmitReturn ? 'Nhân viên sẽ kiểm tra kho. Tiền cọc được quyết toán sau khi nhận kho.' : selected.contract.returnReadiness?.awaitingRenewalInvoices ? 'Làm mới để kiểm tra các kỳ gia hạn đã phát hành.' : selectedDebt === null || selectedDebt === 0 ? 'Hãy liên hệ NestBox để đối chiếu hóa đơn và tiền cọc của hợp đồng này.' : <>Số dư các hóa đơn liên quan, gồm cả hóa đơn chung nếu có: <strong>{moneyLabel(selectedDebt)}</strong>.</>}</p>
-              {!canSubmitReturn && !earlyCloseout && selectedDebt !== null && selectedDebt > 0 && <Link className="button-primary" to={`/customer/payments?reservation=${encodeURIComponent(selected.rental.reservationId)}`}>Thanh toán các hóa đơn</Link>}
+              {typeof selected.contract.returnNoticeDays === 'number' && <p>{selected.contract.returnNoticeDays > 0
+                ? 'Nên báo trước ' + selected.contract.returnNoticeDays + ' ngày để cơ sở bố trí lịch trả. Báo muộn không phát sinh phí khi trả đúng hạn.'
+                : 'Điều khoản của kho này không yêu cầu báo trước.'}</p>}
+              {selected.contract.overdueOccupancy && selected.contract.overdueOccupancy.days > 0 && <p>Đã quá hạn trả {selected.contract.overdueOccupancy.days} ngày.
+                {selected.contract.overdueOccupancy.withinGrace ? ' Đang trong thời gian cho phép quá hạn.' : ' Khoản quá hạn được xác định khi quyết toán.'}</p>}
+              <strong>{canSubmitReturn ? 'Có thể gửi yêu cầu trả kho' : 'Cần kiểm tra điều kiện trả kho'}</strong>
+              <p>{earlyCloseout && expectedReturnDate < selected.contract.endDate
+                ? 'Tiền thuê được tính đến ngày nhận lại kho. Tiền cọc được xử lý riêng.'
+                : 'NestBox sẽ bố trí lịch kiểm tra. Tiền cọc được quyết toán sau khi nhận kho.'}</p>
+              {selectedDebt !== null && selectedDebt > 0 && <p>Công nợ hiện tại <strong>{moneyLabel(selectedDebt)}</strong>. <Link to={`/customer/payments?reservation=${encodeURIComponent(selected.rental.reservationId)}`}>Xem hóa đơn</Link></p>}
             </div>}
             <label className="field-label">
               Ghi chú
@@ -255,7 +270,7 @@ export function CustomerReturnsPage() {
             </button>
             {!rentals.loading && available.length === 0 && (
               <small>
-                Chưa có kho đến hạn hoặc được chấp thuận trả sớm. Bạn có thể gửi đề nghị trả trước hạn bên dưới.
+                Chưa có kho phù hợp để gửi yêu cầu trả.
               </small>
             )}
           </fieldset>
@@ -268,9 +283,10 @@ export function CustomerReturnsPage() {
         <dl className="customer-record-facts">
           <div><dt>Kho trả</dt><dd>{selected.contract.unit.unitCode}</dd></div>
           <div><dt>Hợp đồng</dt><dd>{selected.contract.contractCode}</dd></div>
+          <div><dt>Ngày dự kiến trả</dt><dd>{formatPortalDate(expectedReturnDate)}</dd></div>
           {otherUnits.length > 0 && <div><dt>Kho tiếp tục thuê</dt><dd>{otherUnits.join(', ')}</dd></div>}
         </dl>
-        {selected.contract.endDate > today && <p>Quản lý đã chấp thuận trả trước hạn cho kho này.</p>}
+        {expectedReturnDate < selected.contract.endDate && <p>Quản lý đã chấp thuận trả trước hạn cho kho này.</p>}
       </Modal>}
     </section>
   );
@@ -309,11 +325,12 @@ function ReturnList({ items, focused }: { items: CustomerReturnRequest[]; focuse
               {item.reservation.reference} · yêu cầu ngày{" "}
               {formatPortalDate(item.requestedAt, true)}
             </p>
-            {item.returnReadiness && !item.physicallyReturnedAt && !item.returnReadiness.canReturn && <div className="customer-inline-notice">
-              <strong>Cần thanh toán đủ trước khi trả kho</strong>
-              <p>{item.returnReadiness.totalOutstanding === null ? 'Chưa xác định được số tiền còn thiếu. Hãy làm mới hoặc liên hệ nhân viên.' : <>Còn phải thanh toán: {moneyLabel(item.returnReadiness.totalOutstanding)}.</>}</p>
-              <Link to={`/customer/payments?reservation=${encodeURIComponent(item.reservation.id)}`}>Xem hóa đơn và thanh toán</Link>
-            </div>}
+            {item.expectedReturnDate && <p>Ngày dự kiến trả · {formatPortalDate(item.expectedReturnDate)}</p>}
+            <p>Lịch kiểm tra · {item.inspectionScheduledAt ? formatPortalDate(item.inspectionScheduledAt, true) : 'Chưa đặt lịch'}</p>
+            {item.actualReturnDate && <p>Ngày trả thực tế · {formatPortalDate(item.actualReturnDate)}</p>}
+            {item.debtStatus && <p>Công nợ · {item.debtStatus === 'CLEAR' ? 'Đã thanh toán đủ'
+              : item.debtStatus === 'NEEDS_RECONCILIATION' ? 'Cần đối soát'
+              : <Link to={`/customer/payments?reservation=${encodeURIComponent(item.reservation.id)}`}>Còn phải trả {moneyLabel(item.outstandingBalance)}</Link>}</p>}
             {item.earlyReturnCloseout && <div className="customer-inline-notice">
               <strong>Quyết toán tiền thuê</strong>
               <p>Ngày chấm dứt {formatPortalDate(item.earlyReturnCloseout.effectiveDate)} · {item.earlyReturnCloseout.outstandingAmount === null ? 'Cần đối soát số dư hóa đơn chung' : <>Còn phải trả khi bàn giao {moneyLabel(item.earlyReturnCloseout.outstandingAmount)}</>}.</p>
@@ -334,7 +351,7 @@ function ReturnList({ items, focused }: { items: CustomerReturnRequest[]; focuse
                 <dd>{item.inspectionSummary.issues}</dd>
               </div>
               <div>
-                <dt>Quyết toán</dt>
+                <dt>Quyết toán cọc</dt>
                 <dd>
                   {item.settlementStatus ? (
                     <CustomerStatus status={item.settlementStatus} />

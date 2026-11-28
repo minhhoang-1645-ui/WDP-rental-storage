@@ -5,4 +5,4 @@ export const managerReviewStatus = (resource: string) => resource === 'support-r
 export const managerReviewTitle = (resource: string) => resource === 'support-requests' ? 'Hỗ trợ cần quyết định' : 'Nghiệm thu bảo trì';
 
 export const canAccessManagerReview = (role: string, resource: string) =>
-  canOperateResource(role, resource) || (role === 'MANAGER' && isManagerReviewWorkflow(resource));
+  canOperateResource(role, resource) || (role === 'FACILITY_MANAGER' && isManagerReviewWorkflow(resource));

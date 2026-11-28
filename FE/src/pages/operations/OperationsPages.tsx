@@ -1,0 +1,13 @@
+import { useState } from 'react';
+import { apiRequest } from '../../services/api';
+import { useApiResource } from '../../services/useApiResource';
+import { useAuth } from '../../auth/auth-context';
+export { OperationsPolicies } from './OperationsPolicies';
+export { OperationsPricing } from './OperationsPricing';
+type Report={asOf:string;facilities:number;units:{status:string;_count:{_all:number}}[];contracts:{status:string;_count:{_all:number}}[];grossReceipts:string;limitations:string[]};
+export function OperationsReports(){
+ const{user}=useAuth();const data=useApiResource<Report>('/operations/reports',user?.id);const [exportError,setExportError]=useState('');const [exporting,setExporting]=useState(false);
+ async function download(){setExporting(true);setExportError('');try{const blob=await apiRequest<Blob>('/operations/reports/invoices.csv',{responseType:'blob'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='nestbox-hoa-don.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){setExportError(e instanceof Error?e.message:'Không xuất được báo cáo.');}finally{setExporting(false);}}
+ const labels:Record<string,string>={AVAILABLE:'Còn trống',RESERVED:'Đang giữ chỗ',OCCUPIED:'Đang sử dụng',MAINTENANCE:'Bảo trì',PENDING_PAYMENT:'Chờ thanh toán',READY_FOR_HANDOVER:'Chờ bàn giao',ACTIVE:'Đang hoạt động',COMPLETED:'Hoàn tất',CANCELLED:'Đã hủy'};
+ return <section className="operations-page"><header><h1>Báo cáo toàn hệ thống</h1><div><button onClick={data.refresh}>Cập nhật</button><button disabled={exporting} onClick={()=>void download()}>{exporting?'Đang xuất…':'Xuất hóa đơn CSV'}</button></div></header>{exportError?<p role="alert">{exportError}</p>:null}{data.loading?<p>Đang tải…</p>:null}{data.error?<p role="alert">{data.error}</p>:null}{data.data?<><p>Cập nhật {new Date(data.data.asOf).toLocaleString('vi-VN')}</p><div className="operations-row"><span>Cơ sở</span><strong>{data.data.facilities}</strong></div><div className="operations-row"><span>Tổng tiền đã thu (gồm cọc)</span><strong>{BigInt(data.data.grossReceipts).toLocaleString('vi-VN')} đ</strong></div><h2>Ô kho hiện tại</h2>{data.data.units.map(r=><div className="operations-row" key={r.status}><span>{labels[r.status]??'Trạng thái khác'}</span><strong>{r._count._all}</strong></div>)}<h2>Hợp đồng hiện tại</h2>{data.data.contracts.map(r=><div className="operations-row" key={r.status}><span>{labels[r.status]??'Trạng thái khác'}</span><strong>{r._count._all}</strong></div>)}{data.data.limitations.map(s=><p key={s}><small>{s}</small></p>)}</>:null}</section>;
+}

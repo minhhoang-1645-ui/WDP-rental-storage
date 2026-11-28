@@ -7,6 +7,13 @@ import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { RecordTimeline } from '../../components/workspace/RecordTimeline';
 import { DocumentFile } from '../../components/customer/DocumentFile';
 import type { StaffOperation } from './staff-resources';
+import { transferProblem } from '../../utils/transfer-problem';
+import { incidentArea } from '../../utils/maintenance-incident';
+import { maintenanceMoney } from '../../components/manager/MaintenanceCosts';
+import { MaintenanceRepairPlan } from '../../components/manager/MaintenanceRepairPlan';
+import { MaintenancePhotoGallery } from '../../components/manager/MaintenancePhotoGallery';
+import { ReturnInspectionPhotos } from '../../components/workspace/ReturnInspectionPhotos';
+import { evidenceLinks, EvidenceLinks, EvidenceSubmissions } from '../../components/workspace/EvidenceLinks';
 type Fact = [string, ReactNode];
 
 function DateFact({ value, withTime = false }: { value: string; withTime?: boolean }) {
@@ -45,6 +52,7 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
 
   if (resource === 'transfers') {
     const handover = object(row.handoverReport);
+    const { pending, review } = transferProblem(row);
     const completed = row.status === 'COMPLETED';
     const completedBy = first(row, 'completedBy.fullName', 'handoverReport.recordedByName');
     const contractId = first(row, 'contract.id');
@@ -66,16 +74,22 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
           <TransferUnit title="Kho đích" unit={object(row.toUnit)} />
         </div>
         <Facts items={facts([
-          ['Khách hàng', name], ['Hợp đồng', contract], ['Người phụ trách', !completed ? assigned : ''],
+          ['Khách hàng', name], ['Cơ sở', first(row, 'facility.name')], ['Hợp đồng', contract], ['Người phụ trách', !completed ? assigned : ''],
           ['Lý do chuyển', row.reason ? label(row.reason) : ''],
           ['Quản lý phê duyệt', first(row, 'approvedBy.fullName')],
           ['Lịch bàn giao', transferHandoverSchedule(row)],
-          ['Phụ lục và thanh toán', first(row, 'commercial.acceptedAt') ? completed ? 'Đã đủ điều kiện khi bàn giao' : 'Đã ký · Không có hóa đơn đến hạn chưa thanh toán' : ''],
           ['Ngày hoàn tất', completed ? dateField('completedAt', true) : ''],
           ['Lý do từ chối', row.status === 'REJECTED' ? first(row, 'rejectionReason') : ''],
         ])} />
         {first(row, 'requestDescription') && <p>{first(row, 'requestDescription')}</p>}
       </section>
+      {pending && <div className="booking-alert is-warning" role="status">
+        Đã báo vướng mắc. Chờ quản lý xử lý.
+      </div>}
+      {review.decision && <Section title="Quyết định của quản lý" items={[
+        ['Kết quả', review.decision === 'CANCEL' ? 'Đã hủy chuyển kho' : 'Cho tiếp tục bàn giao'],
+        ['Thời điểm', first(review, 'reviewedAt') && date(review.reviewedAt, true)],
+      ]} note={first(review, 'note')} />}
       {actions}
       {completed && <Section title="Kết quả chuyển kho" items={[
         ['Kết quả điều chuyển', 'Đã hoàn tất điều chuyển'],
@@ -87,6 +101,10 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
         ['Yêu cầu của khách', supportId && first(row, 'supportRequest.status') === 'RESOLVED' &&
           first(row, 'supportRequest.resolutionType') !== 'TRANSFER_RECOMMENDED' ? 'Đã cập nhật kết quả' : ''],
       ]} note={first(handover, 'note')}>
+        {Array.isArray(handover.photos) && handover.photos.length > 0 && <div className="staff-handover-photos">
+          {handover.photos.map((photo, index) => typeof photo === 'string' &&
+            <img key={index} src={photo} alt={`Ảnh bàn giao chuyển kho ${index + 1}`} />)}
+        </div>}
         {handover.goodsMoved === true && contractId && transferId && <DocumentFile
           path={`/staff/management/documents/contracts/${encodeURIComponent(contractId)}/transfers/${encodeURIComponent(transferId)}`}
           name={`${first(row, 'transferCode')}-BB`} description="Biên bản chuyển kho · PDF" />}
@@ -105,17 +123,31 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
     const received = Boolean(row.physicallyReturnedAt);
     const hasResults = inspections.some(item => ['PASS', 'ISSUE_FOUND'].includes(String(item.result)));
     const settlementStatus = first(row, 'settlementStatus');
+    const phone = first(person, 'phone');
     return <>
       <Section title="Thông tin trả kho" items={[
         ['Khách hàng', name],
-        ['Kho trả', inspections.map(item => first(item, 'unit.unitCode')).filter(Boolean).join(', ')],
+        ['Số điện thoại', phone ? <a className="portal-text-button" href={`tel:${phone}`}>{phone}</a> : 'Chưa có số điện thoại'],
+        ['Cơ sở', first(row, 'facility.name')],
+        ['Vị trí kho', inspections.length > 0 && <span className="record-links">{inspections.map(item => {
+          const aisle = first(item, 'unit.row');
+          const position = first(item, 'unit.position');
+          const location = [first(item, 'unit.unitCode'), first(item, 'unit.floor'), first(item, 'unit.zone'),
+            aisle && `Dãy ${aisle}`, position && `Vị trí ${position}`].filter(Boolean);
+          return <span key={first(item, 'id')}>{location.join(' · ') || 'Chưa cập nhật vị trí'}</span>;
+        })}</span>],
         ['Hợp đồng', inspections.map(item => first(item, 'contract.contractCode')).filter(Boolean).join(', ')],
-        ...(inspections.length === 1 ? [['Hạn thuê thực tế', dateField('reservation.effectiveEndDate') ||
-          <DateFact value={first(inspections[0], 'contract.endDate')} />] as Fact] : []),
-        ['Loại yêu cầu', row.timing === 'EARLY' ? 'Trả trước hạn' : row.timing === 'ON_OR_AFTER_END' ? 'Trả từ ngày hết hạn' : ''],
         ['Ngày gửi yêu cầu', dateField('requestedAt', true)],
+        ['Lịch kiểm tra trả kho', dateField('inspectionScheduledAt', true) || 'Chưa đặt lịch'],
+        ['Số ngày quá hạn', typeof row.overdueDays === 'number' ? `${row.overdueDays} ngày` : '—'],
         ['Người phụ trách', assigned],
       ]} note={first(row, 'note')} />
+      <section className="manager-section">
+        <h2>Đánh giá thời hạn báo trước</h2>
+        {inspections.map(item => <ReturnNotice key={first(item, 'id')} inspection={item} showUnit={inspections.length > 1} />)}
+        {!inspections.length && <p>Chưa có thông tin đánh giá cho hồ sơ này.</p>}
+        <p className="record-text">Staff tiếp nhận kho theo quy trình kiểm tra. Manager xử lý phí, khấu trừ và hoàn cọc khi quyết toán.</p>
+      </section>
       {actions}
       {hasResults && <section className="manager-section">
         <h2>Kết quả kiểm tra</h2>
@@ -134,15 +166,17 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
               ['Hiện trạng', condition],
               ['Ghi chú vấn đề', issue !== condition ? issue : ''],
             ])} />
+            <ReturnInspectionPhotos inspection={item} />
           </div>;
         })}
       </section>}
       {received && <section className="manager-section">
         <h2>Kết quả tiếp nhận kho</h2>
         <Facts items={facts([
-          ['Tiếp nhận', dateField('physicallyReturnedAt', true)],
+          ['Thời điểm ghi nhận tiếp nhận', dateField('physicallyReturnedAt', true)],
           ['Người tiếp nhận', first(row, 'physicallyReturnedBy.fullName')],
-          ['Quyết toán cọc', settlementStatus && <Status value={settlementStatus} text={settlementStatus === 'SETTLED' ? 'Đã quyết toán' : undefined} />],
+          ['Quyết toán cọc', settlementStatus && <Status value={settlementStatus} text={settlementStatus === 'SETTLED' ? 'Đã quyết toán'
+            : row.status === 'PENDING_SETTLEMENT' && settlementStatus === 'PENDING_REVIEW' ? 'Chờ quản lý quyết toán' : undefined} />],
         ])} />
         {inspections.map(item => {
           const unit = first(item, 'unit.unitCode');
@@ -150,7 +184,7 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
           return <div className="staff-operation-unit" key={first(item, 'id')}>
             {inspections.length > 1 && <h3>{unit}</h3>}
             <Facts items={facts([
-              ['Xử lý khi nhận kho', item.result === 'ISSUE_FOUND' ? 'Chuyển bảo trì' : item.result === 'PASS' ? 'Đã giải phóng kho' : ''],
+              ['Xử lý khi nhận kho', item.result === 'ISSUE_FOUND' ? 'Chuyển bảo trì' : item.result === 'PASS' ? 'Đã nhận kho' : ''],
               ['Tình trạng kho hiện tại', first(item, 'unit.status') && <Status value={at(item, 'unit.status')} />],
               ['Phiếu bảo trì', maintenanceId && <Link to={`/staff/maintenance/${encodeURIComponent(maintenanceId)}`}>{first(item, 'maintenance.maintenanceCode')}</Link>],
             ])} />
@@ -162,25 +196,44 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
   }
 
   if (resource === 'maintenance') {
-    const location = [first(row, 'unit.floor'), first(row, 'unit.zone'), first(row, 'unit.row'), first(row, 'unit.position')].filter(Boolean).join(' · ');
+    const location = [first(row, 'unit.unitCode'), first(row, 'unit.floor'), first(row, 'unit.zone'),
+      incidentArea(row.commonArea), first(row, 'locationNote')].filter(Boolean).join(' · ');
     const returnId = first(row, 'returnContext.returnRequest.id');
     const workNote = first(row, 'workNote');
     const verification = first(row, 'verificationNote');
     return <>
       <Section title="Thông tin bảo trì" items={[
-        ['Vị trí', location], ['Loại vấn đề', row.category ? label(row.category) : ''],
+        ['Cơ sở', first(row, 'facility.name')], ['Vị trí', location], ['Loại vấn đề', row.category ? label(row.category) : ''],
+        ['Ô kho bị ảnh hưởng', rows(row.affectedUnits).map(unit => first(unit, 'unitCode')).filter(Boolean).join(', ')],
         ['Ưu tiên', row.priority ? <Status value={row.priority} /> : null], ['Người phụ trách', assigned],
         ['Nguồn phát sinh', row.source ? label(row.source) : ''],
-      ]} note={first(row, 'description')} />
+        ['Người báo cáo', first(row, 'reportedBy.fullName')],
+        ['Thời điểm báo cáo', dateField('createdAt', true)],
+        ['Khóa đặt thuê của phiếu', row.blocksUnit === true ? 'Đang tạm chặn' : 'Không còn chặn'],
+      ]} note={first(row, 'description')}>
+        <MaintenancePhotoGallery staff record={first(row, 'id')} ids={rows(row.photos).map(photo => first(photo, 'id')).filter(Boolean)} />
+        <EvidenceLinks links={evidenceLinks(first(row, 'description'))} />
+      </Section>
+      {Boolean(row.repair) && <MaintenanceRepairPlan row={row} />}
+      {row.status === 'IN_PROGRESS' && verification && <p className="booking-alert" role="status"><strong>Yêu cầu sửa lại.</strong> {verification}</p>}
       {actions}
       {(workNote || verification || row.workCompletedAt || row.verifiedAt || ['COMPLETED', 'AWAITING_VERIFICATION'].includes(String(row.status))) &&
-        <Section title="Kết quả bảo trì" items={[
+        <Section title="Kết quả sửa chữa" items={[
           ['Công việc đã làm', workNote], ['Ngày hoàn thành sửa chữa', dateField('workCompletedAt', true)],
-          ['Nghiệm thu', row.status === 'COMPLETED' ? 'Đã nghiệm thu' : row.status === 'AWAITING_VERIFICATION' ? 'Chờ quản lý nghiệm thu' : ''],
+          [first(row, 'costs.status') === 'CONFIRMED' ? 'Chi phí đã xác nhận' : 'Tổng chi phí đề xuất', row.costs ? maintenanceMoney(at(row, 'costs.actualVnd')) : ''],
+          ['Kết quả xử lý', row.closedWithoutRepair === true ? 'Đã đóng · Không cần sửa' : row.status === 'COMPLETED' ? 'Đã nghiệm thu' : row.status === 'AWAITING_VERIFICATION' ? 'Chờ quản lý nghiệm thu' : ''],
           ['Người nghiệm thu', first(row, 'verifiedBy.fullName')], ['Ngày nghiệm thu', dateField('verifiedAt', true)],
           ['Nhận xét nghiệm thu', verification],
           ['Tình trạng kho hiện tại', first(row, 'unit.status') && <Status value={at(row, 'unit.status')} />],
-        ]} />}
+        ]}>
+          {rows(row.evidenceSubmissions).length > 0 ? <EvidenceSubmissions value={row.evidenceSubmissions} title="Ảnh kết quả sửa chữa" maintenanceRecord={first(row, 'id')} /> : <>
+          {Array.isArray(row.workPhotos) && row.workPhotos.length > 0 && <div className="staff-handover-photos">
+            {row.workPhotos.map((photo, index) => typeof photo === 'string' &&
+              <img key={index} src={photo} alt={'Ảnh kết quả sửa chữa ' + (index + 1)} />)}
+          </div>}
+          <EvidenceLinks links={evidenceLinks(workNote)} />
+          </>}
+        </Section>}
       <References items={[[ 'Trả kho', returnId && <Link to={`/staff/returns/${encodeURIComponent(returnId)}`}>{first(row, 'returnContext.returnRequest.returnCode')}</Link> ]]} />
     </>;
   }
@@ -194,6 +247,7 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
   return <>
     <Section title="Nội dung yêu cầu" items={[
       ['Vấn đề', first(row, 'subject') || (row.category ? label(row.category) : '')], ['Kho', first(row, 'unit.unitCode')],
+      ['Cơ sở', first(row, 'facility.name')],
       ['Ưu tiên', row.priority ? <Status value={row.priority} /> : null], ['Người phụ trách', assigned],
       ['Liên hệ khách hàng', (phone || email) && <span className="record-links">{phone && <a href={`tel:${phone}`}>{phone}</a>}{email && <a href={`mailto:${email}`}>{email}</a>}</span>],
     ]} note={first(row, 'description')} />
@@ -203,6 +257,12 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
       ['Người thực hiện', first(row, resolved ? 'resolvedBy.fullName' : 'escalatedBy.fullName')],
       [resolved ? 'Ngày hoàn tất' : 'Ngày chuyển quản lý', dateField(resolved ? 'resolvedAt' : 'escalatedAt', true)],
     ]} note={first(row, resolved ? 'resolutionNote' : 'escalationReason')} />}
+    {resolved && Array.isArray(row.resolutionPhotos) && row.resolutionPhotos.length > 0 && <section className="manager-section">
+      <h2>Ảnh kết quả hỗ trợ</h2>
+      <div className="staff-handover-photos">{row.resolutionPhotos.map((photo, index) =>
+        typeof photo === 'string' && /^data:image\/(jpeg|png|webp);base64,/.test(photo)
+          ? <img key={index} src={photo} alt={'Ảnh hỗ trợ ' + (index + 1)} /> : null)}</div>
+    </section>}
     <References items={[
       ['Đơn đặt kho', reservation], ['Hợp đồng', contract], ['Hóa đơn', invoice],
       ['Chuyển kho', transfers.length > 0 && <span className="record-links">{transfers.map(transfer =>
@@ -210,6 +270,33 @@ export function StaffOperationDetails({ resource, row, actions }: { resource: St
       )}</span>],
     ]} />
   </>;
+}
+
+function ReturnNotice({ inspection, showUnit }: { inspection: Row; showUnit: boolean }) {
+  const notice = object(inspection.returnNotice);
+  const expectedDate = first(notice, 'expectedDate');
+  const physicalDate = first(notice, 'physicalDate');
+  const endDate = first(inspection, 'contract.endDate');
+  const referenceDate = first(notice, 'referenceDate');
+  const timing = first(notice, 'timing');
+  const result = first(notice, 'result');
+  const timingLabel = timing === 'EARLY' ? 'Trước hạn' : timing === 'ON_TIME' ? 'Đúng ngày hết hạn'
+    : timing === 'LATE' ? 'Sau hạn thuê' : 'Chưa xác định';
+
+  return <div className="staff-operation-unit">
+    {showUnit && <h3>{first(inspection, 'unit.unitCode')}</h3>}
+    <Facts items={facts([
+      ['Hạn thuê', endDate && <DateFact value={endDate} />],
+      ['Ngày dự kiến trả kho', expectedDate ? <><DateFact value={expectedDate} />{notice.expectedDateSource === 'CONTRACT_END' && ' (theo hạn thuê)'}</> : 'Chưa xác định'],
+      ['Ngày trả thực tế', physicalDate && <DateFact value={physicalDate} />],
+      [physicalDate ? 'Thời điểm trả so với hạn thuê' : 'Dự kiến so với hạn thuê', timingLabel],
+      ['Yêu cầu báo trước', typeof notice.requiredDays === 'number' ? `${notice.requiredDays} ngày` : 'Chưa có chính sách lưu trong hồ sơ'],
+      ['Báo trước thực tế', typeof notice.actualDays === 'number' ? `${notice.actualDays} ngày` : 'Chưa xác định'],
+      ['Mốc tính báo trước', referenceDate && <DateFact value={referenceDate} />],
+    ])} />
+    {result === 'MET' ? <Status value="PASS" text="Đủ thời hạn báo trước" /> : result === 'SHORT' ?
+      <Status value="ISSUE_FOUND" text="Không đủ thời hạn báo trước" /> : <Status value="PENDING" text="Chưa đủ dữ liệu đánh giá báo trước" />}
+  </div>;
 }
 
 function TransferUnit({ title, unit }: { title: string; unit: Row }) {

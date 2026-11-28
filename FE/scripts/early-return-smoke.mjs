@@ -37,7 +37,9 @@ async function open(role, width, path, mobile = false) {
       if (path === 'booking/catalog') return send({ products: [] });
       if (role === 'STAFF' && kind === 'support-requests' && id) return send({ message: 'Không tìm thấy yêu cầu hỗ trợ.' }, 404);
       if (kind === 'early-return-requests') return send({ page: 1, limit: 100, total: proposals.length, items: review() });
-      if (kind === 'deposit-settlements' && id === deposit.id && role === 'MANAGER') return send(deposit);
+      if (kind === 'deposit-settlements' && id === deposit.id && role === 'MANAGER') return send({
+        ...deposit, earlyReturnSettlement: proposals[0]?.closeoutReview ?? null,
+      });
       const approved = proposals.find(item => item.earlyReturnDecision === 'APPROVED');
       const currentRental = { ...rental, contracts: [{ ...contract, returnReadiness: { canReturn: Boolean(approved), totalOutstanding: 100,
         ...(approved ? { policy: 'PERIOD_CLOSEOUT_V1', earlyReturnBlockReason: null } : {}) }, earlyReturnEstimate: estimate }] };
@@ -52,19 +54,20 @@ async function open(role, width, path, mobile = false) {
       Object.assign(deposit, { status: 'SETTLED', refundMethod: body.method, refundedAt: new Date().toISOString() });
       return send(deposit);
     }
+    if (kind === 'deposit-settlements' && id === deposit.id && role === 'MANAGER' && parts.at(-1) === 'confirm-return-refund') {
+      assert.deepEqual(body, { depositAmount: deposit.status === 'APPROVED' ? deposit.refundAmount : 0, rentAmount: 100, refundConfirmed: true });
+      assert(req.headers()['idempotency-key']);
+      const now = new Date().toISOString();
+      if (body.depositAmount) Object.assign(deposit, { status: 'SETTLED', refundMethod: 'BANK_TRANSFER', refundedAt: now });
+      Object.assign(proposals[0].closeoutReview.rentRefund, { approvedAt: now, refundedAt: now });
+      return send(deposit);
+    }
     if (kind === 'support-requests' && role === 'CUSTOMER') {
       assert.equal(body.reservationId, reservation.id); assert.equal(body.subject, 'Đề nghị trả kho trước hạn'); assert.equal(body.category, 'OTHER'); assert.equal(body.rentalContractId, contract.id);
       const row = { ...body, id: 'early-proposal', supportCode: 'SUP-EARLY', status: 'OPEN', reservation, contract, createdAt: new Date().toISOString(), earlyReturnDecision: null,
         earlyReturnFinancialReview: { requestedDate: body.earlyReturnRequestedDate, reason: body.earlyReturnReason } }; proposals.push(row); return send(row, 201);
     }
     if (kind === 'early-return-requests' && role === 'MANAGER') {
-      if (parts.at(-1) === 'settlement-approval' || parts.at(-1) === 'refund-confirmation') {
-        assert.equal(body.amount, 100);
-        const refund = proposals[0].closeoutReview.rentRefund;
-        if (parts.at(-1) === 'settlement-approval') refund.approvedAt = new Date().toISOString();
-        else { assert(refund.approvedAt); refund.refundedAt = body.transferredAt; refund.reference = body.reference; }
-        return send(refund);
-      }
       assert.equal(body.reviewedEndDate, end); assert.equal(body.reviewedOutstandingAmount, 100); assert.equal(body.reviewedPaidAmount, 200); assert.equal(body.financialReviewConfirmed, true);
       if (stale) { stale = false; return send({ message: 'Công nợ vừa thay đổi. Tải lại để đối chiếu.' }, 409); }
       Object.assign(proposals[0], { status: 'RESOLVED', earlyReturnDecision: body.decision, earlyReturnForEndDate: end, financialReview: { policy: 'PERIOD_CLOSEOUT_V1' }, resolutionNote: 'Đã chấp thuận trả trước hạn. ' + body.note, resolvedAt: new Date().toISOString() }); return send(review()[0]);
@@ -93,6 +96,10 @@ try {
   const recordRefund = refund.page.getByRole('button', { name: 'Ghi nhận hoàn tiền', exact: true });
   await recordRefund.waitFor();
   assert(await recordRefund.isDisabled());
+  assert.equal(await refund.page.getByRole('region', { name: 'Xác nhận hoàn tiền' }).count(), 0);
+  await refund.page.getByRole('heading', { name: /^Hoàn tiền ·/ }).waitFor();
+  await refund.page.getByRole('navigation', { name: 'Đường dẫn' }).getByText('Hoàn tiền', { exact: true }).waitFor();
+  await refund.page.locator('.manager-sidebar').getByRole('link', { name: /^Hoàn tiền/ }).waitFor();
   assert.equal(await refund.page.getByLabel('Mã giao dịch hoàn tiền', { exact: true }).count(), 0);
   await refund.page.getByRole('checkbox', { name: 'Tôi đã hoàn tiền thực tế cho khách.' }).check();
   await recordRefund.click();
@@ -166,14 +173,30 @@ try {
     await handover.page.getByRole('button', { name: 'Hoàn tất nhận kho trả' }).click();
     await handover.page.getByText('Đã lưu thao tác thành công.').first().waitFor();
     await handover.context.close();
-    proposals[0].closeoutReview = { returnId: 'return-early', physicallyReturnedAt: new Date().toISOString(), closeout: { ...estimate, appliedAt: new Date().toISOString() }, rentRefund: {} };
-    const settlement = await open('MANAGER', width, '/manager/early-returns?record=early-proposal');
-    await settlement.page.getByRole('heading', { name: 'Quyết toán chính thức' }).waitFor();
-    await settlement.page.getByRole('button', { name: 'Duyệt quyết toán' }).click();
-    await settlement.page.getByLabel('Mã chuyển khoản').fill('REF-MOCK-01');
-    await settlement.page.getByLabel('Thời điểm chuyển khoản').fill('2026-11-20T04:00:00');
-    await settlement.page.getByRole('button', { name: /Xác nhận đã chuyển/ }).click();
-    await settlement.page.getByText(/REF-MOCK-01/).waitFor(); await settlement.context.close();
+    if (width === 1440) Object.assign(deposit, { status: 'APPROVED', outstandingAmount: 0, refundedAt: null });
+    proposals[0].closeoutReview = { returnId: 'return-early', physicallyReturnedAt: new Date().toISOString(), closeout: { ...estimate, appliedAt: new Date().toISOString() }, rentRefund: {}, depositSettlement: deposit };
+    const earlyReturnPath = '/manager/early-returns?record=early-proposal';
+    const depositPath = '/manager/operations/deposit-settlements/' + deposit.id;
+    const settlement = await open('MANAGER', width, earlyReturnPath);
+    await settlement.page.getByRole('link', { name: 'Xem hồ sơ hoàn tiền' }).click();
+    await settlement.page.waitForURL(url => url.pathname === depositPath);
+    const combined = settlement.page.getByRole('region', { name: 'Xác nhận hoàn tiền' });
+    await combined.getByText(width === 1440 ? '1.000.100 ₫' : '100 ₫', { exact: true }).last().waitFor();
+    await combined.getByText('Chi tiết miễn thu và hoàn tiền (2 hóa đơn)').click();
+    await combined.getByText('Hóa đơn gia hạn', { exact: false }).waitFor();
+    assert.equal(await settlement.page.getByLabel('Mã chuyển khoản').count(), 0);
+    assert.equal(await settlement.page.getByLabel('Thời điểm chuyển khoản').count(), 0);
+    assert.equal(await settlement.page.getByRole('button', { name: 'Ghi nhận hoàn tiền', exact: true }).count(), 0);
+    const confirm = combined.getByRole('button', { name: 'Xác nhận đã chuyển tiền' });
+    assert(await confirm.isDisabled());
+    await combined.getByRole('checkbox', { name: 'Tôi đã chuyển số tiền trên cho khách.' }).check();
+    await confirm.click();
+    await combined.getByText('Đã ghi nhận hoàn', { exact: false }).waitFor();
+    assert.equal(await confirm.count(), 0);
+    await settlement.context.close();
+    const linkedSettlement = await open('MANAGER', width, earlyReturnPath);
+    await linkedSettlement.page.getByText('Tiền thuê và dịch vụ đã hoàn', { exact: true }).waitFor();
+    await linkedSettlement.context.close();
     const operator = await open('STAFF', width, '/staff/support-requests/early-proposal'); await operator.page.getByText('Không tìm thấy yêu cầu hỗ trợ.', { exact: false }).waitFor(); assert.equal(await operator.page.getByRole('button', { name: 'Hoàn tất hỗ trợ', exact: true }).count(), 0); await operator.context.close();
     checks.push(`${width}px: proposal → stale ledger caught → Manager approval → Customer request → Staff handover → Manager settlement approval → refund recorded`);
   }

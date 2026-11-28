@@ -9,5 +9,6 @@ import { StaffActiveRentalsController } from './staff-active-rentals.controller.
   imports: [AuthModule],
   controllers: [CustomerActiveRentalsController, ManagerActiveRentalsController, StaffActiveRentalsController],
   providers: [ActiveRentalsService],
+  exports: [ActiveRentalsService],
 })
 export class ActiveRentalsModule {}

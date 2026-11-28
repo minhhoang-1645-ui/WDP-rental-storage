@@ -21,11 +21,6 @@ const catalog = [
   { code: 'DEHUMIDIFIER', name: 'Dehumidifier', kind: 'RENTAL', billingUnit: 'MONTH', unitPrice: 350000n, description: 'Máy hút ẩm.' },
 ] as const;
 
-const inventoryByCode: Record<string, { stockOnHand?: number; rentalCapacity?: number }> = {
-  PADLOCK_DISC: { stockOnHand: 30 }, PADLOCK_COMBINATION: { stockOnHand: 20 }, BOX_SMALL: { stockOnHand: 100 }, BOX_MEDIUM: { stockOnHand: 80 }, BOX_LARGE: { stockOnHand: 60 }, PACKING_TAPE: { stockOnHand: 50 }, BUBBLE_WRAP: { stockOnHand: 30 }, STRETCH_WRAP: { stockOnHand: 30 }, PACKING_PAPER: { stockOnHand: 40 }, MOVING_ROPE: { stockOnHand: 25 }, WORK_GLOVES: { stockOnHand: 40 },
-  UTILITY_DOLLY: { rentalCapacity: 6 }, FURNITURE_DOLLY: { rentalCapacity: 4 }, APPLIANCE_DOLLY: { rentalCapacity: 3 }, FURNITURE_PAD: { rentalCapacity: 20 }, SHELF_STANDARD: { rentalCapacity: 12 }, DEHUMIDIFIER: { rentalCapacity: 5 },
-};
-
 async function main() {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('This development catalog seed is disabled in production.');
@@ -54,9 +49,7 @@ async function main() {
           isActive: true,
         },
       });
-      const service = await prisma.additionalService.findUniqueOrThrow({ where: { code: item.code } });
-      const inventory = inventoryByCode[item.code];
-      await prisma.additionalServiceInventory.upsert({ where: { additionalServiceId: service.id }, update: inventory, create: { additionalServiceId: service.id, stockOnHand: inventory.stockOnHand ?? null, rentalCapacity: inventory.rentalCapacity ?? null } });
+      // Catalog only. Real facility supply must be configured explicitly by its manager.
     }
 
     const persisted = await prisma.additionalService.findMany({

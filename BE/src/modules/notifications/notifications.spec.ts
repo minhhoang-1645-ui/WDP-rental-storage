@@ -11,17 +11,118 @@ import { NotificationsController } from './notifications.controller.js';
 import { NotificationsService } from './notifications.service.js';
 import { NotificationSources } from './notification-sources.js';
 import { buildNotices, type NotificationData } from './notification-content.js';
+import { customerMobileNotices } from './notification-mobile-content.js';
+import { AuditService } from '../audit/audit.service.js';
+import { BusinessPolicyService } from '../policies/business-policy.service.js';
 
 const actor = (id: string, role: PublicUser['role']): PublicUser => ({ id, role, fullName: id, email: id + '@example.test', phone: '' });
-const staff = actor('staff-a', 'STAFF');
-const customer = actor('customer-a', 'CUSTOMER');
-const other = actor('customer-b', 'CUSTOMER');
-const manager = actor('manager', 'MANAGER');
-const admin = actor('admin', 'ADMIN');
+const staff = actor('staff-a', 'FACILITY_STAFF');
+const customer = actor('customer-a', 'STORAGE_CUSTOMER');
+const other = actor('customer-b', 'STORAGE_CUSTOMER');
+const manager = actor('manager', 'FACILITY_MANAGER');
+const admin = actor('admin', 'SYSTEM_ADMINISTRATOR');
 const accounts = [staff, customer, other, manager, admin];
 const at = '2026-11-18T10:00:00Z';
 const work = { id: 'meeting', status: 'CONFIRMED', assignedStaff: staff, appointmentCode: 'TECH-SECRET', createdAt: at, allocatedUnits: [{ unitCode: 'B12' }] };
-const userEvent = { id: 'notice-1', action: 'DISABLE_ACCOUNT', resource: 'users', resourceId: 'account-abc', outcome: 'SUCCESS', targetAccount: { fullName: 'Minh Anh', role: 'CUSTOMER' }, createdAt: at };
+const userEvent = { id: 'notice-1', action: 'DISABLE_ACCOUNT', resource: 'users', resourceId: 'account-abc', outcome: 'SUCCESS', targetAccount: { fullName: 'Minh Anh', role: 'STORAGE_CUSTOMER' }, createdAt: at };
+
+it('announces effective policies to Managers and Customers with role-specific links and stable tokens', () => {
+  const now = Date.parse(at);
+  const rule = { id: 'rule-v2', title: 'Báo trước khi trả kho', version: 2, effectiveFrom: at };
+  const data = { 'policy-effective': [rule] };
+  const [notice] = buildNotices(manager, data, now);
+  expect(notice).toMatchObject({ target: '/manager/policies', kind: 'policy-effective' });
+  expect(buildNotices(manager, data, now + 60_000)[0].token).toBe(notice.token);
+  expect(buildNotices(manager, data, now - 1)).toEqual([]);
+  const [customerNotice] = buildNotices(customer, data, now);
+  expect(customerNotice).toMatchObject({ target: '/customer/policies', actionLabel: '' });
+  expect(customerMobileNotices([customerNotice], data, now)[0].target).toBe('/customer/policies');
+  expect(buildNotices(customer, data, now + 60_000)[0].token).toBe(customerNotice.token);
+  expect(buildNotices(customer, data, now - 1)).toEqual([]);
+  for (const viewer of [staff, admin]) expect(buildNotices(viewer, data, now)).toEqual([]);
+  const staffData = { 'policy-effective': [{ ...rule, staffOperational: true }] };
+  expect(buildNotices(staff, staffData, now)[0]).toMatchObject({ target: '/staff/policies', kind: 'policy-effective' });
+  expect(buildNotices(staff, staffData, now - 1)).toEqual([]);
+});
+
+it('keeps concurrent Manager inbox requests scoped to the selected facility', async () => {
+  const rules = vi.fn().mockResolvedValue([{ id: 'rule', key: 'returnNoticeDays', version: 2, effectiveFrom: new Date(at) }]);
+  const db = {
+    user: { findFirst: vi.fn().mockResolvedValue({ id: manager.id }) },
+    facilityAccess: { findMany: vi.fn(async ({ where }) => where.facilityId === 'allowed' ? [{ facilityId: 'allowed' }] : []) },
+    businessRule: { findMany: rules },
+    notificationReceipt: { findMany: vi.fn().mockResolvedValue([]) },
+  };
+  const sources = { load: vi.fn().mockResolvedValue({}) };
+  const service = new NotificationsService(db as never, sources as never);
+  const [allowed, denied] = await Promise.all([
+    service.list({ ...manager, selectedFacilityId: 'allowed' }, {}),
+    service.list({ ...manager, selectedFacilityId: 'denied' }, {}),
+  ]);
+  expect(allowed.items).toHaveLength(1);
+  expect(denied.items).toEqual([]);
+  expect(rules).toHaveBeenCalledTimes(1);
+});
+
+it('shows one customer reminder per rental period using the Vietnam calendar', () => {
+  const row = { id: 'contract-1', customerId: customer.id, contractCode: 'HD1', status: 'ACTIVE', endDate: '2026-11-28', reminderDays: 7 };
+  const data = { 'contract-expiry': [row] };
+  expect(buildNotices(customer, data, Date.parse('2026-11-20T16:59:59Z'))).toEqual([]);
+  const now = Date.parse('2026-11-20T17:00:00Z');
+  const [notice] = buildNotices(customer, data, now);
+  expect(notice).toMatchObject({ title: 'Hợp đồng sắp hết hạn', important: true });
+  expect(customerMobileNotices([notice], data, now)[0].target).toBe('/customer/contracts/contract-1');
+  expect(buildNotices(customer, { 'contract-expiry': [{ ...row, reminderDays: 8 }] }, now)[0].token).toBe(notice.token);
+  expect(buildNotices(customer, data, Date.parse('2026-11-27T17:00:00Z'))).toEqual([]);
+  expect(buildNotices(other, data, now)).toEqual([]);
+});
+
+it('reminds the customer to arrange a return based on the contract notice period', () => {
+  const row = { id: 'return-contract', reservationId: 'booking', contractCode: 'HD1', endDate: '2026-11-28', returnNoticeDays: 7 };
+  const data = { 'rental-overdue': [row] };
+  const now = Date.parse('2026-11-20T17:00:00Z');
+  expect(buildNotices(customer, data, now - 1)).toEqual([]);
+  const [reminder] = buildNotices(customer, data, now);
+  expect(reminder).toMatchObject({ title: 'Nhắc báo trước khi trả kho', target: '/customer/rentals?reservation=booking' });
+  expect(customerMobileNotices([reminder], data, now)[0].target).toBe('/customer/rentals?rentalContractId=return-contract');
+  const overdueAt = Date.parse('2026-11-28T17:00:00Z');
+  const [overdue] = buildNotices(customer, { 'rental-overdue': [{ ...row, overdueOccupancy: { days: 1 } }] }, overdueAt);
+  expect(overdue.title).toBe('Kho đã quá hạn trả');
+  expect(overdue.token).not.toBe(reminder.token);
+});
+
+it('reminds only for a payable invoice within the configured lead period', () => {
+  const now = Date.parse('2026-11-25T17:00:00Z');
+  const row = { id: 'invoice', customerId: customer.id, invoiceCode: 'INV1', status: 'OPEN', balanceDue: 500, dueAt: '2026-11-29', reminderDays: 3 };
+  const data = { 'payment-due-reminder': [row] };
+  const notice = buildNotices(customer, data, now)[0];
+  expect(customerMobileNotices([notice], data, now)[0].target).toBe('/customer/invoices/invoice');
+  expect(buildNotices(customer, { ...data, 'payment-submissions': [{ invoice: { id: 'invoice' }, status: 'PENDING_VERIFICATION' }] }, now)).toEqual([]);
+  expect(buildNotices(customer, { 'payment-due-reminder': [{ ...row, status: 'PAID' }] }, now)).toEqual([]);
+});
+
+it('keeps one overdue refund receipt token through managerial review changes', () => {
+  const row = { id: 'refund', settlementCode: 'DS1', status: 'PENDING_REVIEW', refundDueOn: '2026-11-18', refundOverdue: true };
+  const [notice] = buildNotices(manager, { 'deposit-settlements': [row] });
+  expect(notice).toMatchObject({ title: 'Hồ sơ hoàn cọc quá hạn', at: '2026-11-18T17:00:00.000Z', important: true });
+  expect(buildNotices(manager, { 'deposit-settlements': [{ ...row, status: 'APPROVED' }] })[0].token).toBe(notice.token);
+});
+
+it('queries closure notices by the customer recipient and opens current rentals on mobile', async () => {
+  const event = { id: 'closure', createdAt: at, metadata: { status: 'CLOSING', facilityName: 'Cơ sở A', closureReason: 'Lý do nội bộ' } };
+  const count = vi.fn().mockResolvedValue(1);
+  const findMany = vi.fn().mockResolvedValue([event]);
+  const audit = new AuditService({ auditEvent: { count, findMany } } as unknown as PrismaService);
+  await audit.facilityLifecycleNotices(customer, { page: 1, limit: 10 });
+  expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({
+    metadata: { path: ['customerRecipientIds'], array_contains: [customer.id] },
+  }) }));
+  const data = { 'facility-lifecycle': [event] };
+  const notices = customerMobileNotices(buildNotices(customer, data), data);
+  expect(notices[0]).toMatchObject({ target: '/customer/rentals', important: true });
+  expect(notices[0]?.summary).toContain('đến hết hạn hợp đồng');
+  expect(notices[0]?.summary).not.toContain(event.metadata.closureReason);
+});
 
 it('does not surface bookings to Staff or reset a handover receipt on per-unit progress', () => {
   const baseline = buildNotices(staff, { appointments: [work] });
@@ -38,8 +139,10 @@ describe('notification HTTP API', () => {
   let app: INestApplication;
   let receipts: Map<string, Set<string>>;
   let data: Record<string, NotificationData>;
+  let policyVersions: { id: string; key: string; version: number; effectiveFrom: Date }[];
 
   beforeEach(async () => {
+    policyVersions = [];
     receipts = new Map();
     const inbox = (id: string, name: string) => Array.from({ length: 131 }, (_, index) => ({
       id: `${id}-${index}`, status: 'RESOLVED', supportCode: `SUP-${index}`,
@@ -64,7 +167,10 @@ describe('notification HTTP API', () => {
         NotificationsService, AuthGuard, RolesGuard,
         { provide: AuthService, useValue: { getUserByToken: (token: string) => accounts.find(user => user.id === token) } },
         { provide: NotificationSources, useValue: { load: (user: PublicUser) => Promise.resolve(data[user.id]) } },
-        { provide: PrismaService, useValue: { notificationReceipt: {
+        { provide: BusinessPolicyService, useValue: { value: vi.fn().mockImplementation(key => key === 'paymentReminderDays' ? 3 : 7),
+          staffApplied: async () => ({ updates: policyVersions.filter(row => row.key === 'returnNoticeDays')
+            .map(row => ({ ...row, title: 'Báo trước khi trả kho', scheduled: row.effectiveFrom.getTime() > Date.now() })) }) } },
+        { provide: PrismaService, useValue: { user: { findFirst: () => ({ id: manager.id }) }, facilityAccess: { findMany: () => [{ facilityId: 'facility-1' }] }, businessRule: { findMany: () => policyVersions }, notificationReceipt: {
           findMany: ({ where }: { where: { userId: string; token: { in: string[] } } }) =>
             where.token.in.filter(token => receipts.get(where.userId)?.has(token)).map(token => ({ token })),
           createMany: ({ data }: { data: { userId: string; token: string }[] }) => {
@@ -88,6 +194,33 @@ describe('notification HTTP API', () => {
   const get = (user: PublicUser, query = '') => request(app.getHttpServer()).get('/notifications' + query).set('Authorization', 'Bearer ' + user.id);
   const patch = (user: PublicUser, path: string) => request(app.getHttpServer()).patch('/notifications/' + path).set('Authorization', 'Bearer ' + user.id);
   const open = (user: PublicUser, token: string) => request(app.getHttpServer()).post('/notifications/' + token + '/open').set('Authorization', 'Bearer ' + user.id);
+
+  it('sends Staff only effective operational updates and records a read', async () => {
+    policyVersions.push(
+      { id: 'staff-effective', key: 'returnNoticeDays', version: 2, effectiveFrom: new Date(Date.now() - 1000) },
+      { id: 'staff-scheduled', key: 'returnNoticeDays', version: 3, effectiveFrom: new Date(Date.now() + 86_400_000) },
+      { id: 'financial', key: 'paymentOverdue', version: 2, effectiveFrom: new Date(Date.now() - 1000) },
+    );
+    const query = '?kind=policy-effective&view=unread';
+    const before = await get(staff, query).expect(200);
+    expect(before.body.items).toHaveLength(1);
+    expect(before.body.items[0].summary).toContain('Báo trước khi trả kho');
+    const result = await open(staff, before.body.items[0].token).expect(200);
+    expect(result.body.target).toBe('/staff/policies');
+    expect((await get(staff, query).expect(200)).body.items).toEqual([]);
+  });
+  it('opens an informational policy update in the Customer mobile inbox and tracks reads per account', async () => {
+    policyVersions.push({ id: 'effective-rule', key: 'paymentOverdue', version: 2, effectiveFrom: new Date(Date.now() - 1000) });
+    const query = '?client=mobile&kind=policy-effective';
+    const response = await get(customer, query + '&view=unread').expect(200);
+    expect(response.body.items).toHaveLength(1);
+    const [notice] = response.body.items;
+    expect(notice).toMatchObject({ title: 'Chính sách thuê kho đã cập nhật', canOpen: true, actionLabel: '' });
+    expect((await get(customer, query + '&view=action').expect(200)).body.items).toEqual([]);
+    expect((await open(customer, notice.token).query({ client: 'mobile' }).expect(200)).body.target).toBe('/customer/policies');
+    expect((await get(customer, query + '&view=unread').expect(200)).body.items).toEqual([]);
+    expect((await get(other, query + '&view=unread').expect(200)).body.items).toHaveLength(1);
+  });
 
   it('uses complete totals and deterministic server pages with filters and five recent entries', async () => {
     const seen = new Set<string>();
@@ -176,16 +309,16 @@ it('walks every upstream page and uses the authenticated actor in the Staff look
   const list = vi.fn(async (input: { page: number; limit: number }) => ({
     items: input.page === 1 ? [{ id: 'first' }] : [{ id: 'second' }], total: 101, limit: 100,
   }));
-  const stock = { listStaff: vi.fn().mockResolvedValue(page) };
   const sources = new NotificationSources(
-    { listOperationalAppointments: list } as never, {} as never, {} as never, {} as never, {} as never,
+    { listOperationalAppointments: list } as never, { relocationNotices: vi.fn().mockResolvedValue(page) } as never, {} as never, {} as never, {} as never,
     { list: vi.fn().mockResolvedValue(page) } as never, {} as never,
     { listStaff: vi.fn().mockResolvedValue(page) } as never, {} as never,
-    { listStaffReturns: vi.fn().mockResolvedValue(page) } as never, stock as never,
+    { listStaffReturns: vi.fn().mockResolvedValue(page) } as never,
     { listStaff: vi.fn().mockResolvedValue(page) } as never,
     { listForStaff: vi.fn().mockResolvedValue(page) } as never,
   );
-  expect((await sources.load(staff)).appointments).toEqual([{ id: 'first' }, { id: 'second' }]);
+  const notices = await sources.load(staff);
+  expect(notices).not.toHaveProperty('stock-movements');
+  expect(notices.appointments).toEqual([{ id: 'first' }, { id: 'second' }]);
   expect(list).toHaveBeenLastCalledWith({ page: 2, limit: 100 }, staff);
-  expect(stock.listStaff).toHaveBeenCalledWith(staff, { page: 1, limit: 100 });
 });

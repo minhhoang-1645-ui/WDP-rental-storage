@@ -1,9 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { PublicUser } from '../auth/auth.types.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { buildNotices, noticeKinds, noticeSearch, type Notice } from './notification-content.js';
 import { customerMobileNotices } from './notification-mobile-content.js';
 import { NotificationSources } from './notification-sources.js';
+import { facilityIds } from '../facility-access/facility-access.service.js';
+import { BusinessPolicyService, policyDefinitions, pricingDefinitions } from '../policies/business-policy.service.js';
 
 const views = ['all', 'unread', 'action'];
 const pageSizes = [5, 10, 20, 50];
@@ -28,19 +30,49 @@ function item(notice: Notice, read: Set<string>) {
 export class NotificationsService {
   private readonly pending = new Map<string, Promise<Notice[]>>();
 
-  constructor(private readonly prisma: PrismaService, private readonly sources: NotificationSources) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sources: NotificationSources,
+    private readonly policies: BusinessPolicyService = new BusinessPolicyService(prisma),
+  ) {}
 
   private snapshot(actor: PublicUser, mobile = false) {
-    const key = `${actor.role}:${actor.id}:${mobile}`;
-    const running = this.pending.get(key);
+    const key = `${actor.role}:${actor.id}:${actor.selectedFacilityId ?? ''}:${mobile}`;
+    const sharePending = actor.role !== 'FACILITY_STAFF' && actor.role !== 'FACILITY_MANAGER';
+    const running = sharePending ? this.pending.get(key) : undefined;
     if (running) return running;
-    const request = this.sources.load(actor).then(data => {
+    const request = this.sources.load(actor).then(async data => {
       const now = Date.now();
+      if (actor.role === 'STORAGE_CUSTOMER' && data.contracts?.length) {
+        const days = await this.policies.value('renewalReminderDays', this.prisma, new Date(now));
+        data = { ...data, 'contract-expiry': data.contracts.map(row => ({ ...row, reminderDays: days })) };
+      }
+      if (actor.role === 'STORAGE_CUSTOMER' && data.invoices?.length) {
+        const days = await this.policies.value('paymentReminderDays', this.prisma, new Date(now));
+        data = { ...data, 'payment-due-reminder': data.invoices.map(row => ({ ...row, reminderDays: days })) };
+      }
+      if (actor.role === 'STORAGE_CUSTOMER' || (actor.role === 'FACILITY_MANAGER' && (await facilityIds(this.prisma, actor)).length)) {
+        const effective = await this.prisma.businessRule.findMany({
+          where: { facilityId: null, storageTypeId: null,
+            key: { in: [...Object.keys(policyDefinitions), ...Object.keys(pricingDefinitions)] },
+            effectiveFrom: { lte: new Date(now) }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: new Date(now) } }] },
+          select: { id: true, key: true, version: true, effectiveFrom: true },
+        });
+        data = { ...data, 'policy-effective': effective.map(row => ({ ...row, title: policyDefinitions[row.key as keyof typeof policyDefinitions]?.title ?? pricingDefinitions[row.key as keyof typeof pricingDefinitions]?.title, effectiveFrom: row.effectiveFrom.toISOString() })) };
+      }
+      if (actor.role === 'FACILITY_STAFF') {
+        const catalog = await this.policies.staffApplied(actor).catch((error: unknown) => {
+          if (error instanceof ForbiddenException) return null;
+          throw error;
+        });
+        if (catalog) data = { ...data, 'policy-effective': catalog.updates.filter(update => !update.scheduled)
+          .map(({ key, title, version, effectiveFrom }) => ({ staffOperational: true, id: key + ':' + version, title, version, effectiveFrom: effectiveFrom.toISOString() })) };
+      }
       const notices = buildNotices(actor, data, now);
       return mobile ? customerMobileNotices(notices, data, now) : notices;
     })
-      .finally(() => this.pending.delete(key));
-    this.pending.set(key, request);
+      .finally(() => { if (sharePending) this.pending.delete(key); });
+    if (sharePending) this.pending.set(key, request);
     return request;
   }
 
@@ -67,7 +99,7 @@ export class NotificationsService {
       || typeof kind !== 'string' || kind && !Object.hasOwn(noticeKinds, kind)
       || typeof search !== 'string' || search.length > 100) throw new BadRequestException('Bộ lọc thông báo không hợp lệ.');
 
-    const notices = await this.snapshot(actor, actor.role === 'CUSTOMER' && query.client === 'mobile');
+    const notices = await this.snapshot(actor, actor.role === 'STORAGE_CUSTOMER' && query.client === 'mobile');
     const seen = await this.receipts(actor.id, notices);
     const keyword = noticeSearch(search);
     const filtered = notices.filter(row =>
@@ -88,7 +120,7 @@ export class NotificationsService {
   async mark(actor: PublicUser, token: string, open = false, mobile = false) {
     if (!/^[a-f0-9]{64}$/.test(token)) throw new NotFoundException(unavailable);
     // Re-evaluate visibility with current assignment, ownership and dossier status before using a saved link.
-    const notice = (await this.snapshot(actor, mobile && actor.role === 'CUSTOMER')).find(row => row.token === token);
+    const notice = (await this.snapshot(actor, mobile && actor.role === 'STORAGE_CUSTOMER')).find(row => row.token === token);
     if (!notice || open && !notice.target) throw new NotFoundException(unavailable);
     await this.prisma.notificationReceipt.createMany({ data: [{ userId: actor.id, token }], skipDuplicates: true });
     return open ? { target: notice.target } : { read: true };

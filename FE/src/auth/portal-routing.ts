@@ -1,9 +1,10 @@
 import type { PublicUser } from "../types/booking";
 
 export function portalDestination(role: PublicUser["role"]) {
-  if (role === "MANAGER") return "/manager";
-  if (role === "STAFF") return "/staff";
-  if (role === "ADMIN") return "/admin";
+  if (role === 'BUSINESS_OPERATIONS_MANAGER') return '/operations';
+  if (role === "FACILITY_MANAGER") return "/manager";
+  if (role === "FACILITY_STAFF") return "/staff";
+  if (role === "SYSTEM_ADMINISTRATOR") return "/admin";
   return "/customer";
 }
 
@@ -12,7 +13,7 @@ export function operationPath(
   role: PublicUser["role"] | undefined,
   path: string,
 ) {
-  return role === "ADMIN"
+  return role === "SYSTEM_ADMINISTRATOR"
     ? /^\/manager(?=\/|\?|#|$)/.test(path) ? '/admin' : path
     : path;
 }
@@ -30,11 +31,11 @@ export function roleReturnPath(role: PublicUser["role"], value: unknown) {
   const root = portalDestination(role);
   const destination = new URL(path, "https://portal.invalid");
   const pathname = destination.pathname;
-  const ownWorkspace = role === 'ADMIN'
-    ? ['/admin', '/admin/users', '/admin/login-history', '/admin/activity', '/admin/settings', '/admin/settings/profile', '/admin/settings/security', '/admin/settings/appearance'].includes(pathname)
+  const ownWorkspace = role === 'SYSTEM_ADMINISTRATOR'
+    ? ['/admin', '/admin/facility-access', '/admin/users', '/admin/login-history', '/admin/activity', '/admin/settings', '/admin/settings/profile', '/admin/settings/security', '/admin/settings/appearance'].includes(pathname)
     : pathname === root || pathname.startsWith(root + "/");
   const customerBooking =
-    role === "CUSTOMER" &&
+    role === "STORAGE_CUSTOMER" &&
     (pathname === "/booking" || pathname.startsWith("/booking/") || pathname === '/claim-booking');
   return ownWorkspace || customerBooking
     ? pathname + destination.search + destination.hash

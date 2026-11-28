@@ -10,14 +10,14 @@ const statuses = ['REQUESTED', 'INSPECTION_IN_PROGRESS', 'ISSUE_FOUND', 'PENDING
 
 @Controller('staff/returns')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF')
+@Roles('FACILITY_STAFF')
 @ApiTags('Staff Return Inspection')
 @ApiBearerAuth('bearerAuth')
 export class StaffReturnsController {
   constructor(private readonly returns: ReturnsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách yêu cầu trả kho cho vận hành', description: 'STAFF/MANAGER. Không trả historical pricing hoặc billing amount.' })
+  @ApiOperation({ summary: 'Danh sách yêu cầu trả kho cho vận hành', description: 'FACILITY_STAFF/FACILITY_MANAGER. Không trả historical pricing hoặc billing amount.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'SM-B12-001' })
@@ -25,7 +25,7 @@ export class StaffReturnsController {
   @ApiQuery({ name: 'date', required: false, example: '2026-10-08' })
   @ApiOkResponse({ description: 'Customer contact, contracts/units, inspection progress và renewal context.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER không được phép.' })
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER không được phép.' })
   list(@Query() input: Record<string, unknown>, @Req() req: AuthenticatedRequest) { return this.returns.listStaffReturns(this.query(input), req.user!); }
 
   @Get(':id')
@@ -38,7 +38,7 @@ export class StaffReturnsController {
   @Post(':id/start-inspection')
   @ApiOperation({ summary: 'Bắt đầu kiểm tra', description: 'REQUESTED → INSPECTION_IN_PROGRESS. Chưa thay đổi Contract, allocation hoặc Unit.' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-RT01' })
-  @ApiOkResponse({ schema: { example: { returnCode: 'WDP-2026-AB12CD34-RT01', status: 'INSPECTION_IN_PROGRESS', inspectionStartedBy: { fullName: 'WDP Staff', role: 'STAFF' }, inspectionSummary: { total: 2, pending: 2, passed: 0, issues: 0 } } } })
+  @ApiOkResponse({ schema: { example: { returnCode: 'WDP-2026-AB12CD34-RT01', status: 'INSPECTION_IN_PROGRESS', inspectionStartedBy: { fullName: 'WDP Staff', role: 'FACILITY_STAFF' }, inspectionSummary: { total: 2, pending: 2, passed: 0, issues: 0 } } } })
   @ApiConflictResponse({ description: 'Trạng thái hoặc rental integrity không hợp lệ.' })
   start(@Req() request: AuthenticatedRequest, @Param('id') id: string) { return this.returns.startInspection(id, request.user!); }
 
@@ -59,7 +59,8 @@ export class StaffReturnsController {
   }
 
   @Post(':id/finalize')
-  @ApiOperation({ summary: 'Hoàn tất trả kho vật lý', description: 'Yêu cầu mọi inspection đã ghi kết quả; ISSUE_FOUND được phép. Transaction nguyên tử: Contract COMPLETED, allocation released, PASS → AVAILABLE, ISSUE_FOUND → MAINTENANCE và tạo DepositSettlement.' })
+  @ApiOperation({ summary: 'Hoàn tất trả kho vật lý', description: 'Yêu cầu đã kiểm tra từng ô, xác nhận kho trống và đã thu hồi quyền truy cập. Kho có lỗi hoặc bảo trì đang mở được giữ ở trạng thái MAINTENANCE.' })
+  @ApiBody({ schema: { type: 'object', required: ['unitsEmpty', 'accessRevoked'], properties: { unitsEmpty: { type: 'boolean', example: true }, accessRevoked: { type: 'boolean', example: true } } } })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-RT01' })
   @ApiOkResponse({ schema: { examples: {
     pass: { value: { returnCode: 'WDP-2026-AB12CD34-RT01', status: 'PENDING_SETTLEMENT', settlementStatus: 'APPROVED', inspections: [{ result: 'PASS', contract: { status: 'COMPLETED' }, unit: { status: 'AVAILABLE' } }] } },

@@ -15,7 +15,6 @@ import { EARLY_RETURN_SUBJECT, isEarlyReturnRequest, isCurrentEarlyReturnApprova
 import { isTransferRequest } from '@/utils/transfer-request';
 import { formatDate, formatMoney } from '@/utils/format';
 import { currentTimeMs, isCalendarDate, vietnamCalendarDate } from '@/utils/calendar-date';
-import type { StoredItem } from '@/stock/types';
 
 type Kind = 'transfers' | 'early-returns';
 type TransferSlot = { start: string; end: string };
@@ -37,6 +36,8 @@ function progress(row: Row, early: boolean): string {
   } else {
     const transfer = rows(row.transfers)[0];
     if (transfer?.status === 'COMPLETED') return 'Đã chuyển kho';
+    if (transfer?.customerMoveAction === 'REPORTED') return 'Đã báo chuyển đồ · Chờ kiểm tra';
+    if (transfer?.customerMoveAction === 'READY_TO_REPORT') return 'Đã bàn giao kho mới';
     if (transfer?.status === 'APPROVED') return 'Đã duyệt · Chờ chuyển kho';
     if (transfer?.status === 'REJECTED') return 'Đã từ chối';
     if (transfer?.status === 'REQUESTED') return 'Chờ xác nhận kho mới';
@@ -176,7 +177,22 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
   const record = detail.data;
   const validRecord = record && matches(record);
   const currentTransfer = !early && record && validRecord ? rows(record.transfers)[0] ?? {} : {};
-  const transferContractId = text(currentTransfer, 'contractId') || text(record ?? {}, 'contract.id');
+  async function reportMoveReady() {
+    const transferId = idOf(currentTransfer);
+    if (!transferId || currentTransfer.customerMoveAction !== 'READY_TO_REPORT' || sending.current) return;
+    sending.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await operationMutate('/customer/transfer-orders/' + encodeURIComponent(transferId) + '/move-ready', 'POST');
+      detail.refresh();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Chưa gửi được thông báo. Vui lòng thử lại.');
+    } finally {
+      sending.current = false;
+      setBusy(false);
+    }
+  }
   const linkedReturn = early && record?.earlyReturnDecision === 'APPROVED' ? rows(returns.data?.items).find(item =>
     text(item, 'reservation.id') === text(record, 'reservation.id') &&
     text(item, 'rentalContractId') === text(record, 'contract.id') && text(item, 'timing') === 'EARLY') : undefined;
@@ -272,9 +288,14 @@ export function CustomerRentalChange({ kind, id }: { kind: Kind; id?: string }) 
           {early && !text(linkedReturn ?? {}, 'physicallyReturnedAt') && typeof currentEstimate.outstandingAmount === 'number' ?
             <Text style={s.secondary}>Nếu trả hôm nay, còn phải trả {formatMoney(currentEstimate.outstandingAmount)}.</Text> : null}
         </View></View>
-        {currentTransfer.status === 'APPROVED' && transferContractId ? <TransferInventoryNotice
-          contractId={transferContractId} unitCode={text(currentTransfer, 'fromUnit.unitCode')}
-        /> : null}
+        {currentTransfer.customerMoveAction === 'WAITING_FOR_DESTINATION' && <Text style={s.secondary}>Chờ nhân viên bàn giao quyền truy cập kho mới trước khi chuyển đồ.</Text>}
+        {currentTransfer.customerMoveAction === 'READY_TO_REPORT' && <>
+          <Text style={s.secondary}>Sau khi tự chuyển đồ và dọn trống kho cũ, báo NestBox để nhân viên kiểm tra và thu hồi quyền truy cập kho cũ.</Text>
+          <Button title={busy ? 'Đang gửi…' : 'Tôi đã chuyển đồ xong'} disabled={busy} onPress={() => void reportMoveReady()} />
+        </>}
+        {currentTransfer.customerMoveAction === 'REPORTED' && <Text style={s.secondary}>Đã báo NestBox. Kho cũ vẫn thuộc hồ sơ của bạn cho đến khi nhân viên kiểm tra và thu hồi quyền truy cập.</Text>}
+        {currentTransfer.status === 'APPROVED' && !currentTransfer.customerMoveAction && <Text style={s.secondary}>Di chuyển đồ cá nhân theo lịch hẹn và dọn trống kho cũ để nhân viên kiểm tra hiện trạng.</Text>}
+        {error && !creating && <Text accessibilityRole="alert" style={s.secondary}>{error}</Text>}
         <Text style={s.section}>Nội dung đã gửi</Text><Text style={s.body}>{text(record, 'description')}</Text>
         {text(record, 'resolutionNote') || text(currentTransfer, 'rejectionReason') ? <View style={styles.notice}><View style={styles.grow}>
           <Text style={s.body}>Phản hồi của NestBox</Text><Text style={s.secondary}>{text(currentTransfer, 'rejectionReason') || text(record, 'resolutionNote')}</Text>
@@ -309,25 +330,6 @@ function TransferScheduleNotice({ schedule, closed }: { schedule: Row; closed: b
         <Text style={s.secondary}>Lịch mong muốn · {formatDate(start.toISOString())} · {vietnamTime.format(start)}–{vietnamTime.format(end)}</Text>
         <Text style={styles.status}>{closed ? 'Lịch đề xuất trong hồ sơ' : 'Chờ xác nhận lịch'}</Text>
       </> : <Text style={s.secondary}>Chưa có lịch hẹn</Text>}
-    </View>
-  </View>;
-}
-
-function TransferInventoryNotice({ contractId, unitCode }: { contractId: string; unitCode: string }) {
-  const query = 'rentalContractId=' + encodeURIComponent(contractId);
-  const inventory = useResource<StoredItem[]>('/customer/stored-items?' + query);
-  const count = (inventory.data ?? []).filter(item => item.balance > 0).length;
-  if (inventory.loading) return <Text style={s.secondary}>Đang kiểm tra hàng còn lưu ở kho nguồn…</Text>;
-  if (inventory.error) return <ErrorState message="Chưa kiểm tra được hàng còn lưu ở kho nguồn." onRetry={inventory.refresh} />;
-  if (!inventory.data || !count) return null;
-
-  return <View style={[styles.notice, styles.waiting]}>
-    <Info color="#9A5108" size={18} />
-    <View style={styles.grow}>
-      <Text style={s.body}>Còn {count} mặt hàng tại {unitCode ? 'kho ' + unitCode : 'kho nguồn'}</Text>
-      <Text style={s.secondary}>Gửi phiếu xuất và phối hợp với nhân viên lấy hết hàng ra trước khi bàn giao kho cũ.</Text>
-      <CustomerActionRow title="Xem hàng đang lưu" path={'/customer/stored-items?' + query + '&tab=inventory'} />
-      <CustomerActionRow title="Tạo phiếu xuất hàng" path={'/customer/stored-items?' + query + '&tab=movements&create=1&type=OUT'} />
     </View>
   </View>;
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { TransferCommercialService } from './transfer-commercial.service.js';
+import { businessToday } from '../../business-date.js';
 
 const periodStart = new Date('2099-01-01');
 const periodEnd = new Date('2099-02-01');
@@ -86,6 +87,24 @@ describe('transfer invoice protection', () => {
     await expect(service.apply(tx as never, { ...transfer, customerAcceptedAt: null, commercialSignedSnapshot: null })).rejects.toThrow('Khách cần ký');
     expect(tx.invoice.create).not.toHaveBeenCalled();
     expect(tx.rentalContract.update).not.toHaveBeenCalled();
+  });
+  it('honors the fee on a previously signed addendum when completing the transfer', async () => {
+    const tx = setup();
+    const date = businessToday();
+    const next = new Date(+date + 86_400_000);
+    const paid = { ...invoice, status: 'PAID', amountPaid: invoice.totalAmount, balanceDue: 0n };
+    tx.invoice.findUniqueOrThrow.mockResolvedValue(paid);
+    tx.invoice.create.mockResolvedValue({ id: 'adjustment' });
+    const dateOnly = (value: Date) => value.toISOString().slice(0, 10);
+    const snapshot = { ...transfer.commercialSnapshot, futureInvoices: [], adjustmentTerms: {
+      invoiceId: invoice.id, fee: 35_000, feeVersion: 4, moveDate: dateOnly(date), periodStart: dateOnly(date), periodEnd: dateOnly(next),
+      oldRate: 1_500_000, newRate: 1_500_000, currentDeposit: 1_500_000, targetDeposit: 1_500_000,
+    } };
+    expect(await service.apply({ ...tx, payment: { aggregate: vi.fn().mockResolvedValue({ _sum: { amount: paid.amountPaid } }) } } as never,
+      { ...transfer, id: 'transfer', commercialSnapshot: snapshot })).toMatchObject({ fee: 35_000, amountDue: 35_000 });
+    expect(tx.invoice.create).toHaveBeenCalledExactlyOnceWith({ data: expect.objectContaining({
+      chargeAmount: 35_000n, pricingSnapshot: expect.objectContaining({ fee: 35_000, feeVersion: 4 }),
+    }) });
   });
   it('blocks a commercial change on a multi-unit reservation', async () => {
     const tx = setup();

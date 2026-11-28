@@ -11,14 +11,14 @@ const unitStatuses = ['AVAILABLE', 'RESERVED', 'OCCUPIED', 'MAINTENANCE'] as con
 @Controller(['manager/units', 'staff/management/units'])
 @StaffLookup()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER')
+@Roles('FACILITY_STAFF', 'FACILITY_MANAGER')
 @ApiTags('Manager Storage Unit')
 @ApiBearerAuth('bearerAuth')
 export class ManagerUnitsController {
   constructor(private readonly manager: ManagerService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách kho vật lý', description: 'STAFF. API chỉ đọc, không thay đổi trạng thái vật lý.' })
+  @ApiOperation({ summary: 'Danh sách kho vật lý', description: 'FACILITY_STAFF. API chỉ đọc, không thay đổi trạng thái vật lý.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20, description: '1–100.' })
   @ApiQuery({ name: 'search', required: false, example: 'A-01', description: 'Tìm một phần unit code, không phân biệt hoa thường.' })
@@ -32,18 +32,18 @@ export class ManagerUnitsController {
   @ApiForbiddenResponse({ description: 'Chỉ nhân viên vận hành và quản lý đọc báo cáo được truy cập.' })
   list(@Query() query: Record<string, unknown>, @Req() request: AuthenticatedRequest) {
     const parsed = this.parseListQuery(query);
-    return request.user!.role === 'STAFF' ? this.manager.listStaffUnits(parsed, request.user!.id) : this.manager.listUnits(parsed);
+    return request.user!.role === 'FACILITY_STAFF' ? this.manager.listStaffUnits(parsed, request.user!.id) : this.manager.listUnits(parsed, request.user!);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Chi tiết kho vật lý', description: 'STAFF. Chấp nhận database id hoặc unit code.' })
+  @ApiOperation({ summary: 'Chi tiết kho vật lý', description: 'FACILITY_STAFF. Chấp nhận database id hoặc unit code.' })
   @ApiParam({ name: 'id', example: 'SM-B12-01' })
   @ApiOkResponse({ description: 'Thông tin vật lý, allocation hiện tại, tương lai và lịch sử ReservationUnit liên quan.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ nhân viên vận hành và quản lý đọc báo cáo được truy cập.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy kho vật lý.' })
   get(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
-    return request.user!.role === 'STAFF' ? this.manager.getStaffUnit(id, request.user!.id) : this.manager.getUnit(id);
+    return request.user!.role === 'FACILITY_STAFF' ? this.manager.getStaffUnit(id, request.user!.id) : this.manager.getUnit(id, request.user!);
   }
 
   private parseListQuery(query: Record<string, unknown>): UnitListQuery {

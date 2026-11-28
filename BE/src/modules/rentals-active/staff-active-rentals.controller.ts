@@ -7,7 +7,7 @@ import { ActiveRentalsService, type ActiveRentalListQuery } from './active-renta
 
 @Controller('staff/rentals')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF')
+@Roles('FACILITY_STAFF')
 @ApiTags('Staff Active Rental')
 @ApiBearerAuth('bearerAuth')
 export class StaffActiveRentalsController {
@@ -25,7 +25,7 @@ export class StaffActiveRentalsController {
   @ApiOkResponse({ description: 'Kho và hợp đồng đang thuê theo phạm vi phụ trách. assignmentsEnabled phản ánh cấu hình phân công kho.' })
   @ApiBadRequestResponse({ description: 'Filter hoặc pagination không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER không được phép.' })
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER không được phép.' })
   list(@Req() request: AuthenticatedRequest, @Query() query: Record<string, unknown>) {
     return this.rentals.listStaffRentals(request.user!, this.query(query));
   }
@@ -35,7 +35,7 @@ export class StaffActiveRentalsController {
   @ApiParam({ name: 'reservationId', example: 'WDP-2026-AB12CD34' })
   @ApiOkResponse({ description: 'Customer, active contracts, units và vị trí kho.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER không được phép.' })
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER không được phép.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy Active Rental.' })
   get(@Req() request: AuthenticatedRequest, @Param('reservationId') id: string) {
     return this.rentals.getStaffRental(request.user!, id);

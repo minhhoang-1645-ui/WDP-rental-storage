@@ -1,3 +1,6 @@
+import { assertListedPrice, lockPriceRange } from '../pricing/monthly-price-range.js';
+import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
+import { renewalTaskScope } from '../facility-access/task-access.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleInit, type OnModuleDestroy } from '@nestjs/common';
 import { isScheduledRenewalInvoice } from '../billing/renewal-invoice-schedule.js';
 import { ONLINE_PAYMENT_TTL_MS } from '../billing/online-payment-policy.js';
@@ -7,6 +10,7 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { PricingService } from '../pricing/pricing.service.js';
+import { loadPricingPolicy, type PricingPolicySnapshot } from '../policies/pricing-policy.js';
 import { snapshotHash, validateSignature } from '../contracts/signature.js';
 import { SigningOtpService, signedDocument, signedEnvelope, signatureVerification } from '../signing/signing-otp.service.js';
 import { DocumentPolicy } from '../documents/document-policy.js';
@@ -16,6 +20,7 @@ import { businessToday } from '../../business-date.js';
 import { contractReturnReadiness, returnInvoiceFields } from '../returns/contract-return-finance.js';
 import { closeoutPaymentAllowed, closeoutReservationSelect } from '../billing/renewal-invoice-schedule.js';
 import { openRenewalStatuses, renewalOverlapsUnits } from './renewal-scope.js';
+import { assertFacilityAllowsRenewal } from '../facilities/facility-booking.js';
 
 type DbClient = PrismaService | Prisma.TransactionClient;
 type PaymentPlan = 'PAY_MONTHLY' | 'PREPAID';
@@ -29,6 +34,8 @@ export interface RenewalListQuery {
 }
 
 type RenewalSnapshot = {
+  pricingPolicy?: PricingPolicySnapshot;
+  facilityId?: string;
   scope?: { reservationId: string; rentalContractId: string; contractCode: string; reservationUnitId: string; storageUnitId: string; unitCode: string };
   currency: 'VND';
   storageTypeId: string;
@@ -167,13 +174,18 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
         if (!reservation) throw new NotFoundException('Không tìm thấy đơn thuê.');
         const contract = this.customerContract(reservation, parsed.rentalContractId);
         const rental = this.assertActiveRental(reservation, contract.id);
+        const type = contract.reservationUnit.storageUnit.storageType;
+        await assertFacilityAllowsRenewal(tx, type.facilityId, true);
+        await lockPriceRange(tx, type.facilityId, true);
+        await tx.$queryRaw`SELECT id FROM "StorageType" WHERE id = ${type.id} FOR SHARE`;
         await this.lockUnits(tx, rental.unitIds);
         const requestedEndDate = this.addCalendarMonths(contract.endDate, parsed.termMonths);
         await this.assertNoAllocationConflict(tx, rental.contracts, contract.endDate, requestedEndDate);
         await this.assertNoOperationalConflict(tx, reservation, rental.contracts);
-        const snapshot = this.contractQuote(reservation, contract, parsed.termMonths, parsed.paymentPlan);
+        const snapshot = await this.contractQuote(tx, reservation, contract, parsed.termMonths, parsed.paymentPlan, true);
         if (input.expectedTotalAmount !== undefined && input.expectedTotalAmount !== snapshot.totalAmount
-            || input.expectedEndDate !== undefined && input.expectedEndDate !== snapshot.requestedEndDate) {
+            || input.expectedEndDate !== undefined && input.expectedEndDate !== snapshot.requestedEndDate
+            || input.expectedPricingVersion !== undefined && input.expectedPricingVersion !== this.quoteVersion(snapshot)) {
           throw new ConflictException({ code: 'RENEWAL_QUOTE_CHANGED', message: 'Giá hoặc hạn thuê đã thay đổi. Vui lòng tải lại báo giá.' });
         }
         const created = await tx.renewalRequest.create({
@@ -209,8 +221,12 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     });
     if (!reservation) throw new NotFoundException('Không tìm thấy đơn thuê.');
     const contract = this.customerContract(reservation, parsed.rentalContractId);
-    this.assertActiveRental(reservation, contract.id);
-    return this.contractQuote(reservation, contract, parsed.termMonths, parsed.paymentPlan);
+    const rental = this.assertActiveRental(reservation, contract.id);
+    await assertFacilityAllowsRenewal(this.prisma, contract.reservationUnit.storageUnit.storageType.facilityId);
+    const quote = await this.contractQuote(this.prisma, reservation, contract, parsed.termMonths, parsed.paymentPlan);
+    await this.assertNoAllocationConflict(this.prisma, rental.contracts, rental.endDate, this.addCalendarMonths(rental.endDate, parsed.termMonths));
+    await this.assertNoOperationalConflict(this.prisma, reservation, rental.contracts);
+    return { ...quote, pricingVersion: this.quoteVersion(quote) };
   }
 
   listCustomerRenewals(customerId: string, page: number, limit: number) {
@@ -224,7 +240,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async acceptCustomerAppendix(customer: PublicUser, id: string, input: Record<string, unknown>) {
-    if (customer.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ Customer được xác nhận phụ lục của mình.');
+    if (customer.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException('Chỉ Customer được xác nhận phụ lục của mình.');
     const acceptanceName = typeof input.acceptanceName === 'string' ? input.acceptanceName.trim() : '';
     if (acceptanceName.length < 2 || acceptanceName.length > 120) throw new BadRequestException('Họ tên xác nhận phải dài 2–120 ký tự.');
     const identity = await this.prisma.renewalRequest.findFirst({ where: { OR: [{ id }, { renewalCode: id }], reservation: { customerId: customer.id } }, select: { id: true } });
@@ -256,6 +272,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
         if (current.status !== 'PENDING') return current;
         await this.lockReservation(tx, current.reservationId);
         const rental = this.assertActiveRental(current.reservation, current.rentalContractId);
+        for (const contract of rental.contracts) await assertFacilityAllowsRenewal(tx,contract.reservationUnit.storageUnit.storageType.facilityId,true);
         this.assertExpectedEnd(current, rental.endDate);
         await this.lockUnits(tx, rental.unitIds);
         await this.assertNoAllocationConflict(tx, rental.contracts, current.previousEndDate, current.requestedEndDate, current.id);
@@ -276,8 +293,9 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  listManagerRenewals(query: RenewalListQuery) {
-    const filters: Prisma.RenewalRequestWhereInput[] = [];
+  listManagerRenewals(query: RenewalListQuery, actor: PublicUser) {
+    managerReservationScope(actor);
+    const filters: Prisma.RenewalRequestWhereInput[] = [renewalTaskScope(actor)];
     if (query.status) filters.push({ status: query.status });
     if (query.search) filters.push({ OR: [
       { renewalCode: { contains: query.search, mode: 'insensitive' } },
@@ -291,8 +309,9 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     return this.page(filters.length ? { AND: filters } : {}, query, true);
   }
 
-  async getManagerRenewal(id: string) {
+  async getManagerRenewal(id: string, actor: PublicUser) {
     const record = await this.find(id, this.prisma);
+    await assertManagerRecordAccess(this.prisma,actor,record.rentalContractId ? {rentalContractId:record.rentalContractId} : {reservationId:record.reservationId});
     return this.toRenewal(record, true);
   }
 
@@ -305,10 +324,12 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
         await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "RenewalRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
         const current = await tx.renewalRequest.findUnique({ where: { id: identity.id }, include: this.include() });
         if (!current) throw new NotFoundException('Không tìm thấy yêu cầu gia hạn.');
+      await assertManagerRecordAccess(tx,actor,current.rentalContractId ? {rentalContractId:current.rentalContractId} : {reservationId:current.reservationId});
         if (['APPROVED_PENDING_PAYMENT', 'COMPLETED'].includes(current.status)) return this.toRenewal(current, true);
         if (current.status !== 'PENDING') throw new ConflictException('Chỉ Renewal PENDING mới được duyệt.');
         await this.lockReservation(tx, current.reservationId);
         const rental = this.assertActiveRental(current.reservation, current.rentalContractId);
+        for (const contract of rental.contracts) await assertFacilityAllowsRenewal(tx,contract.reservationUnit.storageUnit.storageType.facilityId,true);
         this.assertExpectedEnd(current, rental.endDate);
         await this.lockUnits(tx, rental.unitIds);
         await this.assertNoAllocationConflict(tx, rental.contracts, current.previousEndDate, current.requestedEndDate, current.id);
@@ -339,6 +360,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
       await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "RenewalRequest" WHERE "id" = ${identity.id} FOR UPDATE`);
       const current = await tx.renewalRequest.findUnique({ where: { id: identity.id } });
       if (!current) throw new NotFoundException('Không tìm thấy yêu cầu gia hạn.');
+      await assertManagerRecordAccess(tx,actor,current.rentalContractId ? {rentalContractId:current.rentalContractId} : {reservationId:current.reservationId});
       if (current.status === 'REJECTED') return this.toRenewal(await this.find(current.id, tx), true);
       if (current.status !== 'PENDING') throw new ConflictException('Chỉ Renewal PENDING mới được từ chối.');
       const updated = await tx.renewalRequest.update({
@@ -467,7 +489,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
         create: {
           invoiceCode: `${renewal.renewalCode}-I${String(cycle).padStart(2, '0')}`,
           reservationId: renewal.reservationId, renewalRequestId: renewal.id, type: 'RENEWAL', billingCycle: null, renewalCycle: cycle,
-          storageTypeIdSnapshot: snapshot.storageTypeId, pricingSnapshot: { ...snapshot, breakdown },
+          storageTypeIdSnapshot: snapshot.storageTypeId, facilityIdSnapshot: snapshot.facilityId ?? null, pricingSnapshot: { ...snapshot, breakdown },
           billingPeriodStart: start, billingPeriodEnd: end, dueAt: start, status: 'OPEN', rentalAmount,
           depositAmount: 0n, totalAmount: rentalAmount, amountPaid: 0n, balanceDue: rentalAmount, currency: 'VND',
         },
@@ -509,35 +531,60 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     return { contracts, endDate, unitIds: contracts.map(contract => contract.reservationUnit.storageUnitId) };
   }
 
-  private contractQuote(reservation: RenewalRental, contract: RenewalContract, termMonths: number, paymentPlan: PaymentPlan): RenewalSnapshot {
+  private async contractQuote(db: DbClient, reservation: RenewalRental, contract: RenewalContract, termMonths: number, paymentPlan: PaymentPlan, lockVersion = false): Promise<RenewalSnapshot> {
+    const now = new Date();
+    const policy = await loadPricingPolicy(db, now);
     const start = contract.endDate;
     const end = this.addCalendarMonths(start, termMonths);
+    const renewalPolicy = policy.renewal.value;
+    const daysBeforeEnd = (+start - +businessToday(now)) / 86_400_000;
+    if (daysBeforeEnd <= 0 || daysBeforeEnd < renewalPolicy.closesDaysBefore || daysBeforeEnd > renewalPolicy.opensDaysBefore) {
+      throw new ConflictException({ code: 'RENEWAL_WINDOW_CLOSED', message: 'Hợp đồng đang ngoài thời gian cho phép gửi yêu cầu gia hạn.' });
+    }
     const original = reservation.quoteSnapshot as { monthlyUnitPrice?: unknown };
     const effective = contract.rateEffectiveFrom;
-    if (effective && effective > start && effective < end) {
+    if (renewalPolicy.priceMode === 'CONTRACT_RATE' && effective && effective > start && effective < end) {
       throw new ConflictException('Đơn giá thay đổi giữa kỳ đề nghị gia hạn. Cần đối soát báo giá.');
     }
     const allocation = contract.reservationUnit;
     const unit = allocation.storageUnit;
     const product = unit.storageType;
-    const rate = effective ? effective <= start ? Number(contract.currentMonthlyRate) : original.monthlyUnitPrice : Number(product.monthlyRate);
-    if (!Number.isSafeInteger(rate) || Number(rate) <= 0 || contract.currentMonthlyRate !== null && !effective) {
+    const previousRenewal = renewalPolicy.priceMode === 'CONTRACT_RATE' ? await db.renewalRequest.findFirst({
+      where: {
+        reservationId: reservation.id, status: 'COMPLETED', previousEndDate: { lte: start },
+        OR: [{ rentalContractId: contract.id }, { rentalContractId: null }],
+      },
+      orderBy: [{ previousEndDate: 'desc' }, { id: 'desc' }],
+      select: { previousEndDate: true, quoteSnapshot: true },
+    }) : null;
+    const transferRateEffective = Boolean(effective && effective <= start);
+    const renewalRate = (previousRenewal?.quoteSnapshot as { monthlyUnitPrice?: unknown } | undefined)?.monthlyUnitPrice;
+    const contractRate = previousRenewal && (!transferRateEffective || previousRenewal.previousEndDate >= effective!)
+      ? renewalRate : transferRateEffective ? Number(contract.currentMonthlyRate) : original.monthlyUnitPrice;
+    const rate = renewalPolicy.priceMode === 'CURRENT_LIST_PRICE' ? Number(product.monthlyRate) : contractRate;
+    if (renewalPolicy.priceMode === 'CURRENT_LIST_PRICE') await assertListedPrice(db, product, lockVersion);
+    if (!Number.isSafeInteger(rate) || Number(rate) <= 0 ||
+        renewalPolicy.priceMode === 'CONTRACT_RATE' && contract.currentMonthlyRate !== null && !effective) {
       throw new ConflictException('Chưa xác định được đơn giá hiệu lực của hợp đồng.');
     }
     const startDate = this.isoDate(start);
     const endDate = this.isoDate(end);
     const quote = this.pricing.calculate({ ...product, monthlyRate: new Prisma.Decimal(Number(rate)) }, {
       storageTypeId: product.id, quantity: 1, startDate, endDate, paymentPlan,
-    });
+    }, [], policy, true);
     if (quote.billingMode !== 'MONTHLY' || quote.termMonths !== termMonths) throw new ConflictException('Không thể lập báo giá gia hạn theo tháng.');
     return {
       scope: { reservationId: reservation.id, rentalContractId: contract.id, contractCode: contract.contractCode,
         reservationUnitId: allocation.id, storageUnitId: unit.id, unitCode: unit.unitNumber },
-      currency: 'VND', storageTypeId: product.id, storageTypeName: product.name, quantity: 1,
+      currency: 'VND', pricingPolicy: policy, storageTypeId: product.id, storageTypeName: product.name, quantity: 1, facilityId: product.facilityId,
       previousEndDate: startDate, renewalStartDate: startDate, requestedEndDate: endDate, termMonths, paymentPlan,
       monthlyUnitPrice: quote.monthlyUnitPrice, baseRentalAmount: quote.baseRentalAmount, discountPercent: quote.discountPercent,
       discountAmount: quote.discountAmount, rentalAmount: quote.rentalAmount, depositAmount: 0, totalAmount: quote.rentalAmount,
     };
+  }
+
+  private quoteVersion(snapshot: RenewalSnapshot) {
+    return snapshotHash(snapshot);
   }
 
   private async assertNoOperationalConflict(tx: Prisma.TransactionClient, reservation: RenewalRental, contracts: RenewalContract[], renewalId?: string) {
@@ -570,7 +617,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
     const unitIds = contracts.map(contract => contract.reservationUnit.storageUnitId);
     const allocation = await db.reservationUnit.findFirst({ where: {
       id: { notIn: contracts.map(contract => contract.reservationUnitId) }, storageUnitId: { in: unitIds }, releasedAt: null,
-      plannedStartDate: { lt: end }, plannedEndDate: { gt: start }, reservation: { status: 'CONFIRMED' },
+      plannedStartDate: { lt: end }, plannedEndDate: { gt: start },
     }, select: { id: true } });
     const approved = await db.renewalRequest.findFirst({ where: {
       id: { not: renewalId }, status: 'APPROVED_PENDING_PAYMENT', previousEndDate: { lt: end }, requestedEndDate: { gt: start },
@@ -606,6 +653,11 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
 
   private toRenewal(record: any, manager: boolean) {
     const scope = this.snapshot(record).scope;
+    const appendix = signedDocument(record.appendixSnapshot);
+    const historical = manager && ['COMPLETED', 'CANCELLED', 'REJECTED'].includes(record.status);
+    const appendixContracts: { contractCode?: string; unitCode?: string }[] = Array.isArray(appendix?.contracts) ? appendix.contracts : [];
+    const historicalUnit = (contract: RenewalContract) =>
+      appendixContracts.find(item => item?.contractCode === contract.contractCode)?.unitCode ?? null;
     const contracts = (record.reservation.contracts as RenewalContract[]).filter(contract => !record.rentalContractId || contract.id === record.rentalContractId);
     const invoices = record.invoices.filter((invoice: any) => invoice.amountPaid > 0n || !isScheduledRenewalInvoice(invoice)
       || closeoutPaymentAllowed(record.reservation, record.rentalContractId)).map((invoice: any) => ({
@@ -619,7 +671,8 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
       id: record.id, renewalCode: record.renewalCode, status: record.status,
       rentalContractId: record.rentalContractId ?? null,
       contracts: contracts.map(contract => ({ id: contract.id, contractCode: contract.contractCode, status: contract.status,
-        endDate: this.isoDate(contract.endDate), unitCode: scope?.unitCode ?? contract.reservationUnit.storageUnit.unitNumber })),
+        endDate: this.isoDate(contract.endDate), unitCode: scope?.unitCode ??
+          (historical ? historicalUnit(contract) : contract.reservationUnit.storageUnit.unitNumber) })),
       reservation: { id: record.reservation.id, reference: record.reservation.reservationCode, quantity: record.rentalContractId ? 1 : record.reservation.quantity,
         currentEndDate: this.isoDate(record.rentalContractId ? contracts[0]?.endDate ?? record.previousEndDate : record.reservation.endDate),
         storageType: { id: scope ? this.snapshot(record).storageTypeId : record.reservation.storageType.id, code: contracts[0]?.reservationUnit.storageUnit.storageType?.code ?? record.reservation.storageType.code,
@@ -700,7 +753,7 @@ export class RenewalsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private assertManager(actor: PublicUser) {
-    if (actor.role !== 'MANAGER') throw new ForbiddenException('Chỉ quản lý được quyết định yêu cầu gia hạn chờ xử lý.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ quản lý được quyết định yêu cầu gia hạn chờ xử lý.');
   }
 
   private lockUnits(tx: Prisma.TransactionClient, unitIds: string[]) {

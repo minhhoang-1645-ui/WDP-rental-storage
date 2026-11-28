@@ -11,7 +11,7 @@ import { destination } from '@/auth/routing';
 export default function LoginScreen() {
   const { user, login } = useAuth();
   const { paymentTransaction, paymentInvoice } = useLocalSearchParams<{ paymentTransaction?: string; paymentInvoice?: string }>();
-  const next = (role: Parameters<typeof destination>[0]): Href => role === 'CUSTOMER' &&
+  const next = (role: Parameters<typeof destination>[0]): Href => role === 'STORAGE_CUSTOMER' &&
     typeof paymentTransaction === 'string' && /^[\w-]{1,100}$/.test(paymentTransaction) &&
     typeof paymentInvoice === 'string' && /^[\w-]{1,100}$/.test(paymentInvoice)
     ? { pathname: '/customer/payment-result', params: { transaction: paymentTransaction, invoiceId: paymentInvoice } }

@@ -1,7 +1,7 @@
 import { readSessionEndNotice } from '../../auth/session-end';
 import { ArrowRight, LockKeyhole } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
-import { Link, Navigate, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../auth/auth-context";
 import { roleReturnPath } from "../../auth/portal-routing";
 import { Container } from "../../components/ui/Container";
@@ -10,10 +10,12 @@ import { PasswordInput } from '../../components/ui/PasswordInput';
 export function AuthPage({ mode }: { mode: "login" | "register" }) {
   const { user, loading, login, register } = useAuth();
   const [params] = useSearchParams();
+  const location = useLocation();
+  const requestedReturnTo = params.get('returnTo') ?? (location.state as { returnTo?: unknown } | null)?.returnTo;
   const [submitError, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submitLock = useRef(false);
-  const returnTo = roleReturnPath("CUSTOMER", params.get("returnTo"));
+  const returnTo = roleReturnPath("STORAGE_CUSTOMER", requestedReturnTo);
   if (loading)
     return (
       <section className="auth-page" role="status">
@@ -23,7 +25,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
   if (user)
     return (
       <Navigate
-        to={roleReturnPath(user.role, params.get("returnTo"))}
+        to={roleReturnPath(user.role, requestedReturnTo)}
         replace
       />
     );

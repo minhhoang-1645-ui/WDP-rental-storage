@@ -7,9 +7,24 @@ import type { AuthSession, PublicUser } from './auth.types.js';
 import { AccountDisabledException } from './auth.errors.js';
 
 const sessionEndMessage = {
+  FACILITY_ACCESS_REVOKED: 'Quyền truy cập cơ sở đã thay đổi. Vui lòng đăng nhập lại để tiếp tục.',
   SESSION_EXPIRED: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.',
   SESSION_INVALID: 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.',
 };
+function sessionDevice(userAgent?: string) {
+  if (!userAgent) return undefined;
+  const browser = /Edg(?:A|iOS)?\//.test(userAgent) ? 'Edge'
+    : /(?:Firefox|FxiOS)\//.test(userAgent) ? 'Firefox'
+    : /(?:Chrome|CriOS)\//.test(userAgent) ? 'Chrome'
+    : /Safari\//.test(userAgent) ? 'Safari' : undefined;
+  const platform = /Android/i.test(userAgent) ? 'Android'
+    : /iPhone|iPad|iPod/i.test(userAgent) ? 'iOS'
+    : /Windows/i.test(userAgent) ? 'Windows'
+    : /Macintosh/i.test(userAgent) ? 'macOS'
+    : /Linux/i.test(userAgent) ? 'Linux' : undefined;
+  return [browser, platform].filter(Boolean).join(' · ') || undefined;
+}
+
 const sessionEnded = (code: keyof typeof sessionEndMessage) => new UnauthorizedException({ statusCode: 401, code, message: sessionEndMessage[code] });
 
 @Injectable()
@@ -22,7 +37,7 @@ export class AuthService {
 
   constructor(@Inject(UserRepository) private readonly users: UserRepository) {}
 
-  async register(input: Record<string, unknown>): Promise<AuthSession> {
+  async register(input: Record<string, unknown>, userAgent?: string): Promise<AuthSession> {
     this.assertBody(input);
     const fullName = this.requiredText(input.fullName, 'Họ và tên', 2, 120);
     const email = this.email(input.email);
@@ -31,11 +46,11 @@ export class AuthService {
     if (await this.users.findByEmail(email)) throw new ConflictException('Email này đã được đăng ký.');
     const salt = randomBytes(16).toString('hex');
     const passwordHash = 'scrypt$' + salt + '$' + (await this.hashPassword(password, salt)).toString('hex');
-    const user = await this.users.create({ fullName, email, phone, passwordHash, role: 'CUSTOMER' });
-    return this.createSession(user);
+    const user = await this.users.create({ fullName, email, phone, passwordHash, role: 'STORAGE_CUSTOMER' });
+    return this.createSession(user, false, userAgent);
   }
 
-  async login(input: Record<string, unknown>, remoteAddress?: string): Promise<AuthSession> {
+  async login(input: Record<string, unknown>, remoteAddress?: string, userAgent?: string): Promise<AuthSession> {
     this.assertBody(input);
     const email = this.email(input.email);
     const password = this.password(input.password, 1);
@@ -45,16 +60,17 @@ export class AuthService {
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng.');
     }
     if (user.accountStatus === 'DISABLED') throw new AccountDisabledException(user);
-    return this.createSession(user, input.rememberMe === true);
+    return this.createSession(user, input.rememberMe === true, userAgent);
   }
 
-  async createInternalUser(input: Record<string, unknown>) {
+  async createInternalUser(input: Record<string, unknown>, actor: PublicUser) {
+    await this.users.authorizeAdministrator(actor.id);
     this.assertBody(input);
     const fullName = this.requiredText(input.fullName, 'Họ và tên', 2, 120);
     const email = this.email(input.email);
     const phone = this.phone(input.phone);
     const role = input.role;
-    if (role !== 'STAFF' && role !== 'MANAGER') throw new BadRequestException('Admin chỉ được tạo STAFF hoặc MANAGER.');
+    if (role !== 'FACILITY_STAFF' && role !== 'FACILITY_MANAGER' && role !== 'BUSINESS_OPERATIONS_MANAGER') throw new BadRequestException('Chỉ được tạo tài khoản nhân viên, quản lý cơ sở hoặc điều hành kinh doanh.');
     if (await this.users.findByEmail(email)) throw new ConflictException('Email này đã được đăng ký.');
     const password = this.password(input.password, 8);
     const salt = randomBytes(16).toString('hex');
@@ -66,6 +82,7 @@ export class AuthService {
     const account = token ? await this.users.findSessionAccount(this.tokenKey(token)) : null;
     if (!account) throw sessionEnded('SESSION_INVALID');
     if (account.revokedByDisable) throw new AccountDisabledException();
+    if (account.revokedAt) throw sessionEnded(account.revocationReason === 'FACILITY_ACCESS_REVOKED' ? 'FACILITY_ACCESS_REVOKED' : 'SESSION_INVALID');
     if (account.expiresAt.getTime() <= Date.now()) throw sessionEnded('SESSION_EXPIRED');
     if (account.accountStatus === 'DISABLED') throw new AccountDisabledException();
     return this.toPublicUser(account);
@@ -132,10 +149,14 @@ export class AuthService {
     return data;
   }
 
-  private async createSession(user: StoredUser, rememberMe = false): Promise<AuthSession> {
+  private async createSession(user: StoredUser, rememberMe = false, userAgent?: string): Promise<AuthSession> {
     const token = randomBytes(32).toString('hex');
     const ttl = rememberMe ? this.rememberedSessionTtlMs : this.sessionTtlMs;
-    const saved = await this.users.saveSession({ tokenHash: this.tokenKey(token), userId: user.id, expiresAt: new Date(Date.now() + ttl) }, user.passwordHash);
+    const createdAt = new Date();
+    const saved = await this.users.saveSession({
+      tokenHash: this.tokenKey(token), userId: user.id, createdAt,
+      expiresAt: new Date(createdAt.getTime() + ttl), device: sessionDevice(userAgent),
+    }, user.passwordHash);
     if (!saved) {
       const current = await this.users.findById(user.id);
       if (current?.accountStatus === 'DISABLED') throw new AccountDisabledException(current);

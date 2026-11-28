@@ -35,7 +35,7 @@ type ReservationDetailRecord = Prisma.ReservationGetPayload<{ include: typeof re
 
 export function reservationWorkflow(record: ReservationDetailRecord, actor?: PublicUser) {
   const invoice = record.invoices.length === 1 ? record.invoices[0] : null;
-  const staff = actor?.role === 'STAFF';
+  const staff = actor?.role === 'FACILITY_STAFF';
   const contracts = record.contracts.map(contract => ({
     code: contract.contractCode,
     status: contract.status,
@@ -53,7 +53,7 @@ export function reservationWorkflow(record: ReservationDetailRecord, actor?: Pub
   const ownAppointment = staff && Boolean(appointment &&
     (appointment.assignedStaffUserId === actor.id || (!appointment.assignedStaffUserId &&
       appointment.status === 'COMPLETED' && appointment.completedByUserId === actor.id)));
-  const assignment = appointment?.assignedStaff?.role === 'STAFF' && appointment.assignedStaff.accountStatus === 'ACTIVE'
+  const assignment = appointment?.assignedStaff?.role === 'FACILITY_STAFF' && appointment.assignedStaff.accountStatus === 'ACTIVE'
     ? ownAppointment ? 'SELF' : 'OTHER' : 'UNASSIGNED';
   const history = [
     { at: record.createdAt, action: 'Gửi yêu cầu', actor: record.customer.fullName, result: 'Đã tiếp nhận' },

@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import { DamageClaimsService } from './damage-claims.service.js';
 import { businessDate } from '../../business-date.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-const actor = { id: 'customer', role: 'CUSTOMER' } as PublicUser;
-const input = { rentalContractId: 'contract', description: 'Hàng trong kho bị hư hỏng cần kiểm tra', discoveredOn: businessDate(), storedItemIds: [], evidenceLinks: [] };
+const actor = { id: 'customer', role: 'STORAGE_CUSTOMER' } as PublicUser;
+const input = { rentalContractId: 'contract', description: 'Hàng trong kho bị hư hỏng cần kiểm tra', discoveredOn: businessDate(), evidenceLinks: [] };
 function setup(status = 'ACTIVE', owner = actor.id, releasedAt: Date | null = null) {
   const contract = { id: 'contract', status, owner, reservationUnit: { releasedAt, storageUnitId: 'unit', storageUnit: { unitNumber: 'A01' } } };
   const now = new Date();
@@ -41,6 +42,23 @@ describe('New goods incident eligibility', () => {
     const app = setup();
     expect(await app.service.create(actor, input, 'claim-test-key')).toMatchObject({ id: 'claim', rentalContractId: 'contract', unitCodeSnapshot: 'A01' });
     expect(app.create).toHaveBeenCalledOnce();
+    expect(app.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ description: input.description, affectedItems: [] }) }));
+    expect(app.tx.storedItem.findMany).not.toHaveBeenCalled();
+  });
+  it('replays a legacy claim with its original affected-items snapshot and rejects a changed description', async () => {
+    const app = setup('COMPLETED');
+    const now = new Date();
+    const affectedItems = [{ id: 'archived-item', name: 'Thùng hồ sơ', unit: 'thùng' }];
+    const inputHash = createHash('sha256').update(JSON.stringify([
+      input.rentalContractId, input.description, input.discoveredOn, null, [], ['archived-item'],
+    ])).digest('hex');
+    app.prisma.damageClaim.findUnique.mockResolvedValue({
+      id: 'old-claim', inputHash, affectedItems, discoveredOn: now, createdAt: now, updatedAt: now, estimatedValue: null,
+    });
+    const legacy = { ...input, storedItemIds: ['archived-item'] };
+    await expect(app.service.create(actor, legacy, 'claim-test-key')).resolves.toMatchObject({ id: 'old-claim', affectedItems });
+    await expect(app.service.create(actor, { ...legacy, description: 'Nội dung sự cố đã thay đổi' }, 'claim-test-key')).rejects.toThrow('nội dung khác');
+    expect(app.prisma.$transaction).not.toHaveBeenCalled();
   });
   it('keeps previously submitted incidents visible after return without accepting new reports', async () => {
     const now = new Date();

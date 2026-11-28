@@ -137,8 +137,10 @@ export function CustomerContractsPage() {
         {selected && <Modal title="Chi tiết hợp đồng" className="customer-contract-dialog" busy={Boolean(acceptingId)}
           onClose={() => setSelected(null)} footer={<button type="button" className="button-secondary" disabled={Boolean(acceptingId)} onClick={() => setSelected(null)}>Đóng</button>}>
           <div className="record-page-title"><h3>Kho {selected.storageUnit.unitCode}</h3><CustomerStatus status={selected.status} /></div>
+          {selected.storageUnit.maintenanceNotice && <p className="booking-alert is-warning">{selected.storageUnit.maintenanceNotice}</p>}
           <CopyRecordCode value={selected.contractCode} label="Mã hợp đồng" />
           <p>{formatPortalDate(selected.startDate)} – {formatPortalDate(selected.endDate)}</p>
+          {selected.reservation.facility && <p>Cơ sở trên đơn đặt kho · {selected.reservation.facility.name} · {selected.reservation.facility.address}</p>}
           <DocumentFile path={`/customer/documents/contracts/${encodeURIComponent(selected.id)}`} name={selected.contractCode} signed={Boolean(selected.terms.acceptedAt)} />
           {selected.terms.acceptedAt ? <DetailDisclosure title="Thông tin ký hợp đồng">
             <p>Đã xác nhận bởi {selected.terms.acceptanceName} lúc {formatPortalDate(selected.terms.acceptedAt, true)}.</p>

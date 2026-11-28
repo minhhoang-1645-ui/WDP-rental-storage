@@ -1,22 +1,27 @@
+import { assertManagerCoverage, assertNoOpenAssignments } from '../facility-access/facility-access.service.js';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
+import { disabledSessionPrefix, revokeActiveSessions } from '../auth/session-revocation.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 
 export interface StoredUser extends PublicUser { passwordHash: string; accountStatus: 'ACTIVE' | 'DISABLED'; createdAt?: Date; updatedAt?: Date }
 export type CreateStoredUser = Omit<StoredUser, 'id' | 'accountStatus'> & { accountStatus?: StoredUser['accountStatus'] };
 export const userSorts = ['newest', 'oldest', 'name-asc', 'name-desc'] as const;
 export interface UserListFilters { sort?: typeof userSorts[number]; search?: string; role?: PublicUser['role']; accountStatus?: StoredUser['accountStatus'] }
-type StoredSession = { tokenHash: string; userId: string; expiresAt: Date };
+type StoredSession = { tokenHash: string; userId: string; expiresAt: Date; createdAt?: Date; device?: string; revokedAt?: Date; revocationReason?: string };
 type SessionAccount = PublicUser & {
   accountStatus: StoredUser['accountStatus'];
   expiresAt: Date;
   revokedByDisable: boolean;
+  revokedAt?: Date | null;
+  revocationReason?: string | null;
 };
-const disabledSessionPrefix = 'disabled:';
 export type UserProfileChanges = Partial<Pick<PublicUser, 'fullName' | 'phone'>>;
 export abstract class UserRepository {
+  async authorizeAdministrator(actorId:string) { assertActiveAdmin(await this.findById(actorId)); }
+
   abstract saveSession(session: StoredSession, passwordHash: string): Promise<boolean>;
   abstract findSessionAccount(tokenHash: string): Promise<SessionAccount | null>;
   abstract deleteSession(tokenHash: string): Promise<void>;
@@ -33,7 +38,7 @@ export abstract class UserRepository {
 }
 
 function assertActiveAdmin(actor: Pick<StoredUser, 'role' | 'accountStatus'> | null | undefined) {
-  if (!actor || actor.role !== 'ADMIN' || actor.accountStatus !== 'ACTIVE') throw new ForbiddenException('Phiên quản trị không còn quyền thay đổi tài khoản.');
+  if (!actor || actor.role !== 'SYSTEM_ADMINISTRATOR' || actor.accountStatus !== 'ACTIVE') throw new ForbiddenException('Phiên quản trị không còn quyền thay đổi tài khoản.');
 }
 
 function assertCanDisableAccount(actorId: string, targetId: string) {
@@ -46,10 +51,6 @@ export class MemoryUserRepository extends UserRepository {
   async saveSession(session: StoredSession, passwordHash: string) {
     const user = this.users.get(session.userId);
     if (user?.accountStatus !== 'ACTIVE' || user.passwordHash !== passwordHash) return false;
-    const now = Date.now();
-    for (const [hash, existing] of this.sessions) {
-      if (existing.userId === session.userId && existing.expiresAt.getTime() <= now) this.sessions.delete(hash);
-    }
     this.sessions.set(session.tokenHash, session);
     return true;
   }
@@ -58,20 +59,29 @@ export class MemoryUserRepository extends UserRepository {
     const session = this.sessions.get(disabledHash) ?? this.sessions.get(tokenHash);
     if (!session) return null;
     const user = this.users.get(session.userId);
-    return user ? { ...user, expiresAt: session.expiresAt, revokedByDisable: session.tokenHash === disabledHash } : null;
+    return user ? { ...user, expiresAt: session.expiresAt, revokedAt: session.revokedAt, revocationReason: session.revocationReason, revokedByDisable: session.tokenHash === disabledHash || session.revocationReason === 'ACCOUNT_DISABLED' } : null;
   }
-  async deleteSession(tokenHash: string) { this.sessions.delete(tokenHash); }
+  async deleteSession(tokenHash: string) {
+    const session = this.sessions.get(tokenHash);
+    if (session) this.revokeMemorySession(session, 'LOGOUT');
+  }
   async deleteUserSessions(userId: string) {
     this.clearSessions(userId);
   }
   private clearSessions(userId: string) {
-    for (const [key, session] of this.sessions) if (session.userId === userId) this.sessions.delete(key);
+    for (const session of this.sessions.values()) if (session.userId === userId) this.revokeMemorySession(session, 'ADMIN');
+  }
+  private revokeMemorySession(session: StoredSession, reason: string) {
+    if (!session.revokedAt && session.expiresAt.getTime() > Date.now()) {
+      session.revokedAt = new Date();
+      session.revocationReason = reason;
+    }
   }
   async changePassword(id: string, sessionHash: string, previousHash: string, passwordHash: string) {
     const user = this.users.get(id), session = this.sessions.get(sessionHash);
-    if (user?.accountStatus !== 'ACTIVE' || user.passwordHash !== previousHash || session?.userId !== id || session.expiresAt.getTime() <= Date.now()) return false;
+    if (user?.accountStatus !== 'ACTIVE' || user.passwordHash !== previousHash || session?.userId !== id || session.revokedAt || session.expiresAt.getTime() <= Date.now()) return false;
     this.users.set(id, { ...user, passwordHash, updatedAt: new Date() });
-    for (const [hash, other] of this.sessions) if (other.userId === id && hash !== sessionHash) this.sessions.delete(hash);
+    for (const [hash, other] of this.sessions) if (other.userId === id && hash !== sessionHash) this.revokeMemorySession(other, 'PASSWORD_CHANGED');
     return true;
   }
   async findByEmail(email: string) {
@@ -107,13 +117,7 @@ export class MemoryUserRepository extends UserRepository {
     }
     const user = this.users.get(id); if (!user) return null;
     if (user.accountStatus === accountStatus) return { ...user, statusChanged: false };
-    const now = Date.now();
-    for (const [hash, session] of this.sessions) {
-      if (session.userId !== id || hash.startsWith(disabledSessionPrefix) || session.expiresAt.getTime() <= now) continue;
-      const disabledHash = disabledSessionPrefix + hash;
-      this.sessions.delete(hash);
-      this.sessions.set(disabledHash, { ...session, tokenHash: disabledHash });
-    }
+    for (const session of this.sessions.values()) if (session.userId === id) this.revokeMemorySession(session, 'ACCOUNT_DISABLED');
     const updated = { ...user, accountStatus, updatedAt: new Date() }; this.users.set(id, updated); return { ...updated, statusChanged: true };
   }
   async create(input: CreateStoredUser) {
@@ -155,7 +159,6 @@ export class PrismaUserRepository extends UserRepository {
       const active = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "User"
         WHERE id = ${session.userId} AND "accountStatus" = 'ACTIVE' AND "passwordHash" = ${passwordHash} FOR UPDATE`;
       if (!active.length) return false;
-      await tx.authSession.deleteMany({ where: { userId: session.userId, expiresAt: { lte: new Date() } } });
       await tx.authSession.create({ data: session });
       return true;
     });
@@ -163,25 +166,26 @@ export class PrismaUserRepository extends UserRepository {
   async findSessionAccount(tokenHash: string) {
     const disabledHash = disabledSessionPrefix + tokenHash;
     const [row] = await this.prisma.$queryRaw<Array<Omit<SessionAccount, 'phone'> & { phone: string | null }>>`
-      SELECT u.id, u."fullName", u.email, u.phone, u.role, u."accountStatus", s."expiresAt",
-        s."tokenHash" = ${disabledHash} AS "revokedByDisable"
+      SELECT u.id, u."fullName", u.email, u.phone, u.role, u."accountStatus", s."expiresAt", s."revokedAt", s."revocationReason",
+        (s."tokenHash" = ${disabledHash} OR s."revocationReason" IS NOT DISTINCT FROM 'ACCOUNT_DISABLED') AS "revokedByDisable"
       FROM "AuthSession" s JOIN "User" u ON u.id = s."userId"
       WHERE s."tokenHash" IN (${tokenHash}, ${disabledHash})
       ORDER BY "revokedByDisable" DESC LIMIT 1`;
     return row ? { ...row, phone: row.phone ?? '' } : null;
   }
-  async deleteSession(tokenHash: string) { await this.prisma.authSession.deleteMany({ where: { tokenHash } }); }
-  async deleteUserSessions(userId: string) { await this.prisma.authSession.deleteMany({ where: { userId } }); }
+  async deleteSession(tokenHash: string) { await revokeActiveSessions(this.prisma, { tokenHash }, 'LOGOUT'); }
+  async deleteUserSessions(userId: string) { await revokeActiveSessions(this.prisma, { userId }, 'ADMIN'); }
   async changePassword(id: string, sessionHash: string, previousHash: string, passwordHash: string) {
     return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${id} FOR UPDATE`;
       const now = new Date();
       const changed = await tx.user.updateMany({
-        where: { id, accountStatus: 'ACTIVE', passwordHash: previousHash, authSessions: { some: { tokenHash: sessionHash, expiresAt: { gt: now } } } },
+        where: { id, accountStatus: 'ACTIVE', passwordHash: previousHash, authSessions: { some: { tokenHash: sessionHash, revokedAt: null, expiresAt: { gt: now } } } },
         data: { passwordHash },
       });
       if (!changed.count) return false;
       const user = await tx.user.findUniqueOrThrow({ where: { id }, select: { email: true } });
-      await tx.authSession.deleteMany({ where: { userId: id, tokenHash: { not: sessionHash } } });
+      await revokeActiveSessions(tx, { userId: id, tokenHash: { not: sessionHash } }, 'PASSWORD_CHANGED', id);
       await tx.accountFlowToken.updateMany({ where: { email: user.email, kind: 'RESET', usedAt: null }, data: { usedAt: now } });
       return true;
     });
@@ -202,19 +206,19 @@ export class PrismaUserRepository extends UserRepository {
       const target = await tx.user.findUnique({ where: { id } });
       if (!target) return null;
       if (target.accountStatus === accountStatus) return { ...target, phone: target.phone ?? '', statusChanged: false };
+      await tx.$queryRawUnsafe('SELECT id FROM "User" WHERE id=$1 FOR UPDATE', id);
+      if (accountStatus === 'DISABLED' && target.role === 'FACILITY_MANAGER') await assertManagerCoverage(tx, id);
+      if (accountStatus === 'DISABLED' && target.role === 'FACILITY_STAFF') await assertNoOpenAssignments(tx, id);
       const updated = await tx.user.update({ where: { id }, data: { accountStatus } });
-      // Keep a revoked hash to explain the logout even if the account is reactivated first.
-      // Also revoke any legacy sessions that predate marking on disable.
-      await tx.$executeRaw`UPDATE "AuthSession"
-        SET "tokenHash" = ${disabledSessionPrefix} || "tokenHash"
-        WHERE "userId" = ${id} AND "expiresAt" > ${new Date()} AND NOT starts_with("tokenHash", ${disabledSessionPrefix})`;
+      // Also close unmarked legacy sessions before reopening a disabled account.
+      await revokeActiveSessions(tx, { userId: id }, 'ACCOUNT_DISABLED', actorId);
       return { ...updated, phone: updated.phone ?? '', statusChanged: true };
     });
   }
   private async lockAdminChanges(tx: Prisma.TransactionClient, actorId?: string) {
     // Serialize administrative writes and then verify the actor is still active.
     // Two administrators cannot disable one another concurrently.
-    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "role" = 'ADMIN' ORDER BY "id" FOR UPDATE`;
+    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "role" = 'SYSTEM_ADMINISTRATOR' ORDER BY "id" FOR UPDATE`;
     if (actorId) assertActiveAdmin(await tx.user.findUnique({ where: { id: actorId }, select: { role: true, accountStatus: true } }));
   }
   async findByEmail(email: string) {

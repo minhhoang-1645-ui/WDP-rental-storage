@@ -29,13 +29,13 @@ export class GuestBookingController {
 
   @Post('customer/booking-requests/:bookingCode/claim')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('CUSTOMER')
+  @Roles('STORAGE_CUSTOMER')
   @ApiBearerAuth('bearerAuth')
   @ApiOperation({ summary: 'Customer nhận booking đã xác minh', description: 'Email Customer phải khớp. Claim thành công tự CONFIRMED, allocate unit, tạo Contract PENDING_PAYMENT và INITIAL Invoice OPEN.' })
   @ApiBody({ type: ClaimGuestBookingDto })
   @ApiCreatedResponse({ description: 'Guest booking CLAIMED và Reservation sẵn sàng thanh toán.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu/sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Không phải CUSTOMER hoặc email không khớp.' })
+  @ApiForbiddenResponse({ description: 'Không phải STORAGE_CUSTOMER hoặc email không khớp.' })
   @ApiConflictResponse({ description: 'BOOKING_NOT_VERIFIED, BOOKING_QUOTE_CHANGED hoặc REQUESTED_STORAGE_NO_LONGER_AVAILABLE.' })
   claim(@Param('bookingCode') bookingCode: string, @Req() request: AuthenticatedRequest) { return this.service.claim(bookingCode, request.user!); }
 }

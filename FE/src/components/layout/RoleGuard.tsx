@@ -20,7 +20,7 @@ export function RoleGuard({
   if (!user)
     return (
       <Navigate
-        to="/portal/login"
+        to="/account/login"
         replace
         state={{
           returnTo: location.pathname + location.search + location.hash,

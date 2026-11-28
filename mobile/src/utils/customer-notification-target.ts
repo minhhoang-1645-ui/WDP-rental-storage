@@ -1,4 +1,4 @@
-const recordRoute = /^\/customer\/(reservations|contracts|invoices|appointments|renewals|returns|early-returns|transfers|stock-movements|deposit-settlements|support-requests|damage-claims)\/([\w-]+)$/;
+const recordRoute = /^\/customer\/(reservations|contracts|invoices|appointments|renewals|returns|early-returns|transfers|deposit-settlements|support-requests|damage-claims)\/([\w-]+)$/;
 
 const webRoutes: Record<string, [parameter: string, mobileResource: string]> = {
   '/customer/payments': ['invoice', 'invoices'],
@@ -16,6 +16,8 @@ function recordId(value: string | null) {
 }
 
 export function customerNotificationTarget(target: string, kind: string) {
+  if (kind === 'policy-effective' && target === '/customer/policies') return target;
+  if (kind === 'stock-movements' || /^\/customer\/(?:stock-movements|stored-items)(?:[/?#]|$)/.test(target)) return '/customer/rentals';
   const direct = recordRoute.exec(target);
   const supportResource = kind === 'early-returns' ? 'early-returns' : kind === 'transfers' ? 'transfers' : 'support-requests';
   if (direct && recordId(direct[2])) {

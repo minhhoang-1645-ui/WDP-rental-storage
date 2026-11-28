@@ -45,16 +45,18 @@ try {
   const admin = await login('admin@test.com');
   const { passwordHash } = await prisma.user.findUniqueOrThrow({ where: { id: staff.user.id }, select: { passwordHash: true } });
   const otherStaff = await prisma.user.create({ data: {
-    role: 'STAFF', fullName: 'Unassigned test staff', phone: '0900000082', email: `claims-staff-${tag}@example.test`, passwordHash,
+    role: 'FACILITY_STAFF', fullName: 'Unassigned test staff', phone: '0900000082', email: `claims-staff-${tag}@example.test`, passwordHash,
   } });
   const other = await login(otherStaff.email);
   const contract = await prisma.rentalContract.findUniqueOrThrow({ where: { contractCode: 'WDP-DEMO-ACTIVE-C01' }, include: { reservationUnit: true } });
   const unitId = contract.reservationUnit.storageUnitId;
-  const unitStaff = await prisma.unitStaffAssignment.findFirst({ where: { storageUnitId: unitId, endedAt: null } });
-  if (!unitStaff) await prisma.unitStaffAssignment.create({ data: { storageUnitId: unitId, staffUserId: staff.user.id, assignedByUserId: manager.user.id } });
+  const taskUnit = await prisma.storageUnit.findUniqueOrThrow({where:{id:unitId},select:{storageType:{select:{facilityId:true}}}});
+  for (const userId of [staff.user.id, manager.user.id]) {
+    if (!await prisma.facilityAccess.findFirst({where:{userId,facilityId:taskUnit.storageType.facilityId,revokedAt:null}})) throw new Error('Admin must grant facility access before this scenario.');
+  }
 
   async function report(name) {
-    const body = { rentalContractId: contract.id, description: `Hộp hàng bị móp ${name} ${tag}`, discoveredOn: businessDate(), estimatedValue: 150000, storedItemIds: [], evidenceLinks: ['https://example.test/evidence'] };
+    const body = { rentalContractId: contract.id, description: `Hộp hàng bị móp ${name} ${tag}`, discoveredOn: businessDate(), estimatedValue: 150000, evidenceLinks: ['https://example.test/evidence'] };
     const key = randomUUID();
     const created = await request(customerPath, 201, { token: customer.token, method: 'POST', key, body });
     assert.equal((await request(customerPath, 201, { token: customer.token, method: 'POST', key, body })).id, created.id);

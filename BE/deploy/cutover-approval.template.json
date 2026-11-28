@@ -1,0 +1,14 @@
+{
+  "approved": false,
+  "approvedBy": null,
+  "approvedAt": null,
+  "releaseCommit": null,
+  "target": {
+    "host": null,
+    "database": null
+  },
+  "serviceFullyStopped": false,
+  "historicalChecksumExceptionAccepted": false,
+  "recoverFailedMigration": null,
+  "backupManifest": null
+}

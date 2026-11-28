@@ -10,14 +10,14 @@ const statuses = ['REQUESTED', 'CONFIRMED', 'COMPLETED', 'CANCELLED'] as const;
 
 @Controller('staff/appointments')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF')
+@Roles('FACILITY_STAFF')
 @ApiTags('Staff Handover')
 @ApiBearerAuth('bearerAuth')
 export class StaffAppointmentsController {
   constructor(private readonly appointments: AppointmentsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách lịch vận hành bàn giao', description: 'STAFF/MANAGER. Không trả pricing internals.' })
+  @ApiOperation({ summary: 'Danh sách lịch vận hành bàn giao', description: 'FACILITY_STAFF/FACILITY_MANAGER. Không trả pricing internals.' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiQuery({ name: 'search', required: false, example: 'SM-B12-001' })
@@ -26,7 +26,7 @@ export class StaffAppointmentsController {
   @ApiOkResponse({ description: 'Lịch, customer, contracts và allocated units.' })
   @ApiBadRequestResponse({ description: 'Filter hoặc pagination không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER không được phép.' })
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER không được phép.' })
   list(@Query() query: Record<string, unknown>, @Req() request: AuthenticatedRequest) {
     return this.appointments.listOperationalAppointments(this.query(query), request.user!);
   }
@@ -36,7 +36,7 @@ export class StaffAppointmentsController {
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-A01' })
   @ApiOkResponse({ description: 'Dữ liệu cần thiết để bàn giao tại cơ sở.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER không được phép.' })
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER không được phép.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy lịch.' })
   get(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.appointments.getOperationalAppointment(id, request.user!);
@@ -50,14 +50,14 @@ export class StaffAppointmentsController {
   }
 
   @Post(':id/complete-handover')
-  @ApiOperation({ summary: 'Hoàn tất bàn giao giấy tờ và chìa khóa', description: 'Có thể sớm tối đa 3 ngày: lịch chuyển COMPLETED, hợp đồng chờ ngày thuê. Từ ngày thuê, hệ thống tự chuyển hợp đồng ACTIVE và kho OCCUPIED khi đủ điều kiện. Không thay đổi kỳ thuê.' })
+  @ApiOperation({ summary: 'Hoàn tất bàn giao giấy tờ và chìa khóa', description: 'Lịch bàn giao sớm hoàn tất theo chính sách và hợp đồng chờ đến ngày thuê. Chỉ trừ tồn cho các dòng sản phẩm được xác nhận qua deliveredPurchaseIds. Có thể xác nhận sản phẩm còn giữ trên lịch đã hoàn tất.' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-A01' })
   @ApiBody({ type: CompleteHandoverRequestDto, examples: { completed: { value: { note: 'Đã bàn giao đầy đủ các kho cho khách hàng.' } } } })
-  @ApiOkResponse({ schema: { example: { appointmentCode: 'WDP-2026-AB12CD34-A01', status: 'COMPLETED', completedBy: { fullName: 'WDP Staff', role: 'STAFF' }, completedAt: '2026-11-10T02:35:00.000Z', allocatedUnits: [{ contractCode: 'WDP-2026-AB12CD34-C01', contractStatus: 'ACTIVE', activatedAt: '2026-11-10T02:35:00.000Z', unitCode: 'SM-B12-001', unitStatus: 'OCCUPIED' }] } } })
+  @ApiOkResponse({ schema: { example: { appointmentCode: 'WDP-2026-AB12CD34-A01', status: 'COMPLETED', completedBy: { fullName: 'WDP Staff', role: 'FACILITY_STAFF' }, completedAt: '2026-11-10T02:35:00.000Z', allocatedUnits: [{ contractCode: 'WDP-2026-AB12CD34-C01', contractStatus: 'ACTIVE', activatedAt: '2026-11-10T02:35:00.000Z', unitCode: 'SM-B12-001', unitStatus: 'OCCUPIED' }] } } })
   @ApiBadRequestResponse({ description: 'Handover note không hợp lệ.' })
   @ApiConflictResponse({ description: 'Lịch chưa CONFIRMED, chưa trả đủ, contract/unit không hợp lệ hoặc concurrency conflict.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER không được hoàn tất bàn giao.' })
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER không được hoàn tất bàn giao.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy lịch.' })
   complete(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
     return this.appointments.completeHandover(id, body, request.user!);

@@ -1,3 +1,4 @@
+import { chooseDate, openCalendar } from './browser-test.mjs';
 // Browser regression: every API/SSE request is mocked, no shared database access.
 import assert from 'node:assert/strict';
 import { launchTestBrowser } from './browser-test.mjs';
@@ -10,7 +11,6 @@ let failed = false, snapshotFailed = false, releaseReport;
 const reportDate = '2026-11-10';
 const queries = [], writes = [], errors = [], listQueries = [];
 const retiredFinance = ['payment-submissions', 'online-payment-reconciliations'];
-const retiredRequests = [];
 const reportCategories = [
   { id: 'small', code: 'SM-B12', name: 'Kho nhỏ B12', requests: 2, confirmed: 1, physicalUnits: 5, occupied: 3, rent: 7500000 },
   { id: 'medium', code: 'MD-D04', name: 'Kho vừa D04', requests: 1, confirmed: 1, physicalUnits: 10, occupied: 5, rent: 3000000 },
@@ -51,6 +51,7 @@ const pendingSettlement = { ...refund, id: 'pending-deposit', settlementCode: 'D
 const depositHistory = Array.from({ length: 21 }, (_, index) => ({ ...refund, id: `deposit-${index}`, settlementCode: `DEP-HISTORY-${String(index).padStart(2, '0')}`, status: 'SETTLED' }));
 
 const quote = { paymentPlan: 'PAY_MONTHLY', billingMode: 'MONTHLY', termMonths: 3, monthlyUnitPrice: 1500000, baseRentalAmount: 4500000, discountPercent: 0, discountAmount: 0, rentalAmount: 4500000, depositAmount: 1500000, purchaseAddOnAmount: 0, rentalAddOnAmount: 0, quotedTotalAmount: 6000000, initialPaymentBreakdown: { rentalAmount: 1500000, depositAmount: 1500000, purchaseAddOnAmount: 0, rentalAddOnAmount: 0, totalAmount: 3000000, remainingAmount: 3000000 } };
+const contract = { ...invoice.contracts[0], status: 'ACTIVE', reservation: invoice.reservation, storageUnit: physicalUnit, reservationPricing: quote };
 await context.addInitScript(() => localStorage.setItem('wdp-auth-token-v1', 'fixture-MANAGER'));
 await context.route('**/*', async route => {
   const request = route.request();
@@ -58,8 +59,7 @@ await context.route('**/*', async route => {
   const url = new URL(request.url()), path = url.pathname.replace(/^\/(?:api\/)?/, '');
   if (request.method() === 'OPTIONS') return route.fulfill({ status: 204 });
   if (path.startsWith('manager/') && retiredFinance.includes(path.split('/')[1])) {
-    retiredRequests.push(path);
-    return route.fulfill({ status: 404, json: { message: 'Nghiệp vụ đã bỏ khỏi Manager Web.' } });
+    return route.fulfill({ json: { items: [], page: 1, limit: 100, total: 0 } });
   }
   if (request.method() !== 'GET') {
     const body = request.postDataJSON();
@@ -79,7 +79,7 @@ await context.route('**/*', async route => {
     listQueries.push({ path, page, limit, status });
     return route.fulfill({ json: { page, limit, total: items.length, items: items.slice((page - 1) * limit, page * limit) } });
   };
-  if (path === 'auth/me') return route.fulfill({ json: { id: 'manager', fullName: 'Quản lý kiểm thử', email: 'manager@example.test', role: 'MANAGER' } });
+  if (path === 'auth/me') return route.fulfill({ json: { id: 'manager', fullName: 'Quản lý kiểm thử', email: 'manager@example.test', role: 'FACILITY_MANAGER' } });
   if (path === 'manager/dashboard/analytics') {
     queries.push(Object.fromEntries(url.searchParams));
     if (snapshotFailed) return route.fulfill({ status: 503, json: { message: 'Không thể tải tổng hợp hiện tại.' } });
@@ -135,6 +135,8 @@ await context.route('**/*', async route => {
   }] : []);
   if (path === 'manager/early-return-requests') return sendPage([earlyReturn, earlyReturnHistory]);
   if (path === 'manager/invoices') return sendPage([invoice]);
+  if (path === 'manager/contracts') return sendPage([contract]);
+  if (path === 'manager/contracts/contract') return route.fulfill({ json: contract });
   if (path === 'manager/payments') return sendPage([payment]);
   if (path === 'manager/units') return sendPage([physicalUnit]);
   if (path === 'manager/additional-services/inventory') return route.fulfill({ json: [{ serviceId: 'addon', rentalCapacity: 5 }] });
@@ -210,11 +212,10 @@ try {
   }
   assert.equal(queries.filter(query => !query.report).length, snapshotCalls, 'Changing period must not refetch filtered current balances');
   await period.selectOption('custom');
-  await page.getByLabel('Từ ngày', { exact: true }).fill(reportDate);
-  await page.getByLabel('Đến ngày', { exact: true }).fill('2026-11-09');
-  await page.getByRole('alert').filter({ hasText: 'Ngày bắt đầu phải trước' }).waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Áp dụng', exact: true }).isDisabled(), true);
-  await page.getByLabel('Đến ngày', { exact: true }).fill(reportDate);
+  await chooseDate(page, 'Từ ngày', reportDate);
+  const endCalendar = await openCalendar(page, 'Đến ngày', reportDate);
+  assert(await endCalendar.getByRole('button', { name: '09/11/2026' }).isDisabled());
+  await endCalendar.getByRole('button', { name: '10/11/2026' }).click();
   await page.getByRole('button', { name: 'Áp dụng', exact: true }).click();
   await metric('Tiền đã nhận').getByText(/1\.000\.000/).waitFor();
   assert.match(await metric('Công nợ hiện tại').innerText(), /600\.000/);
@@ -301,7 +302,7 @@ try {
   await page.goto(`${base}/manager/reports/details?from=${reportDate}&to=${reportDate}&group=day&typeId=small`);
   await page.waitForURL(url => url.pathname === '/manager/reports' && url.searchParams.get('tab') === 'operations');
   await page.getByRole('rowheader', { name: 'Kho nhỏ B12' }).waitFor();
-  assert.equal(await page.getByLabel('Từ ngày', { exact: true }).inputValue(), reportDate);
+  assert.equal(await page.getByRole('button', { name: 'Từ ngày', exact: true }).innerText(), '10/11/2026');
   assert.equal(await page.getByLabel('Lọc loại kho báo cáo').inputValue(), 'small');
   await tabs('Tài chính').click();
   await page.getByText('Chi tiết tài chính', { exact: true }).click();
@@ -313,8 +314,8 @@ try {
   for await (const chunk of await invoiceFile.createReadStream()) invoiceChunks.push(chunk);
   assert.match(Buffer.concat(invoiceChunks).toString('utf8'), /INV-TEST/);
   assert(queries.some(query => query.invoiceCsv && query.typeId === 'small' && query.from === reportDate && query.to === reportDate));
-  await page.getByLabel('Từ ngày', { exact: true }).fill('2026-01-01');
-  await page.getByLabel('Đến ngày', { exact: true }).fill('2026-01-01');
+  await chooseDate(page, 'Từ ngày', '2026-01-01');
+  await chooseDate(page, 'Đến ngày', '2026-01-01');
   let finishReport;
   releaseReport = new Promise(resolve => { finishReport = resolve; });
   await page.getByRole('button', { name: 'Áp dụng', exact: true }).click();
@@ -413,8 +414,8 @@ async function verifyManagerWorkspace() {
   await expandSidebar.click();
   for (const resource of retiredFinance) {
     await page.goto(`${base}/manager/${resource}?record=old`);
-    await page.waitForURL(url => url.pathname === '/manager/finance' && !url.search);
-    await page.getByRole('heading', { name: 'Tài chính' }).waitFor();
+    await page.waitForURL(url => url.pathname === '/manager/operations/payments' && url.searchParams.get('record') === 'old');
+    await page.getByRole('heading', { name: 'Giao dịch cần xử lý' }).waitFor();
     assert.equal(await page.locator('main a[href*="payment-submissions"], main a[href*="online-payment-reconciliations"]').count(), 0);
   }
   await page.goto(`${base}/manager`);
@@ -623,8 +624,20 @@ async function verifyManagerWorkspace() {
   await page.getByText('Dự kiến các kỳ tiếp theo', { exact: true }).waitFor();
   await page.getByText('Xem chi tiết báo giá', { exact: true }).click();
   assert.equal(await quoteDetails.getAttribute('open'), null);
+  await page.goto(`${base}/manager/operations/contracts`);
+  const contractRow = page.getByRole('row').filter({ hasText: contract.contractCode });
+  await contractRow.getByText(contract.contractCode, { exact: true }).waitFor();
+  assert.equal(await contractRow.getByText('Xem chi tiết', { exact: true }).count(), 0);
+  await contractRow.getByRole('button', { name: /Sao chép/ }).click();
+  assert.equal(new URL(page.url()).pathname, '/manager/operations/contracts');
+  await contractRow.getByRole('link', { name: /Xem chi tiết hồ sơ/ }).press('Enter');
+  await page.waitForURL('**/manager/operations/contracts/contract');
+  await page.getByText('Dự kiến thanh toán lần đầu', { exact: true }).waitFor();
+  await page.getByText('Hóa đơn theo kỳ', { exact: true }).click();
+  await page.getByRole('link', { name: /Xem hóa đơn của đơn R-TEST/ }).click();
+  await page.waitForURL(url => url.pathname === '/manager/operations/invoices' && url.searchParams.get('search') === 'R-TEST');
+  await invoiceRow.waitFor();
   assert(listQueries.some(query => query.path === 'manager/deposit-settlements' && query.page === 2 && query.limit === 10 && query.status === 'SETTLED'));
-  assert.deepEqual(retiredRequests, []);
   assert.deepEqual(errors, []);
-  console.log('PASS Manager review inbox, retired finance routes and API calls, staff assignment, deposit review and pagination, invoice/payment amounts and inventory links. All APIs mocked.');
+  console.log('PASS Manager review inbox, legacy finance redirects, staff assignment, deposit review and pagination, invoice/payment amounts and inventory links. All APIs mocked.');
 }

@@ -5,12 +5,12 @@ import { useAuth } from '../../auth/auth-context';
 import { useApiResource } from '../../services/useApiResource';
 import { hasDraft } from '../../services/live-events';
 import { Facts, LoadState, PageHeader, RefreshStatus, Status } from '../../components/manager/PortalUi';
-import { date, first, label, rows, type Row } from '../../components/manager/portal-data';
+import { date, first, rows, type Row } from '../../components/manager/portal-data';
 import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { RecordTimeline } from '../../components/workspace/RecordTimeline';
 import { useInternalListReturn } from '../../components/workspace/internal-list-memory';
 import { InventoryEditor } from './InventoryEditor';
-import { allocationDisplay, unitBookingSummary, unitLocation } from './unit-display';
+import { allocationDisplay, unitBookingSummary, unitLocation, unitMeasurements, unitStatusDescription } from './unit-display';
 
 export function ManagerUnitDetailPage() {
   const { id = '' } = useParams();
@@ -20,6 +20,13 @@ export function ManagerUnitDetailPage() {
   const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState('');
   const unit = result.data;
+  const storageType = first(unit ?? {}, 'storageType.name');
+  const category = first(unit ?? {}, 'category.name');
+  const measurements = unitMeasurements(unit ?? {});
+  const statusDescription = unitStatusDescription(unit ?? {});
+  const upcomingBooking = unitBookingSummary(unit ?? {});
+  const condition = unit?.condition === 'STANDARD' ? 'Tiêu chuẩn (không điều hòa)'
+    : unit?.condition === 'AIR_CONDITIONED' ? 'Có điều hòa' : '—';
   const allocations = rows(unit?.allocations);
   const audit = rows(unit?.history);
   const createdAt = first(unit ?? {}, 'createdAt');
@@ -52,15 +59,20 @@ export function ManagerUnitDetailPage() {
       <section className="manager-section">
         <h2>Thông tin kho</h2>
         <Facts items={[
-          ['Kích thước', first(unit, 'dimensions.display') || '—'],
-          ['Điều kiện bảo quản', unit.condition ? label(unit.condition) : '—'],
+          ['Loại kho', storageType || '—'],
+          ...(category !== storageType || !category ? [['Nhóm kích thước', category || '—'] as [string, string]] : []),
+          ['Kích thước (rộng × dài × cao)', measurements.dimensions],
+          ['Điều kiện bảo quản', condition],
+          ['Diện tích sàn', measurements.area],
+          ['Thể tích', measurements.volume],
         ]} />
-        {unitBookingSummary(unit) && <p className="record-text"><strong>{unitBookingSummary(unit)}.</strong> Kiểm tra khả dụng theo kỳ thuê.</p>}
+        {statusDescription && <p className="record-text">{statusDescription}</p>}
         {unit.status === 'OCCUPIED' && !unit.currentAllocation && !first(unit, 'allocationSummary.current.id') &&
           <p className="record-text">Đang sử dụng. Chưa xác định được phân bổ hiện tại.</p>}
       </section>
       <section className="manager-section">
         <h2>Lịch phân bổ & lịch sử</h2>
+        {upcomingBooking && <p className="record-text"><strong>{upcomingBooking}.</strong> Kiểm tra khả dụng theo kỳ thuê.</p>}
         {allocations.length ? <div className="manager-table-wrap" role="region" tabIndex={0} aria-label="Lịch phân bổ">
           <table className="manager-table">
             <thead><tr><th scope="col">Đặt kho / Hợp đồng</th><th scope="col">Kỳ phân bổ</th><th scope="col">Khách hàng</th><th scope="col">Tình trạng</th></tr></thead>

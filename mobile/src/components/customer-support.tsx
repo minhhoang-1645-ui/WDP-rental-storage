@@ -17,7 +17,7 @@ export const supportPath = '/customer/support-requests';
 const categories = {
   OTHER: 'Hỗ trợ khác', PAYMENT_SUPPORT: 'Hóa đơn & thanh toán', UNIT_ISSUE: 'Vấn đề với kho',
   LOCK_OR_KEY_ISSUE: 'Khóa hoặc chìa khóa', ACCESS_CODE_ISSUE: 'Mã truy cập',
-  FACILITY_EQUIPMENT_FAILURE: 'Lỗi thiết bị cơ sở', STORED_ITEM_CONCERN: 'Vấn đề về hàng đang lưu',
+  FACILITY_EQUIPMENT_FAILURE: 'Lỗi thiết bị cơ sở', STORED_ITEM_CONCERN: 'Sự cố với đồ lưu trữ',
 };
 type Category = keyof typeof categories;
 const endpoint = supportPath;

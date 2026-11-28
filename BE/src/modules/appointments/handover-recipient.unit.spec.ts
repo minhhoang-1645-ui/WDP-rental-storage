@@ -3,7 +3,7 @@ import { businessToday } from '../../business-date.js';
 import { AppointmentsService } from './appointments.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-const staff = { id: 'staff', role: 'STAFF' } as PublicUser;
+const staff = { id: 'staff', role: 'FACILITY_STAFF' } as PublicUser;
 const report = { condition: 'Kho sạch, cửa và khóa bình thường', accessItemCount: 1, identityVerified: true, unitInspected: true, accessDelivered: true, documentsDelivered: true };
 
 function setup(status = 'CONFIRMED') {
@@ -12,7 +12,7 @@ function setup(status = 'CONFIRMED') {
   const startDate = new Date(today + 86400000);
   const endDate = new Date(today + 31 * 86400000);
   const row = {
-    id: 'appointment', appointmentCode: 'A01', status,
+    id: 'appointment', reservationId: 'reservation', appointmentCode: 'A01', status,
     assignedStaffUserId: status === 'COMPLETED' ? null : staff.id,
     assignedStaff: status === 'COMPLETED' ? null : { ...staff, accountStatus: 'ACTIVE' },
     completedByUserId: status === 'COMPLETED' ? staff.id : null,
@@ -30,7 +30,18 @@ function setup(status = 'CONFIRMED') {
     },
   };
   const update = vi.fn(async ({ data }) => Object.assign(row, data));
-  const tx = { $queryRaw: vi.fn(), handoverAppointment: { findUnique: vi.fn().mockResolvedValue(row), update }, rentalContract: { count: vi.fn().mockResolvedValue(0) } };
+  const tx = {
+    $queryRaw: vi.fn().mockResolvedValue([]),
+    $queryRawUnsafe: vi.fn(),
+    auditEvent: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn() },
+    reservation: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
+    user: { findFirst: vi.fn().mockResolvedValue({ id: staff.id }) },
+    facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
+    handoverAppointment: { findUnique: vi.fn().mockResolvedValue(row), update },
+    maintenanceRequest: { count: vi.fn().mockResolvedValue(0) },
+    incidentUnitBlock: { count: vi.fn().mockResolvedValue(0) },
+    rentalContract: { count: vi.fn().mockResolvedValue(0) },
+  };
   const prisma = {
     handoverAppointment: { findFirst: vi.fn().mockResolvedValue({ id: row.id }) },
     $transaction: vi.fn(operation => operation(tx)),
@@ -62,7 +73,13 @@ describe('RV3 handover completion service', () => {
   });
   it('records the contract customer, Staff identity and actual completion time', async () => {
     const { service, update } = setup();
-    const result = await service.completeHandover('appointment', { handoverReport: report }, staff);
+    const photos = ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/0sAAAAASUVORK5CYII='];
+    const photoLinks = ['https://example.test/handover.png'];
+    const result = await service.completeHandover('appointment', { handoverReport: { ...report, photos, photoLinks } }, staff);
+    expect(result.handoverReport).toMatchObject({ photos, photoLinks });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+      handoverReport: expect.objectContaining({ photos, photoLinks }),
+    }) }));
     expect(result.handoverNote).toContain('Người nhận: Khách thuê');
     expect(result.handoverReport).toMatchObject({ recipientName: 'Khách thuê', accessItemCount: 1, identityVerified: true, documentsDelivered: true });
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ completedByUserId: staff.id, completedAt: expect.any(Date) }) }));
@@ -86,7 +103,7 @@ describe('RV3 handover completion service', () => {
   });
   it('keeps role and contract readiness checks before confirming a handover', async () => {
     const state = setup();
-    await expect(state.service.completeHandover('appointment', { handoverReport: report }, { ...staff, role: 'MANAGER' })).rejects.toThrow('nhân viên');
+    await expect(state.service.completeHandover('appointment', { handoverReport: report }, { ...staff, role: 'FACILITY_MANAGER' })).rejects.toThrow('nhân viên');
     state.row.reservation.invoices[0].status = 'OPEN';
     await expect(state.service.completeHandover('appointment', { handoverReport: report }, staff)).rejects.toThrow('thanh toán');
     expect(state.update).not.toHaveBeenCalled();
@@ -117,7 +134,7 @@ describe('RV3 handover completion service', () => {
     const capture = { condition: 'Cửa và khóa bình thường', inspected: true, identityVerified: true, accessDelivered: true };
     vi.setSystemTime(begin);
     try {
-      await expect(service.recordUnitHandover('appointment', 'unit', capture, { ...staff, id: 'other' })).rejects.toThrow('phân công');
+      await expect(service.recordUnitHandover('appointment', 'unit', capture, { ...staff, id: 'other' })).rejects.toThrow('được giao');
       await expect(service.recordUnitHandover('appointment', 'foreign', capture, staff)).rejects.toThrow('không thuộc');
       const first = await service.recordUnitHandover('appointment', 'unit', capture, staff);
       expect(first.status).toBe('CONFIRMED');

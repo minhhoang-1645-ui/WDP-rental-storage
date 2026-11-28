@@ -1,0 +1,429 @@
+import { useId, useRef, useState, type FormEvent } from 'react';
+import { ArrowLeft, ChartNoAxesColumn, Ellipsis, Eye, Pencil, Plus, Search, TriangleAlert } from 'lucide-react';
+import { Link, useLocation, useParams } from 'react-router-dom';
+import { useAuth } from '../../auth/auth-context';
+import { Empty, Facts, LoadState, Modal, PageHeader, Status } from '../../components/manager/PortalUi';
+import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
+import { DatePicker } from '../../components/workspace/DateTimeFields';
+import { WorkingHoursPicker } from '../../components/workspace/WorkingHoursPicker';
+import { days, hourSpans, scheduleIssues, type ServiceWindow } from '../../components/workspace/working-hours';
+import { expandGroups, FacilityServiceSchedule, groupWindows, serviceIssues, type ServiceGroup } from './FacilityServiceSchedule';
+import { TablePopover } from '../../components/workspace/StaffTaskTable';
+import { useListPagination } from '../../components/workspace/useListPagination';
+import { ApiError, apiRequest } from '../../services/api';
+import { useApiResource } from '../../services/useApiResource';
+import { vietnamCalendarDate } from '../../utils/business-date';
+import './operations-facilities.css';
+
+const base = '/operations/facilities';
+const states = { OPEN: 'Đang hoạt động', CLOSING: 'Đang ngừng hoạt động', CLOSED: 'Đã ngừng hoạt động' };
+const modes = {
+  CONTRACT_EXPIRY: 'Kết thúc theo thời hạn hợp đồng',
+  REQUIRED_RELOCATION: 'Di dời bắt buộc',
+};
+type State = keyof typeof states;
+type Mode = keyof typeof modes;
+type Facility = {
+  id: string; code: string; name: string; address: string; officeHours: string | null; accessHours: string | null;
+  bookingEnabled: boolean; operationalStatus: State; updatedAt: string;
+  photo?: string | null;
+  serviceSchedule?: ServiceWindow[];
+  closureMode?: Mode | null; closureReason?: string | null; closureExpectedAt?: string | null; closureStartedAt?: string | null;
+  closureProgress?: { activeContracts: number; openTasks: number; openTransfers: number; pendingBookings: number };
+};
+type Dialog = { kind: 'create' } | { kind: 'edit' | 'plan' | 'reopen'; facility: Facility };
+const report = (id: string) => '/operations/reports?' + new URLSearchParams({ facilityId: id });
+const booking = (facility: Facility) => facility.operationalStatus !== 'OPEN' ? 'Không tiếp nhận' : facility.bookingEnabled ? 'Đang nhận' : 'Tạm dừng';
+const bookingDescription = (facility: Facility) => facility.operationalStatus !== 'OPEN' ? 'Cơ sở hiện không tiếp nhận khách thuê mới.'
+  : facility.bookingEnabled ? 'Đang tiếp nhận khách thuê mới.' : 'Đang tạm dừng nhận khách thuê mới.';
+const textOrFallback = (text?: string | null) => text?.trim() || 'Chưa thiết lập';
+const closureDateError = 'Ngày dự kiến ngừng phục vụ không được trước ngày hiện tại.';
+const overdueClosure = (facility?: Facility) => facility?.operationalStatus === 'CLOSING'
+  && Boolean(facility.closureExpectedAt && facility.closureExpectedAt.slice(0, 10) < vietnamCalendarDate());
+const formatDate = (value?: string | null, includeTime = false) => value
+  ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', ...(includeTime ? { timeStyle: 'short' } : {}), timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(value))
+  : 'Chưa thiết lập';
+const statusBadge = (state: State) => <Status value={'facility-' + state} text={states[state] ?? 'Chưa xác định'} />;
+const detailsUrl = (id: string, search: string) => base + '/' + encodeURIComponent(id) + search;
+
+export function OperationsFacilities() {
+  const { user } = useAuth();
+  const { facilityId } = useParams();
+  const { search: urlSearch } = useLocation();
+  // The API supplies the complete list, including closure progress. Resolve detail from this same request.
+  const resource = useApiResource<Facility[]>(base, user?.id, false, true);
+  const confirm = useConfirmation();
+  const working = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [dialog, setDialog] = useState<Dialog>();
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('');
+  const facility = resource.data?.find(item => item.id === facilityId);
+  const filtered = (resource.data ?? []).filter(item =>
+    (!filter || item.operationalStatus === filter) &&
+    [item.name, item.code, item.address].some(value => value?.toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi'))));
+  const { items, pagination } = useListPagination(filtered);
+
+  function open(value: Dialog) {
+    setNotice('');
+    setError('');
+    setDialog(value);
+  }
+
+  async function save(body: object, success: string, target?: Facility, confirmation?: Parameters<typeof confirm>[0]) {
+    if (working.current) return;
+    working.current = true;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      if (confirmation && !(await confirm(confirmation))) return;
+      let scheduleImpactToken: string | undefined;
+      for (;;) {
+        try {
+          await apiRequest(target ? base + '/' + encodeURIComponent(target.id) : base, {
+            method: target ? 'PATCH' : 'POST',
+            body: JSON.stringify({ ...body, scheduleImpactToken, ...(target ? { expectedUpdatedAt: target.updatedAt } : {}) }),
+          });
+          break;
+        } catch (caught) {
+          const impact = caught instanceof ApiError && caught.status === 409
+            ? caught.payload as { code?: string; token?: string; message?: string } | null : null;
+          if (impact?.code !== 'FACILITY_SCHEDULE_IMPACT' || !impact.token || impact.token === scheduleImpactToken) throw caught;
+          if (!(await confirm({ title: 'Xác nhận thay đổi lịch hoạt động', description: impact.message ?? '',
+            confirmLabel: 'Lưu thay đổi' }))) return;
+          scheduleImpactToken = impact.token;
+        }
+      }
+      setDialog(undefined);
+      setNotice(success);
+      resource.refresh();
+    } catch (caught) {
+      const photoUnsupported = Object.hasOwn(body, 'photo') && caught instanceof ApiError
+        && caught.status === 400 && caught.message === 'Có trường không được phép sửa.';
+      setError(photoUnsupported ? 'Máy chủ đang dùng phiên bản chưa hỗ trợ ảnh cơ sở. Ảnh chưa được lưu.'
+        : caught instanceof Error ? caught.message : 'Chưa lưu được cơ sở.');
+    } finally {
+      setBusy(false);
+      working.current = false;
+    }
+  }
+
+  function reopen(target: Facility) {
+    if (target.closureMode === 'REQUIRED_RELOCATION') return open({ kind: 'reopen', facility: target });
+    const cancelling = target.operationalStatus === 'CLOSING';
+    const action = cancelling ? 'Hủy kế hoạch ngừng kinh doanh' : 'Mở lại cơ sở';
+    void save({ operationalStatus: 'OPEN', bookingEnabled: false }, 'Cơ sở đã hoạt động trở lại.', target, {
+      title: action, description: 'Cơ sở sẽ hoạt động trở lại. Nhận đặt kho mới vẫn tạm dừng.', confirmLabel: action,
+    });
+  }
+
+  const detailSchedule = groupWindows(facility?.serviceSchedule ?? []);
+  const requiredHours = facility && scheduleIssues(facility.officeHours ?? '', facility.accessHours ?? '', [], true);
+  const scheduleWarning = Boolean(requiredHours?.officeHours || requiredHours?.accessHours);
+  return <section className="bom-facilities">
+    {facilityId && <Link className="bom-facility-back" to={base + urlSearch}><ArrowLeft size={16} aria-hidden="true" /> Cơ sở</Link>}
+    {!facilityId && <PageHeader title="Cơ sở">
+      <button className="button-primary" onClick={() => open({ kind: 'create' })}><Plus size={17} aria-hidden="true" /> Thêm cơ sở</button>
+    </PageHeader>}
+    <LoadState loading={resource.loading} error={resource.error} retry={resource.refresh} layout={facilityId ? 'detail' : 'list'} />
+    {notice && <p className="bom-facility-notice" role="status">{notice}</p>}
+    {!dialog && error && <div className="booking-alert is-error" role="alert">{error}</div>}
+    {!resource.loading && !resource.error && (facilityId
+      ? facility ? <>
+        <PageHeader title={facility.name} status={statusBadge(facility.operationalStatus)} meta={facility.code}>
+          <Link className="button-secondary" to={report(facility.id)}>Hiệu quả cơ sở</Link>
+          <button className="button-primary" disabled={busy || resource.refreshing} onClick={() => open({ kind: 'edit', facility })}>Chỉnh sửa</button>
+        </PageHeader>
+        <div className="bom-facility-panels">
+          <section className="manager-section bom-facility-info">
+            <h2>Thông tin cơ sở</h2>
+            <Facts items={[
+              ['Địa chỉ', textOrFallback(facility.address)],
+              ['Giờ làm việc của cơ sở', textOrFallback(facility.officeHours)], ['Giờ khách truy cập kho', textOrFallback(facility.accessHours)],
+            ]} />
+            <h3>Lịch phục vụ khách hàng (tùy chọn)</h3>
+            {detailSchedule.length ? <dl className="bom-facility-schedule-detail">
+              {detailSchedule.map(row => <div key={row.id}>
+                <dt>{row.weekdays.length === 7 ? 'Hằng ngày' : row.weekdays.map(day => days[day - 1]).join(', ')}</dt>
+                <dd>{row.starts}–{row.ends} · Tối đa {row.capacity} lịch hẹn mỗi khung</dd>
+              </div>)}
+            </dl> : <p>Lịch hẹn do quản lý cơ sở xác nhận.</p>}
+            {scheduleWarning && <p className="bom-facility-warning"><TriangleAlert size={16} aria-hidden="true" />
+              {requiredHours?.officeHours || requiredHours?.accessHours}
+            </p>}
+          </section>
+          <section className="manager-section">
+            <h2>Trạng thái kinh doanh</h2>
+            <BookingSwitch enabled={facility.operationalStatus === 'OPEN' && facility.bookingEnabled}
+              disabled={facility.operationalStatus !== 'OPEN' || busy || resource.refreshing || Boolean(!facility.bookingEnabled && scheduleWarning)}
+              description={bookingDescription(facility)}
+              onToggle={() => void save({ bookingEnabled: !facility.bookingEnabled }, facility.bookingEnabled ? 'Đã tạm dừng nhận đặt kho.' : 'Đã bật nhận đặt kho.', facility, {
+                title: facility.bookingEnabled ? 'Tạm dừng nhận đặt kho' : 'Bật nhận đặt kho',
+                description: facility.bookingEnabled ? 'Khách hiện tại vẫn sử dụng kho theo hợp đồng.' : 'Khách có thể đặt kho mới tại cơ sở này.',
+                confirmLabel: facility.bookingEnabled ? 'Tạm dừng nhận' : 'Bật nhận đặt kho',
+              })} />
+            <div className="bom-facility-closure">
+              <div><h3>Ngừng kinh doanh</h3><p>{facility.operationalStatus === 'OPEN' ? 'Lập kế hoạch kết thúc phục vụ tại cơ sở.'
+                : facility.operationalStatus === 'CLOSING' ? 'Theo dõi kế hoạch và các hồ sơ bên dưới.' : 'Có thể mở lại khi cơ sở đủ điều kiện.'}</p></div>
+              {facility.operationalStatus !== 'CLOSING' && <button type="button" className="button-secondary" disabled={busy || resource.refreshing} onClick={() => facility.operationalStatus === 'OPEN' ? open({ kind: 'plan', facility }) : reopen(facility)}>
+                {facility.operationalStatus === 'OPEN' ? 'Bắt đầu ngừng kinh doanh' : 'Mở lại cơ sở'}
+              </button>}
+            </div>
+          </section>
+        </div>
+        {(facility.operationalStatus === 'CLOSING' || facility.closureMode) && <section className="manager-section">
+          <h2>Kế hoạch ngừng kinh doanh</h2>
+          {overdueClosure(facility) && <Status value="pending" text="Quá ngày dự kiến" />}
+          <Facts items={[
+            ['Phương án', facility.closureMode ? modes[facility.closureMode] ?? 'Chưa xác định' : 'Chưa thiết lập'],
+            ['Lý do', textOrFallback(facility.closureReason)], ['Bắt đầu', formatDate(facility.closureStartedAt, true)], ['Ngày dự kiến', formatDate(facility.closureExpectedAt)],
+          ]} />
+          {facility.closureProgress && <>
+            <h3>Hồ sơ cần theo dõi</h3>
+            <Facts items={[
+              ['Hợp đồng đang sử dụng', facility.closureProgress.activeContracts],
+              ['Đơn đặt kho đang chờ', facility.closureProgress.pendingBookings],
+              ['Việc hỗ trợ còn mở', facility.closureProgress.openTasks],
+              ['Hồ sơ chuyển kho chưa xong', facility.closureProgress.openTransfers],
+            ]} />
+          </>}
+          {facility.operationalStatus === 'CLOSING' && <div className="portal-actions bom-facility-actions">
+            <button className="button-secondary" disabled={busy || resource.refreshing} onClick={() => open({ kind: 'plan', facility })}>
+              {facility.closureMode === 'REQUIRED_RELOCATION' ? 'Chỉnh kế hoạch' : 'Chỉnh phương án'}
+            </button>
+            <button className="button-secondary" disabled={busy || resource.refreshing} onClick={() => reopen(facility)}>Hủy kế hoạch</button>
+            <button className="button-primary" disabled={busy || resource.refreshing} onClick={() => void save({ operationalStatus: 'CLOSED', bookingEnabled: false }, 'Đã đóng cơ sở.', facility, {
+              title: 'Đóng cơ sở hoàn toàn', description: 'Hệ thống sẽ kiểm tra các nghĩa vụ còn lại của cơ sở trước khi đóng.',
+              confirmLabel: 'Xác nhận đóng cơ sở', destructive: true,
+            })}>Đóng cơ sở hoàn toàn</button>
+          </div>}
+        </section>}
+      </> : <Empty title="Không tìm thấy cơ sở" description="Quay về danh sách để chọn cơ sở khác." />
+      : <>
+        <div className="portal-toolbar bom-facility-toolbar">
+          <label className="field-label">Tìm cơ sở
+            <span className="bom-facility-search"><Search size={17} aria-hidden="true" /><input type="search" value={search} placeholder="Tên hoặc mã cơ sở" onChange={event => setSearch(event.target.value)} /></span>
+          </label>
+          <label className="field-label">Trạng thái hoạt động
+            <select aria-label="Trạng thái hoạt động" value={filter} onChange={event => setFilter(event.target.value)}>
+              <option value="">Tất cả trạng thái</option>
+              {Object.entries(states).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+        </div>
+        {items.length ? <><div className="manager-table-wrap bom-facility-table"><table className="manager-table" aria-label="Danh sách cơ sở">
+          <thead><tr><th>Cơ sở</th><th>Địa chỉ</th><th>Trạng thái hoạt động</th><th>Nhận đặt kho</th><th>Thao tác</th></tr></thead>
+          <tbody>{items.map(item => <tr key={item.id}>
+            <td><Link className="bom-facility-name" to={detailsUrl(item.id, urlSearch)}>{item.name}</Link><small>{item.code}</small></td>
+            <td>{textOrFallback(item.address)}</td><td>{statusBadge(item.operationalStatus)}</td>
+            <td><span className="bom-booking-state" data-accepting={item.operationalStatus === 'OPEN' && item.bookingEnabled}>{booking(item)}</span></td>
+            <td><TablePopover name={'Thao tác ' + item.name} panelClassName="bom-facility-menu" trigger={<Ellipsis size={18} aria-hidden="true" />}>
+              <Link to={detailsUrl(item.id, urlSearch)} onClick={dismissMenu}><Eye size={16} aria-hidden="true" /> Xem chi tiết</Link>
+              <button type="button" onClick={event => { dismissMenu(event); open({ kind: 'edit', facility: item }); }}><Pencil size={16} aria-hidden="true" /> Chỉnh sửa</button>
+              <Link to={report(item.id)} onClick={dismissMenu}><ChartNoAxesColumn size={16} aria-hidden="true" /> Hiệu quả cơ sở</Link>
+            </TablePopover></td>
+          </tr>)}</tbody>
+        </table></div>{pagination}</> : <Empty title={resource.data?.length ? 'Không có cơ sở phù hợp' : 'Chưa có cơ sở'}
+          description={resource.data?.length ? 'Thử đổi từ khóa hoặc trạng thái.' : 'Chọn Thêm cơ sở để tạo cơ sở đầu tiên.'} />}
+      </>)}
+    {dialog && <FacilityDialog key={dialog.kind + ('facility' in dialog ? dialog.facility.id : '')}
+      dialog={dialog} busy={busy} error={error} onClose={() => { setDialog(undefined); setError(''); }} onSave={save} />}
+  </section>;
+}
+
+function dismissMenu(event: { currentTarget: HTMLElement }) {
+  event.currentTarget.closest<HTMLElement>('[popover]')?.hidePopover();
+}
+
+function BookingSwitch({ enabled, disabled, description, onToggle }: { enabled: boolean; disabled: boolean; description: string; onToggle?: () => void }) {
+  const id = useId();
+  return <div className="bom-facility-switch">
+    <div><strong id={id + '-label'}>Nhận đặt kho mới</strong><p id={id + '-help'}>{description}</p></div>
+    <button type="button" className="workspace-switch" role="switch" aria-checked={enabled} aria-labelledby={id + '-label'} aria-describedby={id + '-help'} disabled={disabled} onClick={onToggle} />
+  </div>;
+}
+
+const fields = [
+  { key: 'code', label: 'Mã cơ sở', max: 80, example: 'NB-02' },
+  { key: 'name', label: 'Tên cơ sở', max: 120, example: 'NestBox Long Bình' },
+  { key: 'address', label: 'Địa chỉ', max: 500, example: 'Số nhà, đường, phường, thành phố' },
+] as const;
+const hourFields = [['officeHours', 'Giờ làm việc của cơ sở'], ['accessHours', 'Giờ khách truy cập kho']] as const;
+
+function FacilityDialog({ dialog, busy, error, onClose, onSave }: {
+  dialog: Dialog; busy: boolean; error: string; onClose: () => void;
+  onSave: (body: object, success: string, target?: Facility) => Promise<void>;
+}) {
+  const id = useId();
+  const facility = 'facility' in dialog ? dialog.facility : undefined;
+  const creating = dialog.kind === 'create';
+  const editing = dialog.kind === 'edit';
+  const planning = dialog.kind === 'plan';
+  const starting = planning && facility?.operationalStatus === 'OPEN';
+  const previousClosureDate = starting ? '' : facility?.closureExpectedAt?.slice(0, 10) ?? '';
+  const cancelling = dialog.kind === 'reopen' && facility?.operationalStatus === 'CLOSING';
+  const [issues, setIssues] = useState<Record<string, string>>({});
+  const [photo, setPhoto] = useState<string | null>(facility?.photo ?? null);
+  const [readingPhoto, setReadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState('');
+  function choosePhoto(file?: File) {
+    if (!file || readingPhoto || busy) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || !file.size || file.size > 400 * 1024) {
+      setPhotoError('Chọn ảnh JPG, PNG hoặc WebP tối đa 400 KB.');
+      return;
+    }
+    setPhotoError('');
+    setReadingPhoto(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') setPhoto(reader.result);
+    };
+    reader.onerror = () => setPhotoError('Không đọc được ảnh. Vui lòng chọn lại.');
+    reader.onloadend = () => setReadingPhoto(false);
+    reader.readAsDataURL(file);
+  }
+  const [serviceSchedule, setServiceSchedule] = useState(() => groupWindows(facility?.serviceSchedule ?? []));
+  const [scheduleChanged, setScheduleChanged] = useState(false);
+  const [hours, setHours] = useState<Partial<Record<(typeof hourFields)[number][0], { value: string; incomplete: boolean }>>>({});
+  const office = hours.officeHours?.value ?? facility?.officeHours ?? '';
+  const access = hours.accessHours?.value ?? facility?.accessHours ?? '';
+  const work = hourSpans(office);
+  const customer = hourSpans(access);
+  const windows = expandGroups(serviceSchedule);
+  const scheduleEditing = creating || scheduleChanged || hourFields.some(([key]) =>
+    hours[key]?.incomplete || (hours[key] && hours[key].value !== (facility?.[key] ?? '')));
+  const scheduleErrors = scheduleEditing ? scheduleIssues(office, access, windows, facility?.bookingEnabled) : {};
+  for (const [key] of hourFields) if (hours[key]?.incomplete) scheduleErrors[key] = 'Chọn đủ ngày, giờ bắt đầu và giờ kết thúc.';
+  const rowErrors = scheduleEditing ? serviceIssues(serviceSchedule, customer) : [];
+  const scheduleInvalid = Object.keys(scheduleErrors).length > 0 || rowErrors.some(Boolean);
+  function changeSchedule(groups: ServiceGroup[]) {
+    setScheduleChanged(true);
+    setServiceSchedule(groups);
+  }
+  const title = creating ? 'Thêm cơ sở' : editing ? 'Chỉnh sửa cơ sở' : planning ? starting ? 'Bắt đầu ngừng kinh doanh' : 'Chỉnh kế hoạch ngừng kinh doanh' : cancelling ? 'Hủy kế hoạch ngừng kinh doanh' : 'Mở lại cơ sở';
+  const submitLabel = creating ? 'Thêm cơ sở' : starting ? 'Xác nhận ngừng kinh doanh' : dialog.kind === 'reopen' ? 'Xác nhận mở lại' : 'Lưu thay đổi';
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const read = (name: string) => String(formData.get(name) ?? '').trim();
+    const next: Record<string, string> = {};
+    const required = (name: string, label: string, max: number) => {
+      const value = read(name);
+      if (!value) next[name] = 'Nhập ' + label.toLocaleLowerCase('vi') + '.';
+      else if (value.length > max) next[name] = 'Tối đa ' + max + ' ký tự.';
+      return value;
+    };
+    let body: object;
+    if (creating || editing) {
+      if (scheduleInvalid || readingPhoto || photoError) return;
+      const values = Object.fromEntries(fields.flatMap(field => {
+        if (editing && field.key === 'code') return [];
+        return [[field.key, required(field.key, field.label, field.max)]];
+      }));
+      for (const [key] of hourFields) {
+        const changed = read(key + 'Changed');
+        if (changed) values[key] = read(key);
+      }
+      body = { ...values, ...(creating ? { operationalStatus: 'OPEN', bookingEnabled: false } : {}),
+        ...(photo !== (facility?.photo ?? null) ? { photo } : {}),
+        ...(scheduleChanged ? { serviceSchedule: windows } : {}) };
+    } else if (planning) {
+      const expected = read('closureExpectedAt');
+      if (expected && (starting || expected !== previousClosureDate)) {
+        const parsed = new Date(expected + 'T00:00:00Z');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(expected) || !Number.isFinite(+parsed) || parsed.toISOString().slice(0, 10) !== expected)
+          next.closureExpectedAt = 'Ngày dự kiến ngừng phục vụ không hợp lệ.';
+        else if (expected < vietnamCalendarDate()) next.closureExpectedAt = closureDateError;
+      }
+      body = {
+        operationalStatus: 'CLOSING', bookingEnabled: false, closureMode: read('closureMode'),
+        closureReason: required('closureReason', 'Lý do ngừng kinh doanh', 500),
+        ...(starting || expected !== previousClosureDate ? { closureExpectedAt: expected } : {}),
+      };
+    } else {
+      body = { operationalStatus: 'OPEN', bookingEnabled: false, reopeningSafetyEvidence: required('reopeningSafetyEvidence', 'Căn cứ xác nhận an toàn', 500) };
+    }
+    setIssues(next);
+    const first = Object.keys(next)[0];
+    if (first) {
+      const field = (first === 'closureExpectedAt' ? form.querySelector<HTMLElement>('.workspace-date-trigger') : null) ??
+        form.querySelector<HTMLElement>('[data-hours-field="' + first + '"] button') ??
+        form.elements.namedItem(first) as HTMLElement | null;
+      field?.focus();
+      return;
+    }
+    const message = creating ? 'Đã thêm cơ sở.' : editing ? 'Đã cập nhật thông tin cơ sở.' : planning ? 'Đã lưu kế hoạch ngừng kinh doanh.' : 'Cơ sở đã hoạt động trở lại.';
+    void onSave(body, message, facility);
+  }
+
+  const issue = (key: string) => issues[key] && <small id={id + '-' + key} className="bom-facility-field-error">{issues[key]}</small>;
+  const validation = (key: string) => ({ 'aria-invalid': !!issues[key], 'aria-describedby': issues[key] ? id + '-' + key : undefined });
+  return <Modal title={title} className={'bom-facility-dialog' + (creating || editing ? ' bom-facility-editor' : '')} busy={busy} onClose={onClose} focusTitle
+    footer={<><button type="button" className="button-secondary" disabled={busy} onClick={onClose}>Hủy</button>
+      <button type="submit" form={id} className={starting ? 'button-secondary portal-danger' : 'button-primary'} disabled={busy || ((creating || editing) && (scheduleInvalid || readingPhoto || Boolean(photoError)))}>{busy ? 'Đang lưu…' : submitLabel}</button></>}>
+    <form id={id} className="bom-facility-form" onSubmit={submit} noValidate>
+      {(creating || editing) && <div className="bom-facility-fields">
+        {fields.map(field => <label className={'field-label' + (field.key === 'address' ? ' bom-facility-span' : '')} key={field.key}>
+          <span>{field.label}{(!editing || field.key !== 'code') && <span aria-hidden="true"> *</span>}</span>
+          <input name={field.key} maxLength={field.max} placeholder={field.example} defaultValue={facility?.[field.key] ?? ''}
+            readOnly={editing && field.key === 'code'} required={!editing || field.key !== 'code'} {...validation(field.key)} />
+          {issue(field.key)}
+        </label>)}
+        <div className="bom-facility-span bom-facility-photo">
+          <label className="field-label">Ảnh đại diện cơ sở (tùy chọn)
+            <input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || readingPhoto} onChange={event => {
+              choosePhoto(event.currentTarget.files?.[0]);
+              event.currentTarget.value = '';
+            }} />
+          </label>
+          <small>Ảnh hiển thị công khai. JPG, PNG hoặc WebP, tối đa 400 KB.</small>
+          {readingPhoto && <p role="status">Đang đọc ảnh…</p>}
+          {photo && <img src={photo} alt="Xem trước ảnh cơ sở" />}
+          {(photo || photoError) && <button type="button" className="button-secondary" disabled={busy || readingPhoto} onClick={() => {
+            if (!photoError) setPhoto(null);
+            setPhotoError('');
+          }}>{photoError ? 'Bỏ tệp vừa chọn' : 'Gỡ ảnh'}</button>}
+          {photoError && <small role="alert" className="bom-facility-field-error">{photoError}</small>}
+        </div>
+        <h3 className="bom-facility-span bom-facility-hours-heading">Lịch hoạt động · UTC+7</h3>
+        {hourFields.map(([key, label]) => <div className="bom-facility-span" key={key}><WorkingHoursPicker name={key} label={label}
+          original={facility?.[key] ?? ''} error={scheduleErrors[key]} limits={key === 'accessHours' ? work : undefined}
+          onValueChange={(value, incomplete) => setHours(previous => ({ ...previous, [key]: { value, incomplete } }))} /></div>)}
+        <FacilityServiceSchedule groups={serviceSchedule} access={customer} errors={rowErrors} onChange={changeSchedule} />
+        {scheduleErrors.serviceSchedule && !rowErrors.some(Boolean) && <small className="bom-facility-span bom-facility-field-error" role="alert">{scheduleErrors.serviceSchedule}</small>}
+      </div>}
+      {creating && <BookingSwitch enabled={false} disabled description="Có thể bật nhận đặt kho sau khi cơ sở đủ điều kiện vận hành." />}
+      {planning && <>
+        <fieldset className="bom-facility-options">
+          <legend>Phương án</legend>
+          {Object.entries(modes).map(([value, label]) => <label key={value}>
+            <input type="radio" name="closureMode" value={value} defaultChecked={value === (facility?.closureMode ?? 'CONTRACT_EXPIRY')}
+              disabled={value === 'CONTRACT_EXPIRY' && facility?.closureMode === 'REQUIRED_RELOCATION'} />
+            <span><strong>{label}</strong><small>{value === 'CONTRACT_EXPIRY'
+              ? 'Phục vụ đến hết hạn và hỗ trợ khách có nhu cầu chuyển kho.'
+              : 'Hỗ trợ khách di dời hoặc thống nhất phương án thay thế.'}</small></span>
+          </label>)}
+        </fieldset>
+        <label className="field-label"><span>Lý do ngừng kinh doanh <span aria-hidden="true">*</span></span><textarea name="closureReason" required maxLength={500} rows={2} defaultValue={facility?.closureReason ?? ''} {...validation('closureReason')} />{issue('closureReason')}</label>
+        <div>
+          <DatePicker label="Ngày dự kiến ngừng phục vụ" name="closureExpectedAt" defaultValue={previousClosureDate}
+            min={vietnamCalendarDate()} existingDateBeforeMin={previousClosureDate} error={issues.closureExpectedAt}
+            onChange={() => setIssues(previous => ({ ...previous, closureExpectedAt: '' }))} />
+          <small>Có thể để trống nếu chưa xác định được ngày ngừng phục vụ.</small>
+          {overdueClosure(facility) && <p><Status value="pending" text="Quá ngày dự kiến" /></p>}
+        </div>
+        <p className="bom-facility-warning"><TriangleAlert size={16} aria-hidden="true" />Cơ sở dừng nhận đặt kho, gia hạn và dịch vụ mới ngay khi xác nhận kế hoạch. Ngày dự kiến ngừng phục vụ là mốc dự kiến hoàn tất các nghĩa vụ còn lại.</p>
+      </>}
+      {dialog.kind === 'reopen' && <>
+        <p>Nhận đặt kho mới vẫn tạm dừng sau khi mở lại.</p>
+        <label className="field-label"><span>Căn cứ xác nhận an toàn <span aria-hidden="true">*</span></span><textarea name="reopeningSafetyEvidence" required maxLength={500} rows={3} {...validation('reopeningSafetyEvidence')} />{issue('reopeningSafetyEvidence')}</label>
+      </>}
+      {error && <div className="booking-alert is-error" role="alert">{error}</div>}
+    </form>
+  </Modal>;
+}

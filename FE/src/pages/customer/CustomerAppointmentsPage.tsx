@@ -165,7 +165,7 @@ export function CustomerAppointmentsPage() {
       <PortalPageHeader
         eyebrow="Lịch hẹn"
         title="Lịch bàn giao của tôi"
-        description="Lịch hợp lệ được xác nhận giờ hẹn tự động. Quản lý sẽ phân công nhân viên; bạn có thể theo dõi người phụ trách tại đây."
+        description="Đề xuất giờ hẹn trong giờ khách truy cập kho. Nếu cơ sở chưa thiết lập khung phục vụ, quản lý sẽ xác nhận lịch."
         action={
           <button
             className="button-secondary"

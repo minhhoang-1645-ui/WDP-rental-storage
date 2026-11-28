@@ -1,13 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DamageClaimsService } from './damage-claims.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
-const manager = { id: 'manager', role: 'MANAGER' } as PublicUser;
+const manager = { id: 'manager', role: 'FACILITY_MANAGER' } as PublicUser;
 function setup() {
   const now = new Date();
-  const row = { id: 'claim', status: 'RESOLVED', decision: 'APPROVED', decisionReason: 'Lý do quyết định trước đây', resolutionNote: 'Kết quả đã thông báo trước đây', staffFacts: 'Ghi nhận thực tế tại kho', history: [], updatedAt: now, discoveredOn: now, createdAt: now, estimatedValue: null };
+  const row = { id: 'claim', rentalContractId: 'contract', status: 'RESOLVED', decision: 'APPROVED', decisionReason: 'Lý do quyết định trước đây', resolutionNote: 'Kết quả đã thông báo trước đây', staffFacts: 'Ghi nhận thực tế tại kho', history: [], updatedAt: now, discoveredOn: now, createdAt: now, estimatedValue: null };
   const update = vi.fn(async ({ data }) => Object.assign(row, data));
-  const tx = { $queryRaw: vi.fn(), damageClaim: { findUnique: vi.fn().mockResolvedValue(row), update } };
-  return { row, update, service: new DamageClaimsService({ $transaction: operation => operation(tx) } as never) };
+  const tx = {
+    $queryRawUnsafe: vi.fn(),
+    user: { findFirst: vi.fn(async ({ where }) => ({ id: where.id })) },
+    facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
+    rentalContract: { findUnique: vi.fn().mockResolvedValue({ reservationUnit: { storageUnit: { storageType: { facilityId: 'facility' } } } }) },
+    $queryRaw: vi.fn(), damageClaim: { findUnique: vi.fn().mockResolvedValue(row), update } };
+  return { row, update, service: new DamageClaimsService({ $transaction: (operation: any) => operation(tx) } as never) };
 }
 describe('Manager incident amendments', () => {
   it('amends saved decision reasons and outcomes without reopening the incident and preserves previous values', async () => {
@@ -23,7 +28,7 @@ describe('Manager incident amendments', () => {
   });
   it('blocks other roles and stale amendments', async () => {
     const app = setup();
-    for (const role of ['STAFF', 'CUSTOMER'] as const) await expect(app.service.action({ ...manager, role }, app.row.id, { expectedUpdatedAt: app.row.updatedAt.toISOString(), action: 'amend-decision', decisionReason: 'Lý do chỉnh sửa có đủ độ dài' })).rejects.toThrow();
+    for (const role of ['FACILITY_STAFF', 'STORAGE_CUSTOMER'] as const) await expect(app.service.action({ ...manager, role }, app.row.id, { expectedUpdatedAt: app.row.updatedAt.toISOString(), action: 'amend-decision', decisionReason: 'Lý do chỉnh sửa có đủ độ dài' })).rejects.toThrow();
     await expect(app.service.action(manager, app.row.id, { expectedUpdatedAt: 'stale', action: 'amend-resolution', resolutionNote: 'Kết quả cập nhật đủ độ dài' })).rejects.toThrow('vừa thay đổi');
     expect(app.update).not.toHaveBeenCalled();
   });

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { launchTestBrowser } from './browser-test.mjs';
+import { chooseDate, chooseTime, launchTestBrowser } from './browser-test.mjs';
 import { customer, staff } from './fixtures/workspace.mjs';
 
 const base = process.env.WDP_FE_URL ?? 'http://localhost:5173';
@@ -126,7 +126,8 @@ try {
   const dialog = page.getByRole('dialog', { name: 'Ghi nhận đã giao tiền' });
   assert(await dialog.getByRole('button', { name: 'Xác nhận đã giao tiền' }).isDisabled());
   assert.match(await dialog.getByLabel('Số tiền đã giao').inputValue(), /100\.000/);
-  await dialog.getByLabel(/Ngày giờ bàn giao/).fill('2026-10-18T15:00');
+  await chooseDate(dialog, 'Ngày giờ bàn giao (giờ Việt Nam) · Ngày', '2026-10-18');
+  await chooseTime(dialog, 'Ngày giờ bàn giao (giờ Việt Nam) · Giờ', '15:00');
   await dialog.getByLabel('Người giao').fill('Người giao tiền thử');
   await dialog.getByRole('checkbox', { name: /Xác nhận đã bàn giao/ }).check();
   await dialog.getByRole('button', { name: 'Xác nhận đã giao tiền' }).click();

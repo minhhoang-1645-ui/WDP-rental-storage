@@ -1,5 +1,5 @@
 import { StaffWorkflow, ManagerAssignment } from '../auth/operation-access.js';
-import { BadRequestException, Body, Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiConflictResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
@@ -11,11 +11,17 @@ const statuses = ['REQUESTED', 'CONFIRMED', 'COMPLETED', 'CANCELLED'] as const;
 @Controller(['manager/appointments', 'staff/management/appointments'])
 @StaffWorkflow()
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('STAFF', 'MANAGER')
+@Roles('FACILITY_STAFF', 'FACILITY_MANAGER')
 @ApiTags('Manager Appointment')
 @ApiBearerAuth('bearerAuth')
 export class ManagerAppointmentsController {
   constructor(private readonly appointments: AppointmentsService) {}
+
+  @ManagerAssignment()
+  @Post()
+  create(@Body() body: Record<string, unknown>, @Req() request: AuthenticatedRequest, @Headers('idempotency-key') key?: string) {
+    return this.appointments.createManagerAppointment(request.user!, body, key);
+  }
 
   @Get()
   @ApiOperation({ summary: 'Danh sách lịch bàn giao cho nhân viên' })
@@ -53,10 +59,16 @@ export class ManagerAppointmentsController {
     return this.appointments.assignAppointment(id, input, request.user!);
   }
 
+  @ManagerAssignment()
+  @Patch(':id/schedule')
+  adjustSchedule(@Param('id') id: string, @Body() body: Record<string, unknown>, @Req() request: AuthenticatedRequest) {
+    return this.appointments.adjustAppointment(id, body, request.user!);
+  }
+
   @Patch(':id/confirm')
   @ApiOperation({ summary: 'Xác nhận lịch bàn giao', description: 'REQUESTED → CONFIRMED. Người xác nhận lấy từ bearer token.' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-A01' })
-  @ApiOkResponse({ schema: { example: { appointmentCode: 'WDP-2026-AB12CD34-A01', status: 'CONFIRMED', confirmedBy: { fullName: 'WDP Demo Manager', role: 'MANAGER' }, confirmedAt: '2026-11-08T03:00:00.000Z' } } })
+  @ApiOkResponse({ schema: { example: { appointmentCode: 'WDP-2026-AB12CD34-A01', status: 'CONFIRMED', confirmedBy: { fullName: 'WDP Demo Manager', role: 'FACILITY_MANAGER' }, confirmedAt: '2026-11-08T03:00:00.000Z' } } })
   @ApiConflictResponse({ description: 'Không còn ở REQUESTED hoặc trạng thái tài chính/contract không hợp lệ.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   @ApiForbiddenResponse({ description: 'Chỉ nhân viên đã được phân công có thể xác nhận.' })

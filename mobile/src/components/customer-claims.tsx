@@ -103,12 +103,11 @@ export function ClaimsList() {
 export function ClaimForm() {
   const { rentalContractId } = useLocalSearchParams<{ rentalContractId?: string }>();
   const [chosenId, setChosenId] = useState(rentalContractId ?? '');
-  const [picker, setPicker] = useState<'unit' | 'items'>();
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [date, setDate] = useState(() => vietnamCalendarDate());
   const [description, setDescription] = useState('');
   const [estimate, setEstimate] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
-  const [itemIds, setItemIds] = useState<string[]>([]);
   const [review, setReview] = useState(false);
   const [error, setError] = useState('');
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -122,9 +121,6 @@ export function ClaimForm() {
       code: text(contract, 'unit.unitCode'), zone: text(contract, 'unit.zone'), floor: text(contract, 'unit.floor')
         .replace(/^ground(?: floor)?$/i, 'Tầng trệt').replace(/^(?:floor\s+)?(\d+)$/i, 'Tầng $1') })));
   const storage = chosenId ? choices.find(item => item.id === chosenId) : choices[0];
-  const inventory = useResource<Row[]>(storage ? '/customer/stored-items?rentalContractId=' + encodeURIComponent(storage.id) : null);
-  const items = rows(inventory.data);
-  const affected = items.filter(item => itemIds.includes(idOf(item))).map(item => text(item, 'name')).join(', ');
   const amount = estimate.trim() ? Number(estimate) : null;
   const back = useCallback(() => {
     if (lock.current) return;
@@ -143,7 +139,6 @@ export function ClaimForm() {
 
   function validate() {
     const issue = !storage ? 'Chọn kho đang thuê.' : !isCalendarDate(date) || date > vietnamCalendarDate() ? 'Ngày phát hiện phải hợp lệ và không sau hôm nay.'
-      : itemIds.some(id => !items.some(item => idOf(item) === id)) ? 'Kiểm tra lại các mặt hàng đã chọn.'
       : description.trim().length < 10 ? 'Mô tả sự cố cần ít nhất 10 ký tự.'
       : amount !== null && (!/^\d+$/.test(estimate.trim()) || !Number.isSafeInteger(amount)) ? 'Nhập giá trị ước tính bằng số nguyên không âm.'
       : !photos.length ? 'Thêm ít nhất một ảnh chứng cứ.' : '';
@@ -158,7 +153,7 @@ export function ClaimForm() {
     try {
       const saved = await operationMutate(endpoint, 'POST', {
         rentalContractId: storage.id, discoveredOn: date, description: description.trim(), estimatedValue: amount,
-        storedItemIds: itemIds, evidencePhotos: photos,
+        evidencePhotos: photos,
       }, true);
       const id = idOf(saved);
       if (!id) throw new Error('Chưa xác nhận được báo cáo từ máy chủ.');
@@ -184,28 +179,21 @@ export function ClaimForm() {
           <Text style={[s.heading, s.blue]}>Sẵn sàng gửi</Text><Text style={s.muted}>Kiểm tra lại thông tin trước khi gửi.</Text></View></View>
         <View style={s.card}>
           <Fact title="Kho" value={storage?.name} /><Fact title="Ngày phát hiện" value={formatDate(date)} />
-          <Fact title="Hàng bị ảnh hưởng" value={affected} /><Fact title="Mô tả sự cố" value={description.trim()} />
+          <Fact title="Mô tả sự cố" value={description.trim()} />
         </View>
         <Evidence photos={photos} />
         {amount !== null ? <View style={s.card}><Fact title="Giá trị ước tính" value={formatMoney(amount)} /></View> : null}
       </> : <>
         {rentals.loading ? <LoadingState layout="compact" /> : rentals.error ? <ErrorState message={rentals.error} onRetry={rentals.refresh} />
-          : choices.length ? <Pressable accessibilityRole="button" style={[s.banner, s.spread]} onPress={() => setPicker('unit')}>
+          : choices.length ? <Pressable accessibilityRole="button" style={[s.banner, s.spread]} onPress={() => setPickerOpen(true)}>
             <Warehouse size={26} color={C.navy} /><View style={s.grow}><Text style={s.heading}>{storage?.name || 'Chọn kho đang thuê'}</Text>
               {storage ? <Text style={s.muted}>{[storage.code, storage.floor, storage.zone && 'Khu ' + storage.zone].filter(Boolean).join(' · ')}</Text> : null}
             </View>{storage ? <Text style={s.resultBadge}>Đang hoạt động</Text> : null}<ChevronDown size={16} color={C.muted} />
           </Pressable> : <EmptyState title="Bạn chưa có kho đang thuê" message="Bạn có thể báo sự cố sau khi nhận kho." />}
         <DateField title="Ngày phát hiện *" value={date} onChange={setDate} />
-        <View style={s.field}><Text style={s.heading}>Hàng bị ảnh hưởng</Text>
-          <Pressable accessibilityRole="button" disabled={!storage || inventory.loading || !items.length} style={[s.input, s.spread]} onPress={() => setPicker('items')}>
-            <Box size={17} color={C.muted} /><Text numberOfLines={2} style={[s.body, s.grow]}>{affected || (inventory.loading ? 'Đang tải hàng…' : items.length ? 'Chọn hàng đang lưu' : 'Chưa có hàng để chọn')}</Text><ChevronRight size={15} color={C.muted} />
-          </Pressable>
-          {inventory.error ? <ErrorState message={inventory.error} onRetry={inventory.refresh} /> : null}
-          {!items.length && !inventory.loading ? <Text style={s.small}>Bạn có thể ghi tên hàng trong phần mô tả.</Text> : null}
-        </View>
         <View style={s.field}><Text style={s.heading}>Mô tả sự cố *</Text>
           <TextInput accessibilityLabel="Mô tả sự cố" multiline maxLength={3000} value={description} onChangeText={setDescription}
-            style={[s.input, s.description]} placeholder="Mô tả tình trạng bạn phát hiện" placeholderTextColor={C.muted} />
+            style={[s.input, s.description]} placeholder="Mô tả sự cố và đồ bị ảnh hưởng (nếu có)" placeholderTextColor={C.muted} />
           <Text style={[s.small, s.counter]}>{description.length}/3000</Text>
         </View>
         <View style={s.field}><Text style={s.heading}>Giá trị ước tính (tùy chọn)</Text>
@@ -223,14 +211,13 @@ export function ClaimForm() {
         </> : <View style={s.grow}><Action disabled={photoBusy || !storage} title="Kiểm tra báo cáo" onPress={() => { if (validate()) setReview(true); }} /></View>}
       </View>
     </View>
-    <Modal visible={Boolean(picker)} transparent animationType="slide" onRequestClose={() => setPicker(undefined)}>
+    <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
       <View style={s.scrim}><SafeAreaView edges={['bottom']} style={s.sheet}>
-        <Text style={s.title}>{picker === 'unit' ? 'Chọn kho' : 'Hàng bị ảnh hưởng'}</Text>
-        <ScrollView style={s.options}>{picker === 'unit' ? choices.map(item => <Option key={item.id} label={[item.name, item.code].filter(Boolean).join(' · ')}
-          selected={item.id === storage?.id} onPress={() => { if (item.id !== storage?.id) setItemIds([]); setChosenId(item.id); setPicker(undefined); }} />)
-          : items.map(item => <Option key={idOf(item)} label={text(item, 'name')} selected={itemIds.includes(idOf(item))}
-            onPress={() => setItemIds(current => current.includes(idOf(item)) ? current.filter(id => id !== idOf(item)) : [...current, idOf(item)])} />)}</ScrollView>
-        <Action title="Xong" onPress={() => setPicker(undefined)} />
+        <Text style={s.title}>Chọn kho</Text>
+        <ScrollView style={s.options}>{choices.map(item => <Option key={item.id}
+          label={[item.name, item.code].filter(Boolean).join(' · ')} selected={item.id === storage?.id}
+          onPress={() => { setChosenId(item.id); setPickerOpen(false); }} />)}</ScrollView>
+        <Action title="Xong" onPress={() => setPickerOpen(false)} />
       </SafeAreaView></View>
     </Modal>
   </KeyboardAvoidingView>;

@@ -1,16 +1,15 @@
-import { Link, useLocation } from 'react-router-dom';
 import { code, date, first, label, type Row } from '../../components/manager/portal-data';
 import { Status } from '../../components/manager/PortalUi';
 import { CopyRecordCode } from '../../components/workspace/RecordIdentity';
 import { StaffTaskTable, type StaffColumn } from '../../components/workspace/StaffTaskTable';
 import { staffRecordIdentity } from './staff-work';
+import { physicalUnitLabel } from '../../utils/physical-units';
 import type { StaffTableWorkflow } from './staff-resources';
-import { handoverCustomer, handoverRecipient, handoverTime, handoverUnits } from './staff-appointment';
+import { handoverCustomer, handoverRecipient, handoverStatusText, handoverTime, handoverUnits } from './staff-appointment';
 
 export function StaffWorkflowTable({ resource, title, items, loadingRows }: {
   resource: StaffTableWorkflow; title: string; items: Row[]; loadingRows?: number;
 }) {
-  const { pathname, search } = useLocation();
   const appointments = resource === 'appointments';
   const maintenance = resource === 'maintenance';
   const overdue = (row: Row) => appointments && row.status === 'CONFIRMED' && Date.parse(first(row, 'scheduledAt')) < Date.now();
@@ -23,19 +22,19 @@ export function StaffWorkflowTable({ resource, title, items, loadingRows }: {
         const units = handoverUnits(row).map(unit => unit.code).join(', ');
         return <><strong>{name || units || '—'}</strong>
           {name && units && <small>{units}</small>}
+          {first(row, 'facility.name') && <small>{first(row, 'facility.name')}</small>}
           <CopyRecordCode value={first(row, 'appointmentCode')} /></>;
       }
       const { person, location } = identity(row);
       const primary = maintenance ? location : person || location;
       return <><strong>{primary || '—'}</strong>
         {resource !== 'transfers' && !maintenance && person && location && <small>{location}</small>}
+        {first(row, 'facility.name') && <small>{first(row, 'facility.name')}</small>}
         <CopyRecordCode value={code(row)} /></>;
     } },
   ];
   if (resource === 'transfers') columns.push({ key: 'units', label: 'Kho nguồn → Kho đích', cell: row => {
-    const from = first(row, 'fromUnit.unitCode', 'fromUnit.unitNumber');
-    const to = first(row, 'toUnit.unitCode', 'toUnit.unitNumber');
-    return [from, to].filter(Boolean).join(' → ') || '—';
+    return <strong>{physicalUnitLabel(row, 'transfers') || '—'}</strong>;
   } });
   if (maintenance || resource === 'support-requests') columns.push(
     { key: 'summary', label: maintenance ? 'Nội dung bảo trì' : 'Nội dung hỗ trợ', cell: row => {
@@ -55,10 +54,10 @@ export function StaffWorkflowTable({ resource, title, items, loadingRows }: {
     if (!authorized && name.trim().toLocaleLowerCase('vi') === handoverCustomer(row).trim().toLocaleLowerCase('vi')) return <small>Khách thuê</small>;
     return <><strong>{name}</strong>{authorized && <small>Được ủy quyền</small>}</>;
   } });
-  columns.push({ key: 'status', label: 'Trạng thái', cell: row => <Status value={row.status} /> });
-  if (appointments) columns.push({ key: 'actions', label: 'Thao tác', cell: row =>
-    <Link to={`/staff/appointments/${encodeURIComponent(rowId(row))}`} state={{ returnTo: pathname + search }} className="button-secondary">Xem chi tiết</Link>,
-  });
+  if (!appointments) {
+    columns.push({ key: 'staff', label: 'Người phụ trách', cell: row => first(row, 'assignedStaff.fullName') || '—' });
+  }
+  columns.push({ key: 'status', label: 'Trạng thái', cell: row => <Status value={row.status} text={appointments ? handoverStatusText(row.status) : undefined} /> });
   return <StaffTaskTable title={title} columns={columns} items={items} rowKey={rowId} rowDetail={row => rowId(row) ? { to: `/staff/${resource}/${encodeURIComponent(rowId(row))}`, label: `Xem chi tiết hồ sơ ${code(row)}` } : undefined} loadingRows={loadingRows}
     emphasized={row => row.priority === 'HIGH' || overdue(row)} />;
 }

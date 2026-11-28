@@ -1,21 +1,30 @@
+import { initialPaymentWindowClosed, assertInvoiceReceivable } from './invoice-state.js';
+import { managerReservationScope, assertManagerRecordAccess } from '../facility-access/record-access.js';
+import { invoiceFacilityScope } from '../facility-access/task-access.js';
 import { closeoutReservationSelect, invoicePaymentBlockedBySchedule, renewalInvoiceScope } from './renewal-invoice-schedule.js';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import { BillingService } from './billing.service.js';
 import { VnpayService } from './vnpay.service.js';
+import { PayosService } from './payos.service.js';
+import { PayosPaymentService } from './payos-payment.service.js';
 
 import { ONLINE_PAYMENT_TTL_MS } from './online-payment-policy.js';
+import { supportsOnlinePayment } from './payment-eligibility.js';
 
 @Injectable()
 export class OnlinePaymentService {
   private readonly logger = new Logger(OnlinePaymentService.name);
-  constructor(private readonly prisma: PrismaService, private readonly billing: BillingService, private readonly vnpay: VnpayService) {}
+  constructor(private readonly prisma: PrismaService, private readonly billing: BillingService, private readonly vnpay: VnpayService,
+    @Optional() private readonly payos?: PayosService, @Optional() private readonly payosPayments?: PayosPaymentService) {}
 
   async create(invoiceIdentity: string, input: Record<string, unknown>, idempotencyInput: string | undefined, customer: PublicUser, ipAddress: string) {
-    if (customer.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ CUSTOMER được thanh toán hóa đơn của mình.');
+    if (customer.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException('Chỉ STORAGE_CUSTOMER được thanh toán hóa đơn của mình.');
+    if (this.payos?.enabled) return this.payosPayments!.create(invoiceIdentity, this.key(idempotencyInput), customer, input.channel === 'mobile');
+    if (this.payos?.cutover) throw new ServiceUnavailableException('Thanh toán trực tuyến đang tạm ngừng.');
     this.vnpay.assertConfigured();
     const idempotencyKey = this.key(idempotencyInput);
     const bankCode = this.optionalCode(input.bankCode, 'bankCode');
@@ -26,6 +35,7 @@ export class OnlinePaymentService {
     const existing = await this.prisma.onlinePaymentTransaction.findUnique({ where: { idempotencyKey }, include: { invoice: true } });
     if (existing) {
       if (existing.invoiceId !== identity.id || existing.customerUserId !== customer.id) throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED', message: 'Idempotency-Key đã dùng cho giao dịch khác.' });
+      if (existing.provider === 'PAYOS') throw new ConflictException('Phiên payOS này phải được kiểm tra trước khi thanh toán lại.');
       if (this.isExpired(existing)) {
         await this.prisma.onlinePaymentTransaction.updateMany({ where: { id: existing.id, status: 'PENDING' }, data: { status: 'EXPIRED' } });
         throw new ConflictException({ code: 'ONLINE_PAYMENT_EXPIRED', message: 'Phiên thanh toán đã hết hạn. Vui lòng tạo phiên thanh toán mới.' });
@@ -39,18 +49,22 @@ export class OnlinePaymentService {
       if (invoice.status === 'VOID') throw new ConflictException({ code: 'INVOICE_CANCELLED', message: 'Hóa đơn đã hủy; không thể tạo phiên thanh toán mới.' });
       if (invoicePaymentBlockedBySchedule(invoice)) throw new ConflictException({ code: 'RENEWAL_INVOICE_NOT_DUE', message: 'Hóa đơn gia hạn chưa đến kỳ thanh toán. Kho được duyệt trả trước hạn có thể thanh toán sớm để tất toán.' });
       await this.billing.assertSignedBeforePayment(tx, invoice);
-      if (invoice.reservation.status === 'EXPIRED' || (invoice.type === 'INITIAL' && invoice.reservation.expiresAt && invoice.reservation.expiresAt <= new Date())) throw new ConflictException({ code: 'RESERVATION_PAYMENT_WINDOW_EXPIRED', message: 'Thời hạn giữ kho đã hết. Vui lòng tạo yêu cầu đặt kho mới.' });
-      if (!['INITIAL', 'RECURRING', 'RENEWAL'].includes(invoice.type)) throw new ConflictException({ code: 'INVOICE_NOT_ELIGIBLE_FOR_ONLINE_PAYMENT', message: 'Loại hóa đơn này chưa hỗ trợ thanh toán online.' });
+      assertInvoiceReceivable(invoice);
+      if (!supportsOnlinePayment(invoice)) throw new ConflictException({ code: 'INVOICE_NOT_ELIGIBLE_FOR_ONLINE_PAYMENT', message: 'Loại hóa đơn này chưa hỗ trợ thanh toán online.' });
       if (invoice.status === 'PAID' || invoice.balanceDue <= 0n) throw new ConflictException({ code: 'INVOICE_ALREADY_PAID', message: 'Hóa đơn đã được thanh toán đủ.' });
       const paymentCutoff = new Date(Date.now() - ONLINE_PAYMENT_TTL_MS);
       await tx.onlinePaymentTransaction.updateMany({
-        where: { invoiceId: invoice.id, status: 'PENDING', createdAt: { lte: paymentCutoff } },
+        where: { invoiceId: invoice.id, provider: 'VNPAY', status: 'PENDING', createdAt: { lte: paymentCutoff } },
         data: { status: 'EXPIRED' },
       });
       const active = await tx.onlinePaymentTransaction.findFirst({
-        where: { invoiceId: invoice.id, status: 'PENDING', createdAt: { gt: paymentCutoff } },
+        where: { invoiceId: invoice.id, status: 'PENDING', OR: [
+          { provider: 'VNPAY', createdAt: { gt: paymentCutoff } },
+          { provider: 'PAYOS', expiresAt: { gt: new Date() } },
+        ] },
         orderBy: { createdAt: 'desc' },
       });
+      if (active?.provider === 'PAYOS') throw new ConflictException('Hóa đơn đang có phiên payOS hoạt động.');
       if (active) return active;
       return tx.onlinePaymentTransaction.create({ data: { invoiceId: invoice.id, customerUserId: customer.id, amount: invoice.balanceDue, merchantOrderRef: this.orderRef(), idempotencyKey } });
     }, { isolationLevel: 'Serializable', maxWait: 10000, timeout: 20000 });
@@ -71,7 +85,7 @@ export class OnlinePaymentService {
       return { RspCode: '97', Message: 'Invalid Checksum' };
     }
     this.logIpn('received', payload);
-    const identity = await this.prisma.onlinePaymentTransaction.findUnique({ where: { merchantOrderRef: payload.orderRef }, select: { id: true } });
+    const identity = await this.prisma.onlinePaymentTransaction.findUnique({ where: { merchantOrderRef: payload.orderRef, provider: 'VNPAY' }, select: { id: true } });
     if (!identity) {
       this.logIpn('rejected_order_not_found', payload);
       return { RspCode: '01', Message: 'Order not found' };
@@ -96,11 +110,14 @@ export class OnlinePaymentService {
           include: { reservation: { select: { id: true, status: true, expiresAt: true } } },
         });
         if (!invoice) return { RspCode: '01', Message: 'Order not found' };
-        if (invoice.status === 'VOID' || invoice.balanceDue !== transaction.amount || (invoice.type === 'INITIAL' && (invoice.reservation.status === 'EXPIRED' || (invoice.reservation.expiresAt && invoice.reservation.expiresAt <= new Date())))) {
+        if (invoice.status === 'VOID' || invoice.balanceDue !== transaction.amount || initialPaymentWindowClosed(invoice)) {
           const reason = invoice.status === 'VOID' ? 'VNPay xác nhận thành công sau khi hóa đơn đã VOID.'
             : invoice.balanceDue !== transaction.amount ? 'VNPay xác nhận thành công nhưng số dư hóa đơn đã thay đổi do khoản thanh toán khác; cần đối chiếu tiền thực nhận, không tự ghi thu thêm.'
               : 'VNPay xác nhận thành công sau khi reservation hết hạn; hệ thống không tự kích hoạt lại kho.';
           return this.reconcileIpn(tx, transaction, payload, reason);
+        }
+        if (!supportsOnlinePayment(invoice)) {
+          return this.reconcileIpn(tx, transaction, payload, 'Đã nhận tiền cho loại hóa đơn cần đối soát thủ công.');
         }
         if (invoice.type === 'RENEWAL') {
           await tx.$executeRaw`SAVEPOINT renewal_payment`;
@@ -147,14 +164,18 @@ export class OnlinePaymentService {
   }
 
   async getCustomerStatus(transactionIdentity: string, customer: PublicUser) {
-    if (customer.role !== 'CUSTOMER') throw new ForbiddenException('Chỉ CUSTOMER được xem giao dịch thanh toán của mình.');
-    const transaction = await this.prisma.onlinePaymentTransaction.findFirst({
+    if (customer.role !== 'STORAGE_CUSTOMER') throw new ForbiddenException('Chỉ STORAGE_CUSTOMER được xem giao dịch thanh toán của mình.');
+    const read = () => this.prisma.onlinePaymentTransaction.findFirst({
       where: {
         customerUserId: customer.id,
         OR: [{ id: transactionIdentity }, { merchantOrderRef: transactionIdentity }],
       },
       select: {
         id: true,
+        provider: true,
+        expiresAt: true,
+        payosReceipts: { where: { reconciliation: { isNot: null } }, orderBy: { receivedAt: 'desc' }, take: 1,
+          select: { reconciliation: { select: { reconciliationCode: true, status: true, reason: true, resolutionNote: true, reviewedAt: true } } } },
         merchantOrderRef: true,
         status: true,
         amount: true,
@@ -183,19 +204,27 @@ export class OnlinePaymentService {
         reconciliation: { select: { reconciliationCode: true, status: true, reason: true, resolutionNote: true, reviewedAt: true } },
       },
     });
+    let transaction = await read();
     if (!transaction) throw new NotFoundException('Không tìm thấy giao dịch thanh toán thuộc tài khoản này.');
+    if (transaction.provider === 'PAYOS' && this.payosPayments) {
+      try { await this.payosPayments.sync(transaction.id); }
+      catch (error) { if (!(error instanceof ServiceUnavailableException)) throw error; }
+      transaction = await read() ?? transaction;
+    }
+    const expiresAt = transaction.expiresAt ?? this.expiresAt(transaction.createdAt);
     let providerStatus = transaction.status;
-    if (providerStatus === 'PENDING' && this.isExpired(transaction)) {
+    if (providerStatus === 'PENDING' && +expiresAt <= Date.now()) {
       const expired = await this.prisma.onlinePaymentTransaction.updateMany({ where: { id: transaction.id, status: 'PENDING' }, data: { status: 'EXPIRED' } });
       if (expired.count === 1) providerStatus = 'EXPIRED';
     }
     return {
       transactionId: transaction.id,
       merchantOrderRef: transaction.merchantOrderRef,
+      provider: transaction.provider,
       status: providerStatus === 'PENDING' ? 'PENDING' : providerStatus === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
       providerStatus,
       amount: this.money(transaction.amount),
-      expiresAt: this.expiresAt(transaction.createdAt).toISOString(),
+      expiresAt: expiresAt.toISOString(),
       paidAt: transaction.paidAt,
       updatedAt: transaction.updatedAt,
       invoice: {
@@ -204,7 +233,7 @@ export class OnlinePaymentService {
         balanceDue: this.money(transaction.invoice.balanceDue),
       },
       payment: transaction.payment ? { ...transaction.payment, amount: this.money(transaction.payment.amount) } : null,
-      reconciliation: transaction.reconciliation,
+      reconciliation: transaction.payosReceipts?.[0]?.reconciliation ?? transaction.reconciliation,
     };
   }
 
@@ -214,13 +243,13 @@ export class OnlinePaymentService {
       payload = this.vnpay.verify(query);
     } catch { return { valid: false, status: 'INVALID_SIGNATURE' }; }
 
-    const transaction = await this.prisma.onlinePaymentTransaction.findUnique({ where: { merchantOrderRef: payload.orderRef }, select: { merchantOrderRef: true, status: true, amount: true, invoice: { select: { invoiceCode: true, status: true } } } });
+    const transaction = await this.prisma.onlinePaymentTransaction.findUnique({ where: { merchantOrderRef: payload.orderRef, provider: 'VNPAY' }, select: { merchantOrderRef: true, status: true, amount: true, invoice: { select: { invoiceCode: true, status: true } } } });
     if (!transaction) return { valid: false, status: 'NOT_FOUND' };
 
     let status = transaction.status;
     if (payload.responseCode === '24' && payload.transactionStatus !== '00' && payload.amountMinor === transaction.amount * 100n && (status === 'PENDING' || status === 'EXPIRED')) {
       const cancelled = await this.prisma.onlinePaymentTransaction.updateMany({
-        where: { merchantOrderRef: payload.orderRef, status: { in: ['PENDING', 'EXPIRED'] } },
+        where: { merchantOrderRef: payload.orderRef, provider: 'VNPAY', status: { in: ['PENDING', 'EXPIRED'] } },
         data: { status: 'CANCELLED', responseCode: payload.responseCode },
       });
       if (cancelled.count === 1) status = 'CANCELLED';
@@ -229,8 +258,11 @@ export class OnlinePaymentService {
     return { valid: true, transaction: { merchantOrderRef: transaction.merchantOrderRef, status, amount: this.money(transaction.amount) }, invoice: transaction.invoice, providerResponseCode: payload.responseCode };
   }
 
-  async listManagerReconciliations(page: number, limit: number, status?: 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED') {
-    const where = status ? { status } : {};
+  async listManagerReconciliations(page: number, limit: number, status: 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED' | undefined, actor: PublicUser) {
+    managerReservationScope(actor);
+    const scope=invoiceFacilityScope(actor);
+    const where = { ...(status?{status}:{}),OR:[{onlinePaymentTransaction:{invoice:scope}},{paymentSubmission:{invoice:scope}},
+      {payosReceipt:{transaction:{invoice:scope}}}] };
     const [total, items] = await Promise.all([
       this.prisma.onlinePaymentReconciliation.count({ where }),
       this.prisma.onlinePaymentReconciliation.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], include: this.reconciliationInclude() }),
@@ -239,23 +271,32 @@ export class OnlinePaymentService {
   }
 
   async resolveReconciliation(id: string, input: Record<string, unknown>, actor: PublicUser) {
-    if (!['MANAGER', 'ADMIN'].includes(actor.role)) throw new ForbiddenException('Chỉ Manager hoặc Admin được xử lý đối soát VNPay.');
+    if (actor.role !== 'FACILITY_MANAGER') throw new ForbiddenException('Chỉ Manager hoặc Admin được xử lý đối soát VNPay.');
     const resolution = typeof input.resolution === 'string' ? input.resolution : '';
     const resolutionNote = typeof input.resolutionNote === 'string' ? input.resolutionNote.trim() : '';
     if (!['REFUND_REQUIRED', 'RECONCILED'].includes(resolution)) throw new BadRequestException('resolution phải là REFUND_REQUIRED hoặc RECONCILED.');
     if (resolutionNote.length < 3 || resolutionNote.length > 2000) throw new BadRequestException('resolutionNote phải dài 3–2000 ký tự.');
-    const record = await this.prisma.onlinePaymentReconciliation.findFirst({ where: { OR: [{ id }, { reconciliationCode: id }] }, include: this.reconciliationInclude() });
+    return this.prisma.$transaction(async tx=>{
+    const record = await tx.onlinePaymentReconciliation.findFirst({ where: { OR: [{ id }, { reconciliationCode: id }] }, include: this.reconciliationInclude() });
     if (!record) throw new NotFoundException('Không tìm thấy hồ sơ đối soát VNPay.');
+    const invoiceId = record.onlinePaymentTransaction?.invoiceId ?? record.paymentSubmission?.invoiceId ?? record.payosReceipt?.transaction?.invoiceId;
+    if (!invoiceId) throw new NotFoundException('Hồ sơ đối soát chưa xác định cơ sở.');
+    await assertManagerRecordAccess(tx,actor,{invoiceId});
     if (record.status === 'RECONCILED' || record.status === 'REFUND_REQUIRED' && resolution === 'REFUND_REQUIRED') return this.toReconciliation(record);
     let evidence = resolutionNote;
     if (record.status === 'REFUND_REQUIRED') {
       const reference = typeof input.refundReference === 'string' ? input.refundReference.trim() : '';
       if (reference.length < 2 || reference.length > 200 || input.refundConfirmed !== true) throw new BadRequestException('Cần xác nhận đã hoàn tiền thực tế và mã giao dịch hoàn tiền.');
-      evidence = `${record.resolutionNote || ''}\nĐã hoàn tiền. Tham chiếu: ${reference}. ${resolutionNote}`;
+      const method = input.refundMethod;
+      if (record.payosReceiptId && method !== 'CASH' && method !== 'BANK_TRANSFER')
+        throw new BadRequestException('Chọn phương thức hoàn tiền thực tế.');
+      const details = record.payosReceiptId ? ` ${record.amount} VND · ${method === 'CASH' ? 'Tiền mặt' : 'Chuyển khoản ngân hàng'}.` : '';
+      evidence = `${record.resolutionNote || ''}\nĐã hoàn tiền.${details} Tham chiếu: ${reference}. ${resolutionNote}`;
     }
-    const changed = await this.prisma.onlinePaymentReconciliation.updateMany({ where: { id: record.id, status: record.status }, data: { status: resolution as 'REFUND_REQUIRED' | 'RECONCILED', reviewedByUserId: actor.id, reviewedAt: new Date(), resolutionNote: evidence } });
+    const changed = await tx.onlinePaymentReconciliation.updateMany({ where: { id: record.id, status: record.status }, data: { status: resolution as 'REFUND_REQUIRED' | 'RECONCILED', reviewedByUserId: actor.id, reviewedAt: new Date(), resolutionNote: evidence } });
     if (!changed.count) throw new ConflictException('Hồ sơ đối soát vừa thay đổi. Vui lòng tải lại trước khi xác nhận.');
-    return this.toReconciliation(await this.prisma.onlinePaymentReconciliation.findUniqueOrThrow({ where: { id: record.id }, include: this.reconciliationInclude() }));
+    return this.toReconciliation(await tx.onlinePaymentReconciliation.findUniqueOrThrow({ where: { id: record.id }, include: this.reconciliationInclude() }));
+      },{isolationLevel:'Serializable'});
   }
 
   private created(transaction: any, bankCode: string | undefined, locale: string, ipAddress: string, mobile: boolean) {
@@ -279,7 +320,18 @@ export class OnlinePaymentService {
   private optionalCode(value: unknown, label: string) { if (value === undefined || value === null || value === '') return undefined; if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{2,20}$/.test(value)) throw new BadRequestException(`${label} không hợp lệ.`); return value; }
   private orderRef() { return `WDP${Date.now()}${randomBytes(4).toString('hex').toUpperCase()}`; }
   private reconciliationCode() { return `WDPRC-${new Date().getUTCFullYear()}-${randomBytes(5).toString('hex').toUpperCase()}`; }
-  private reconciliationInclude() { return { onlinePaymentTransaction: { include: { invoice: { include: { reservation: { include: { customer: { select: { id: true, fullName: true, email: true } } } } } } } }, reviewedBy: { select: { id: true, fullName: true, role: true } } }; }
-  private toReconciliation(record: any) { return { id: record.id, reconciliationCode: record.reconciliationCode, status: record.status, reason: record.reason, providerTransactionId: record.providerTransactionId, amount: this.money(record.amount), createdAt: record.createdAt.toISOString(), reviewedAt: record.reviewedAt?.toISOString() ?? null, resolutionNote: record.resolutionNote ?? null, reviewedBy: record.reviewedBy, transaction: { id: record.onlinePaymentTransaction.id, merchantOrderRef: record.onlinePaymentTransaction.merchantOrderRef, invoice: { id: record.onlinePaymentTransaction.invoice.id, invoiceCode: record.onlinePaymentTransaction.invoice.invoiceCode, status: record.onlinePaymentTransaction.invoice.status, reservation: { reference: record.onlinePaymentTransaction.invoice.reservation.reservationCode, customer: record.onlinePaymentTransaction.invoice.reservation.customer } } } }; }
+  private reconciliationInclude() {
+    const invoice={include:{reservation:{include:{customer:{select:{id:true,fullName:true,email:true}}}}}};
+    return {payosReceipt:{include:{transaction:{include:{invoice}}}},onlinePaymentTransaction:{include:{invoice}},paymentSubmission:{include:{invoice}},reviewedBy:{select:{id:true,fullName:true,role:true}}};
+  }
+  private toReconciliation(record:any) {
+    const source=record.onlinePaymentTransaction??record.paymentSubmission??record.payosReceipt?.transaction,invoice=source.invoice;
+    return {id:record.id,reconciliationCode:record.reconciliationCode,status:record.status,reason:record.reason,
+      source:record.payosReceiptId?'PAYOS':record.paymentSubmissionId?'BANK_TRANSFER':'VNPAY',providerTransactionId:record.providerTransactionId,
+      amount:this.money(record.amount),createdAt:record.createdAt.toISOString(),reviewedAt:record.reviewedAt?.toISOString()??null,
+      resolutionNote:record.resolutionNote??null,reviewedBy:record.reviewedBy,
+      transaction:{id:source.id,merchantOrderRef:source.merchantOrderRef??source.submissionCode,
+        invoice:{id:invoice.id,invoiceCode:invoice.invoiceCode,status:invoice.status,reservation:{reference:invoice.reservation.reservationCode,customer:invoice.reservation.customer}}}};
+  }
   private money(value: bigint) { if (value > BigInt(Number.MAX_SAFE_INTEGER)) throw new ConflictException('Số tiền vượt giới hạn hỗ trợ.'); return Number(value); }
 }

@@ -1,18 +1,19 @@
-export const staffWorkflows = ['support-requests', 'appointments', 'stock-movements', 'transfers', 'returns', 'maintenance'] as const;
+export const staffWorkflows = ['support-requests', 'appointments', 'transfers', 'returns', 'maintenance'] as const;
 export const staffLookups = ['units', 'contracts', 'reservations'] as const;
 export const isStaffWorkflow = (resource: string) => (staffWorkflows as readonly string[]).includes(resource);
 export const managerResources = ['units', 'customers', 'catalog', 'additional-services', 'contracts', 'rentals', 'invoices', 'payments', 'deposit-settlements', 'appointments', 'reservations', 'returns', 'transfers', 'renewals'] as const;
 export const isManagerResource = (resource: string) => (managerResources as readonly string[]).includes(resource);
 export const managerPages = ['assignments', 'reports', 'early-returns', 'reviews', 'finance', 'rental-records', 'facility'] as const;
 // Read-only lookup routes do not grant operational write permissions.
-export const isManagerDestination = (resource: string) => isManagerResource(resource) || ['stored-items', 'stock-movements'].includes(resource) || (managerPages as readonly string[]).includes(resource);
-export const canOperateResource = (role: string, resource: string) => role === 'STAFF'
+export const isManagerDestination = (resource: string) => isManagerResource(resource) || (managerPages as readonly string[]).includes(resource);
+export const canOperateResource = (role: string, resource: string) => role === 'FACILITY_STAFF'
   ? isStaffWorkflow(resource)
-  : role === 'MANAGER' && isManagerResource(resource);
+  : role === 'FACILITY_MANAGER' && isManagerResource(resource);
 
 /** Shared screens keep their resource names; requests use the authenticated role's API namespace. */
 export function operationApiPath(path: string, role: string | undefined, method = 'GET') {
-  if (role !== 'STAFF') return path;
+  if (role !== 'FACILITY_STAFF') return path;
+  if (method === 'GET' && ['/staff/maintenance/units', '/staff/maintenance/facilities', '/staff/maintenance/reported-by-me'].includes(path.split('?')[0])) return path;
   const match = /^\/manager\/([^/?]+)(?=[/?]|$)/.exec(path);
   if (match && (isStaffWorkflow(match[1]) || (method === 'GET' && (staffLookups as readonly string[]).includes(match[1])))) return path.replace('/manager/', '/staff/management/');
   const staff = /^\/staff\/([^/?]+)(?=[/?]|$)/.exec(path);

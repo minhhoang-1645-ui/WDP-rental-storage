@@ -132,7 +132,7 @@ export function CustomerRentalsPage() {
                           .join(" · ") || "Chưa có vị trí chi tiết"}
                       </small>
                     </span>
-                    <CustomerStatus status={contract.endDate <= vietnamCalendarDate() ? 'OVERDUE' : contract.status} />
+                    <CustomerStatus status={contract.endDate < vietnamCalendarDate() ? 'OVERDUE' : contract.status} />
                     <p>{contract.unit.storageType?.name ?? rental.storageType.name} · Hạn {formatPortalDate(contract.endDate)}</p>
                     {contract.returnInProgress && <p>Đang xử lý yêu cầu trả kho.</p>}
                     {contract.pendingRenewal && <Link to={`/customer/renewals?${new URLSearchParams({ renewal: contract.pendingRenewal.id })}`}>Gia hạn {contract.pendingRenewal.renewalCode} đang xử lý</Link>}

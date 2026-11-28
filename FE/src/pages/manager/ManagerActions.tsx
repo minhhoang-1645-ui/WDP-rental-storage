@@ -1,10 +1,13 @@
+import { DateTimePicker } from '../../components/workspace/DateTimeFields';
+import { useCurrentTime } from '../../hooks/useCurrentTime';
+import { keyCollectionStartDate, vietnamLocalMinute } from '../../utils/handover';
+import { ReturnInspectionSchedule } from '../operations/ServiceCalendarPage';
 import { DetailDisclosure } from '../../components/workspace/DetailDisclosure';
 import { invoicePaymentBlockedBySchedule } from '../../utils/payment-state';
 import { useCallback, useRef, useState } from "react";
 import { OperationsLink as Link } from "../../components/manager/OperationsLink";
 import { useAuth } from "../../auth/auth-context";
 import { mutate } from "../../services/portal";
-import { useApiResource } from '../../services/useApiResource';
 import {
   code,
   first,
@@ -13,18 +16,16 @@ import {
   rows,
   type Row,
 } from "../../components/manager/portal-data";
-import { TransferDestinationPicker } from '../../components/manager/TransferDestinationPicker';
-import { TransferHandoverForm } from '../../components/manager/TransferHandoverForm';
-import { StaffPicker } from '../../components/manager/StaffPicker';
+import { IncidentBookingImpact } from '../../components/manager/IncidentBookingImpact';
+import { TransferHandoverForm, TransferProblemForm } from '../../components/manager/TransferHandoverForm';
 import { object } from '../../components/manager/portal-data';
 import { renewalReviewIssue } from '../../utils/renewal-review';
 import { isEarlyReturnRequest } from '../../utils/early-return';
 import { canAccessManagerReview } from '../../utils/manager-review-access';
+import { CombinedReturnRefund } from '../../components/manager/EarlyReturnFinanceReview';
+import { useConfirmation } from '../../components/workspace/ConfirmationProvider';
+import { transferProblem } from '../../utils/transfer-problem';
 
-type UnitStaffAssignments = {
-  enabled: boolean;
-  items: { storageUnitId: string; staff: { id: string; fullName: string; email?: string; accountStatus: string } }[];
-};
 
 export function ManagerActions({
   resource,
@@ -40,31 +41,43 @@ export function ManagerActions({
   onSuccess?: (message: string) => void;
 }) {
   const { user } = useAuth();
-  const sourceUnitId = resource === 'transfers' && row.status === 'REQUESTED' ? first(row, 'fromUnit.id') : '';
-  const sourceAssignments = useApiResource<UnitStaffAssignments>(
-    user?.role === 'MANAGER' && sourceUnitId ? '/manager/unit-staff-assignments' : null, user?.id, true,
-  );
-  const sourceOwner = sourceAssignments.data?.items.find(item => item.storageUnitId === sourceUnitId)?.staff;
-  const responsibleStaff = sourceOwner?.accountStatus === 'ACTIVE' ? sourceOwner : undefined;
+  const confirm = useConfirmation();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState(first(row, "status"));
   const [note, setNote] = useState(first(row, "internalNotes"));
   const [reason, setReason] = useState("");
   const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("BANK_TRANSFER");
+  const invalidInvoiceAmount = !Number.isSafeInteger(Number(amount)) || Number(amount) <= 0 || Number(amount) > Number(row.balanceDue);
+  const cashOnly = resource === 'invoices' && row.cashOnly === true;
+  const [selectedMethod, setMethod] = useState("BANK_TRANSFER");
+  const method = cashOnly ? 'CASH' : selectedMethod;
   const [reference, setReference] = useState("");
   const [received, setReceived] = useState(false);
   const [renewalReviewed, setRenewalReviewed] = useState(false);
-  const [maintenancePassed, setMaintenancePassed] = useState(true);
+  const [maintenanceSafetyVerified, setMaintenanceSafetyVerified] = useState(false);
   const [priority, setPriority] = useState(first(row, "priority") || "MEDIUM");
-  const [target, setTarget] = useState("");
-  const [transferStaff, setTransferStaff] = useState('');
-  const [transferDestinationReady, setTransferDestinationReady] = useState(false);
-  const [transferReviewHash, setTransferReviewHash] = useState('');
+  const [problemDecision, setProblemDecision] = useState('CONTINUE');
+  const [problemNote, setProblemNote] = useState('');
+  const problem = transferProblem(row);
+  const [scheduleAction, setScheduleAction] = useState('RESCHEDULE');
+  const [newSchedule, setNewSchedule] = useState('');
+  const [scheduleError, setScheduleError] = useState('');
+  const [scheduleNote, setScheduleNote] = useState('');
+  const scheduleClock = useCurrentTime(resource === 'appointments' && user?.role === 'FACILITY_MANAGER');
   const [resolution, setResolution] = useState("MANAGER_RESOLVED");
   const lock = useRef(false);
   const root = `/manager/${resource}/${encodeURIComponent(id)}`;
+  const appointmentContracts = resource === 'appointments' ? rows(object(row.reservation).contracts) : [];
+  const leadDays = object(row.handoverReadiness).leadDays;
+  const firstPickup = typeof leadDays === 'number' ? appointmentContracts
+    .map(contract => keyCollectionStartDate(first(contract, 'startDate').slice(0, 10), leadDays)).filter(Boolean).sort().at(-1) : undefined;
+  const lastPickup = appointmentContracts.map(contract => first(contract, 'endDate').slice(0, 10)).filter(Boolean).sort()[0];
+  const scheduleLimit = lastPickup ? keyCollectionStartDate(lastPickup, 1) + 'T23:59' : undefined;
+  const scheduleMinimum = (time: number) => {
+    const nextMinute = vietnamLocalMinute(time + 60_000);
+    return firstPickup && firstPickup > nextMinute.slice(0, 10) ? firstPickup + 'T00:00' : nextMinute;
+  };
   const issueRows = rows(row.physicalInspections).filter(
     (item) => item.result === "ISSUE_FOUND",
   );
@@ -99,6 +112,24 @@ export function ManagerActions({
       setBusy(true);
       setError("");
       try {
+        if (resource === 'transfers' && user?.role === 'FACILITY_STAFF' && path.endsWith('/complete') && !await confirm({
+          title: 'Hoàn tất chuyển kho?',
+          description: 'Xác nhận khách đã chuyển đồ, trả quyền truy cập kho cũ và nhận quyền truy cập kho mới.',
+          confirmLabel: 'Hoàn tất chuyển kho',
+        })) return;
+        if (path.endsWith('/review-problem') && body?.decision === 'CANCEL' && !await confirm({
+          title: 'Hủy lệnh chuyển kho?', description: 'Hệ thống sẽ giải phóng phân bổ riêng của lệnh chuyển nếu đủ điều kiện.',
+          confirmLabel: 'Hủy chuyển kho', destructive: true,
+        })) return;
+        if (path.endsWith('/schedule') && body?.action === 'NO_SHOW' && !await confirm({
+          title: 'Ghi nhận khách không đến?', description: 'Lịch này sẽ bị hủy. Đơn đặt kho và hóa đơn giữ nguyên.',
+          confirmLabel: 'Xác nhận hủy lịch', destructive: true,
+        })) return;
+        if (resource === 'invoices' && path.endsWith('/payments') && !await confirm({
+          title: 'Xác nhận ghi nhận thanh toán',
+          description: `Ghi nhận ${money(body?.amount)} đã nhận cho hóa đơn ${first(row, 'invoiceCode')}.`,
+          confirmLabel: 'Xác nhận ghi nhận',
+        })) return;
         await mutate(path, verb, body, idempotent);
         onSuccess?.("Đã lưu thao tác thành công.");
         refresh();
@@ -113,21 +144,22 @@ export function ManagerActions({
         setBusy(false);
       }
     },
-    [onSuccess, refresh, resource, row, renewalReviewed],
+    [confirm, onSuccess, refresh, resource, row, renewalReviewed, user?.role],
   );
   const paymentFields = (
     <>
       <label className="field-label">
         Phương thức
         <select value={method} onChange={(e) => setMethod(e.target.value)}>
-          <option value="BANK_TRANSFER">Chuyển khoản</option>
+          {!cashOnly && <option value="BANK_TRANSFER">Chuyển khoản</option>}
           <option value="CASH">Tiền mặt</option>
         </select>
       </label>
-      {resource !== "deposit-settlements" && method === "BANK_TRANSFER" && <label className="field-label">
-        Mã giao dịch ngân hàng đã kiểm tra
+      {(resource === "deposit-settlements" || method === "BANK_TRANSFER") && <label className="field-label">
+        {method === "CASH" ? "Số phiếu chi hoặc mã chứng từ" : "Mã giao dịch ngân hàng đã kiểm tra"}
         <input
           value={reference}
+          placeholder={resource === 'invoices' ? 'Nhập mã giao dịch' : undefined}
           maxLength={200}
           required
           onChange={(e) => setReference(e.target.value)}
@@ -138,6 +170,7 @@ export function ManagerActions({
         Ghi chú
         <textarea
           rows={3}
+          placeholder={resource === 'invoices' ? 'Nhập ghi chú (nếu có)' : undefined}
           maxLength={2000}
           value={note}
           onChange={(e) => setNote(e.target.value)}
@@ -156,7 +189,7 @@ export function ManagerActions({
   );
   if (!canAccessManagerReview(user?.role ?? '', resource)) return null;
   if (resource === 'support-requests' && isEarlyReturnRequest(row)) return <p>Quản lý duyệt thời điểm trả sớm. Sau đó nhân viên xử lý yêu cầu trả kho khi khách đã thanh toán đủ.</p>;
-  if (user?.role === 'STAFF' && ['maintenance', 'support-requests'].includes(resource)) return <p>Công việc nhân viên được thực hiện tại phần thông tin hồ sơ.</p>;
+  if (user?.role === 'FACILITY_STAFF' && ['maintenance', 'support-requests'].includes(resource)) return <p>Công việc nhân viên được thực hiện tại phần thông tin hồ sơ.</p>;
   return (
     <div className="portal-form">
       {error && (
@@ -165,8 +198,31 @@ export function ManagerActions({
         </div>
       )}
       <fieldset disabled={busy}>
-        {resource === 'transfers' && user?.role === 'STAFF' && row.status === 'APPROVED' && <TransferHandoverForm row={row} busy={busy} onSubmit={input => { void run(`/staff/transfers/${encodeURIComponent(id)}/complete`, 'POST', input); }} />}
-        {resource === "reservations" && user?.role === 'MANAGER' &&
+        {resource === 'transfers' && user?.role === 'FACILITY_STAFF' && first(row, 'assignedStaff.id') === user.id && row.status === 'APPROVED' && !row.commercial && !problem.pending &&
+          (object(row.handoverReport).stagedHandover === true && !first(row, 'handoverReport.destinationAccessDeliveredAt')
+            ? <form className="portal-form" onSubmit={event => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              void run(`/staff/transfers/${encodeURIComponent(id)}/destination-handover`, 'POST', {
+                destinationReady: data.get('destinationReady') === 'on', accessDelivered: data.get('accessDelivered') === 'on',
+              });
+            }}>
+              <label className="portal-checkbox"><input name="destinationReady" type="checkbox" required />Đã kiểm tra kho đích an toàn</label>
+              <label className="portal-checkbox"><input name="accessDelivered" type="checkbox" required />Đã bàn giao quyền truy cập kho đích</label>
+              <button className="button-primary">Ghi nhận bàn giao kho đích</button>
+            </form>
+            : object(row.handoverReport).stagedHandover === true && !first(row, 'handoverReport.customerMoveReadyAt')
+              ? <p role="status">Chờ khách tự chuyển tài sản và báo sẵn sàng kiểm tra kho nguồn.</p>
+              : object(row.handoverReport).stagedHandover === true && !first(row, 'handoverReport.sourceInspectionStartedAt')
+                ? <button className="button-primary" type="button" onClick={() => void run(`/staff/transfers/${encodeURIComponent(id)}/start-source-inspection`, 'POST', {})}>Bắt đầu kiểm tra kho cũ</button>
+                : <TransferHandoverForm busy={busy}
+            onSubmit={input => { void run(`/staff/transfers/${encodeURIComponent(id)}/complete`, 'POST', input); }}
+            onProblem={note => { void run(`/staff/transfers/${encodeURIComponent(id)}/problem`, 'POST', { note }); }} />)}
+        {resource === 'transfers' && user?.role === 'FACILITY_STAFF' && first(row, 'assignedStaff.id') === user.id
+          && row.status === 'APPROVED' && !row.commercial && !problem.pending && object(row.handoverReport).stagedHandover === true
+          && !first(row, 'handoverReport.sourceInspectionStartedAt') &&
+          <TransferProblemForm busy={busy} onProblem={note => { void run(`/staff/transfers/${encodeURIComponent(id)}/problem`, 'POST', { note }); }} />}
+        {resource === "reservations" && user?.role === 'FACILITY_MANAGER' &&
           (row.status === "PENDING" ? (
             <form
               className="portal-form"
@@ -226,8 +282,38 @@ export function ManagerActions({
               </Link>
             </>
           ))}
-        {resource === "appointments" && first(row, "assignedStaff.id") === user?.id &&
-          (row.status === "REQUESTED" ? (
+        {resource === 'returns' && user?.role === 'FACILITY_MANAGER' && row.status === 'REQUESTED' &&
+          <ReturnInspectionSchedule id={id} current={first(row, 'inspectionScheduledAt') || null} onUpdated={refresh} />}
+        {resource === 'appointments' && user?.role === 'FACILITY_MANAGER' && ['REQUESTED', 'CONFIRMED'].includes(String(row.status)) &&
+          <form className="portal-form" onSubmit={event => {
+            event.preventDefault();
+            const scheduledAt = newSchedule + ':00+07:00';
+            if (scheduleAction === 'RESCHEDULE' &&
+              (newSchedule < scheduleMinimum(Date.now()) || (scheduleLimit && newSchedule > scheduleLimit) || Date.parse(scheduledAt) === Date.parse(first(row, 'scheduledAt')))) {
+              setScheduleError('Chọn thời điểm mới trong tương lai và trong khoảng được phép bàn giao.');
+              return;
+            }
+            void run(`${root}/schedule`, 'PATCH', {
+              action: scheduleAction, expectedScheduledAt: row.scheduledAt, note: scheduleNote.trim(),
+              ...(scheduleAction === 'RESCHEDULE' ? { scheduledAt } : {}),
+            });
+          }}>
+            {first(row, 'handoverReadiness.reason', 'bookingBlockReason') && <p role="status">
+              {first(row, 'handoverReadiness.reason', 'bookingBlockReason')}
+            </p>}
+            <label className="field-label">Xử lý lịch hẹn<select value={scheduleAction} onChange={event => setScheduleAction(event.target.value)}>
+              <option value="RESCHEDULE">Đổi lịch</option>
+              {row.schedulePendingManager === true && <option value="CONFIRM_EXCEPTION">Xác nhận lịch hẹn</option>}
+              {Date.parse(first(row, 'scheduledAt')) < scheduleClock && <option value="NO_SHOW">Khách không đến · hủy lịch</option>}
+            </select></label>
+            {scheduleAction === 'RESCHEDULE' && <DateTimePicker label="Lịch mới (giờ Việt Nam)" required
+              min={scheduleMinimum(scheduleClock)} max={scheduleLimit} defaultValue={newSchedule} error={scheduleError}
+              onChange={value => { setNewSchedule(value); setScheduleError(''); }} />}
+            <label className="field-label">Lý do<textarea required minLength={3} maxLength={1000} value={scheduleNote} onChange={event => setScheduleNote(event.target.value)} /></label>
+            <button className="button-primary" disabled={busy || scheduleNote.trim().length < 3}>Lưu thay đổi lịch</button>
+          </form>}
+        {resource === "appointments" && user?.role === 'FACILITY_STAFF' && first(row, "assignedStaff.id") === user.id &&
+          (row.status === "REQUESTED" && row.schedulePendingManager === true ? <p>Chờ quản lý xác nhận giờ hẹn.</p> : row.status === "REQUESTED" ? (
             <>
               <p>
                 Xác nhận lịch nhận kho của khách. Bàn giao thực tế sẽ do nhân
@@ -320,11 +406,7 @@ export function ManagerActions({
                 );
               }}
             >
-              <p>
-                Ghi nhận khoản thu đã nhận thực tế. Còn thu:{" "}
-                <strong>{money(row.balanceDue)}</strong>.
-              </p>
-              <label className="field-label">
+              <div className="invoice-payment-amount"><label className="field-label">
                 Số tiền nhận (VND)
                 <input
                   type="number"
@@ -332,6 +414,8 @@ export function ManagerActions({
                   min={1}
                   max={Number(row.balanceDue)}
                   step={1}
+                  placeholder="Nhập số tiền"
+                  aria-invalid={Boolean(amount) && invalidInvoiceAmount}
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                 />
@@ -342,11 +426,12 @@ export function ManagerActions({
                 onClick={() => setAmount(String(row.balanceDue))}
               >
                 Điền số còn thu
-              </button>
+              </button></div>
+              {Boolean(amount) && invalidInvoiceAmount && <small role="status">Nhập số tiền nguyên dương, tối đa {money(row.balanceDue)}.</small>}
               {paymentFields}
               <button
                 className="button-primary"
-                disabled={busy || !amount || (method === "BANK_TRANSFER" && !reference.trim())}
+                disabled={busy || invalidInvoiceAmount || (method === "BANK_TRANSFER" && !reference.trim())}
               >
                 Ghi nhận thanh toán
               </button>
@@ -485,7 +570,7 @@ export function ManagerActions({
                 Duyệt quyết toán
               </button>
             </form>
-          ) : row.status === "APPROVED" &&
+          ) : row.earlyReturnSettlement || first(row, 'refundBlockReason') ? null : row.status === "APPROVED" &&
             Number(row.refundAmount) > 0 &&
             Number(row.outstandingAmount) === 0 ? (
             <form
@@ -499,6 +584,7 @@ export function ManagerActions({
                     {
                       method,
                       refundConfirmed: true,
+                      reference: reference.trim(),
                       note: note.trim() || undefined,
                     },
                     true,
@@ -506,7 +592,7 @@ export function ManagerActions({
               }}
             >
               <p>
-                Khoản cần hoàn: <strong>{money(row.refundAmount)}</strong>. Ghi
+                Tiền cọc cần hoàn <strong>{money(row.refundAmount)}</strong>. Ghi
                 nhận sau khi đã hoàn tiền cho khách.
               </p>
               {paymentFields}
@@ -525,28 +611,71 @@ export function ManagerActions({
                 : ""}
             </p>
           ))}
-        {resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION' && (
-          <form className="portal-form" onSubmit={event => {
+        {resource === 'deposit-settlements' && Boolean(row.earlyReturnSettlement) && <CombinedReturnRefund
+          row={row} busy={busy} onConfirm={body => void run(`${root}/confirm-return-refund`, 'POST', body, true)} />}
+        {resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION' && (!row.repairPlanReady || !row.workCompletedAt || !row.workNote)
+          && <p className="record-text">{!row.repairPlanReady ? 'Lưu khảo sát và phương án trước khi nghiệm thu.' : 'Chờ Staff gửi kết quả sửa chữa.'}</p>}
+        {resource === 'maintenance' && row.status === 'AWAITING_VERIFICATION' && row.repairPlanReady === true && Boolean(row.workCompletedAt && row.workNote) && <>
+          <form className="portal-form maintenance-verification-form incident-booking-impact" onSubmit={event => {
             event.preventDefault();
-            if (maintenancePassed) void run(`${root}/verify`, 'POST', { note: note.trim() || undefined }, true);
-            else if (reason.trim()) void run(`${root}/reject-verification`, 'POST', { note: reason.trim() }, true);
+            if (maintenanceSafetyVerified) void run(`${root}/verify`, 'POST', { note: note.trim() || undefined, safetyVerified: true }, true);
           }}>
-            <label className="field-label">Kết quả nghiệm thu
-              <select value={maintenancePassed ? 'pass' : 'rework'} onChange={event => setMaintenancePassed(event.target.value === 'pass')}>
-                <option value="pass">Đạt</option>
-                <option value="rework">Cần sửa lại</option>
-              </select>
+            <p className="record-text">{first(row, 'workNote')}</p>
+            {Boolean(row.blocksUnit) && <p className="record-attribution">Khóa của phiếu được xem xét gỡ
+              {' · '}{rows(row.affectedUnits).map(unit => first(unit, 'unitCode')).filter(Boolean).join(', ') || first(row, 'unit.unitCode') || 'Theo phạm vi của phiếu'}.
+              Các khóa thuộc phiếu khác vẫn được áp dụng.</p>}
+            <label className="incident-booking-choice">
+              <input type="checkbox" checked={maintenanceSafetyVerified} onChange={event => setMaintenanceSafetyVerified(event.target.checked)} required />
+              <span>Tôi đã kiểm tra và xác nhận khu vực đủ an toàn.</span>
             </label>
-            <label className="field-label">
-              {maintenancePassed ? 'Ghi chú nghiệm thu' : 'Yêu cầu sửa lại'}
-              <textarea required={!maintenancePassed} rows={3} maxLength={4000}
-                value={maintenancePassed ? note : reason} onChange={event => (maintenancePassed ? setNote : setReason)(event.target.value)} />
+            <label className="field-label">Ghi chú nghiệm thu
+              <textarea rows={2} maxLength={4000} value={note} onChange={event => setNote(event.target.value)} />
             </label>
-            {maintenancePassed && <p className="record-attribution">Nghiệm thu sẽ đưa kho về trạng thái sẵn sàng.</p>}
-            <button className="button-primary" disabled={busy || !maintenancePassed && !reason.trim()}>
-              {busy ? 'Đang lưu…' : maintenancePassed ? 'Nghiệm thu hoàn tất' : 'Trả về sửa tiếp'}
+            <button className="button-primary" disabled={busy || !maintenanceSafetyVerified}>
+              {busy ? 'Đang lưu…' : 'Xác nhận nghiệm thu'}
             </button>
           </form>
+          <DetailDisclosure title="Yêu cầu sửa chữa lại">
+            <form className="portal-form" onSubmit={event => {
+              event.preventDefault();
+              if (reason.trim()) void run(`${root}/reject-verification`, 'POST', { note: reason.trim() }, true);
+            }}>
+              <label className="field-label">Lý do yêu cầu sửa lại
+                <textarea required rows={3} maxLength={4000} value={reason} onChange={event => setReason(event.target.value)} />
+              </label>
+              <button className="button-secondary" disabled={busy || !reason.trim()}>Gửi yêu cầu sửa lại</button>
+            </form>
+          </DetailDisclosure>
+        </>}
+        {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER' && row.status === 'OPEN' && !row.startedAt &&
+          <DetailDisclosure title="Kết thúc vì không cần sửa chữa">
+            <form className="portal-form incident-booking-impact" onSubmit={event => {
+              event.preventDefault();
+              const fields = new FormData(event.currentTarget);
+              void run(`${root}/close-without-repair`, 'POST', {
+                surveyResult: fields.get('closeSurvey'), reason: fields.get('closeReason'), safetyVerified: fields.get('safetyVerified') === 'on',
+              }, true);
+            }}>
+              <label className="field-label">Kết quả kiểm tra hiện trạng
+                <textarea name="closeSurvey" rows={3} required maxLength={4000} defaultValue={first(row, 'repair.surveyResult')} />
+              </label>
+              <label className="field-label">Lý do không cần sửa chữa
+                <textarea name="closeReason" rows={3} required minLength={3} maxLength={4000} />
+              </label>
+              <label className="incident-booking-choice">
+                <input type="checkbox" name="safetyVerified" required />
+                <span>Tôi đã kiểm tra và xác nhận khu vực đủ an toàn.</span>
+              </label>
+              <button type="submit" className="button-secondary" disabled={busy}>Kết thúc phiếu</button>
+            </form>
+          </DetailDisclosure>}
+        {resource === 'maintenance' && user?.role === 'FACILITY_MANAGER'
+          && (row.legacyBookingHold !== true || rows(row.affectedUnits).length > 0)
+          && ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'].includes(String(row.status)) && (
+          <DetailDisclosure title="Tạm ngừng nhận đặt mới">
+            <IncidentBookingImpact key={first(row, 'updatedAt')} row={row} root={root} busy={busy}
+              onSave={(affectedUnitIds, expectedAffectedUnitIds) => void run(`${root}/booking-impact`, 'PATCH', { affectedUnitIds, expectedAffectedUnitIds }, true)} />
+          </DetailDisclosure>
         )}
         {resource === "support-requests" && row.status === "ESCALATED" && (
           <form
@@ -621,7 +750,7 @@ export function ManagerActions({
                     value={priority}
                     onChange={(e) => setPriority(e.target.value)}
                   >
-                    {["LOW", "MEDIUM", "HIGH"].map((v) => (
+                    {(resource === 'maintenance' ? ["LOW", "MEDIUM", "HIGH", "URGENT"] : ["LOW", "MEDIUM", "HIGH"]).map((v) => (
                       <option key={v} value={v}>
                         {label(v)}
                       </option>
@@ -637,57 +766,31 @@ export function ManagerActions({
               </form>
             </DetailDisclosure>
           )}
-        {resource === "transfers" && user?.role === 'MANAGER' &&
-          (row.status === "REQUESTED" ? (
-            <>
-              <form
-                className="portal-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (!target || !transferDestinationReady || !transferStaff) return;
-                  void run(`${root}/approve`, "POST", {
-                    toStorageUnitId: target,
-                    staffUserId: transferStaff,
-                    ...(transferReviewHash ? { commercialReviewHash: transferReviewHash } : {}),
-                  });
-                }}
-              >
-                <TransferDestinationPicker
-                  transferId={id}
-                  source={object(row.fromUnit)}
-                  value={target}
-                  onChange={setTarget}
-                  onReady={setTransferDestinationReady}
-                  onReviewed={setTransferReviewHash}
-                  disabled={busy}
-                />
-                <div className="staff-choice-summary">
-                  <strong>Người phụ trách kho nguồn{first(row, 'fromUnit.unitCode') ? ' · ' + first(row, 'fromUnit.unitCode') : ''}</strong>
-                  {sourceAssignments.loading || sourceAssignments.refreshing ? <p role="status">Đang kiểm tra người phụ trách kho…</p>
-                    : sourceAssignments.error ? <p role="status">Chưa tải được người phụ trách. <button type="button" className="portal-text-button" disabled={busy} onClick={sourceAssignments.refresh}>Thử lại</button></p>
-                    : responsibleStaff ? <>
-                      <p>{responsibleStaff.fullName}{responsibleStaff.email ? ' · ' + responsibleStaff.email : ''}</p>
-                      <button type="button" className="button-secondary" disabled={busy || transferStaff === responsibleStaff.id} onClick={() => setTransferStaff(responsibleStaff.id)}>
-                        {transferStaff === responsibleStaff.id ? 'Đã chọn người phụ trách kho' : 'Chọn người phụ trách kho'}
-                      </button>
-                    </> : <p>Kho chưa có người phụ trách đang hoạt động. Hãy chọn một nhân viên bên dưới.</p>}
-                </div>
-                <StaffPicker list value={transferStaff} onChange={setTransferStaff} disabled={busy} currentStaff={responsibleStaff} />
-                <button className="button-primary" disabled={busy || !target || !transferDestinationReady || !transferStaff}>
-                  {busy ? 'Đang lưu…' : 'Duyệt và phân công'}
-                </button>
-              </form>
-              <form className="portal-form transfer-rejection-form" onSubmit={event => { event.preventDefault(); void run(`${root}/reject`, 'POST', { reason: reason.trim() }); }}>
-                <label className="field-label">Lý do từ chối chuyển kho<textarea required minLength={3} maxLength={2000} rows={3} value={reason} onChange={event => setReason(event.target.value)} disabled={busy} placeholder="Ghi rõ nguyên nhân để khách hàng biết kết quả xem xét." /></label>
-                <button className="button-secondary" disabled={busy || reason.trim().length < 3}>Từ chối chuyển kho</button>
-              </form>
-            </>
-          ) : (
+        {resource === 'transfers' && user?.role === 'FACILITY_MANAGER' && problem.pending &&
+          <form className="portal-form" onSubmit={event => {
+            event.preventDefault();
+            void run(`${root}/review-problem`, 'POST', {
+              decision: problemDecision, note: problemNote.trim(), expectedProblemCount: problem.count,
+              destinationAccessRevoked: new FormData(event.currentTarget).get('destinationAccessRevoked') === 'on',
+              destinationEmpty: new FormData(event.currentTarget).get('destinationEmpty') === 'on',
+            });
+          }}>
+            <label className="field-label">Xử lý vướng mắc<select value={problemDecision} onChange={event => setProblemDecision(event.target.value)}>
+              <option value="CONTINUE">Cho tiếp tục bàn giao</option><option value="CANCEL">Hủy chuyển kho</option>
+            </select></label>
+            <label className="field-label">Kết quả xử lý<textarea required minLength={3} maxLength={2000} value={problemNote} onChange={event => setProblemNote(event.target.value)} /></label>
+            {problemDecision === 'CANCEL' && first(row, 'handoverReport.destinationAccessDeliveredAt') && <>
+              <label className="portal-checkbox"><input type="checkbox" name="destinationEmpty" required />Đã xác nhận kho đích trống</label>
+              <label className="portal-checkbox"><input type="checkbox" name="destinationAccessRevoked" required />Đã thu hồi quyền truy cập kho đích</label>
+            </>}
+            <button className="button-primary" disabled={busy || problemNote.trim().length < 3}>Lưu quyết định</button>
+          </form>}
+        {resource === "transfers" && user?.role === "FACILITY_MANAGER" && row.status !== "REQUESTED" &&
             <p>
               {row.status === 'COMPLETED' ? 'Đã hoàn tất chuyển kho thực tế. Hợp đồng hiện dùng kho đích.' : row.status === 'REJECTED' ? 'Lệnh chuyển đã bị từ chối; kho sử dụng chưa thay đổi.' : 'Đã duyệt kho đích.'}
               {row.status === 'APPROVED' && <> <Link to={`/manager/assignments?kind=transfers&record=${encodeURIComponent(id)}`}>{first(row, 'assignedStaff.id') ? 'Đổi nhân viên' : 'Phân công hồ sơ cũ'}</Link></>}
             </p>
-          ))}
+          }
         {[
           "contracts",
           "rentals",
@@ -704,6 +807,10 @@ export function ManagerActions({
                   ? "Theo dõi tình trạng và lịch phân bổ kho. Trạng thái kho được cập nhật qua các nghiệp vụ bàn giao, trả kho và nghiệm thu."
                   : "Thông tin được cập nhật theo nghiệp vụ liên quan."}
             </p>
+            {resource === 'returns' && row.relocationSafetyRequired === true && !row.relocationSafetyConfirmed && !row.physicallyReturnedAt && <div className="portal-form">
+              <label className="field-label">Căn cứ an toàn thu hồi kho<textarea value={reason} onChange={e=>setReason(e.target.value)} maxLength={2000}/></label>
+              <button type="button" className="button-primary" disabled={busy || reason.trim().length < 3} onClick={()=>void run(root+'/authorize-safety','PATCH',{evidence:reason})}>Xác nhận an toàn bàn giao</button>
+            </div>}
             {resource === "units" && row.activeMaintenance && (
               <Link
                 className="button-secondary"

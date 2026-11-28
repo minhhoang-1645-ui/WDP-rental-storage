@@ -17,6 +17,10 @@ import { ReturnsService } from '../returns/returns.service.js';
 import { RenewalsService } from '../renewals/renewals.service.js';
 import { BookingService } from '../booking/booking.service.js';
 
+const isolatedTarget = 'postgresql://nestbox_test@127.0.0.1:55439/nestbox_foundation_test';
+if (process.env.NESTBOX_ISOLATED_TEST !== '1' || process.env.DATABASE_URL !== isolatedTarget || process.env.DIRECT_URL !== isolatedTarget)
+  throw new Error('Billing V1 requires the disposable local PostgreSQL database.');
+
 const runId = randomUUID().slice(0, 8);
 const facilityId = `billing-facility-${runId}`;
 const storageTypeId = `billing-product-${runId}`;
@@ -40,25 +44,31 @@ describe('Invoice and Payment V1', () => {
     await prisma.$connect();
     service = new BillingService(prisma);
     rentals = new ActiveRentalsService(prisma);
-    await prisma.facility.create({ data: { id: facilityId, code: `BILL-${runId}`, name: 'Billing test', address: 'Test only' } });
+    await prisma.facility.create({ data: { id: facilityId, code: `BILL-${runId}`, name: 'Billing test', address: 'Test only',
+      operationalStatus: 'OPEN', bookingEnabled: true, officeHours: '08:00–20:00 hằng ngày', accessHours: '08:00–20:00 hằng ngày' } });
     await prisma.storageType.create({
       data: {
         id: storageTypeId, facilityId, code: `BP-${runId}`, name: 'Billing product', sizeId: 'small', sizeName: 'Kho nhỏ', kicker: 'Test', condition: 'STANDARD',
         widthCm: 150, lengthCm: 200, heightCm: 240, roomEquivalent: 'Test', capacity: 'Test', boxCount: '20', suitableItems: ['Boxes'],
-        image: 'https://example.test/billing.jpg', imageAlt: 'Test', floor: 'Ground', access: 'Test', features: ['Test'], monthlyRate: 1500000,
+        image: 'https://example.test/billing.jpg', imageAlt: 'Test', floor: 'Ground', access: 'Test', features: ['Test'], monthlyRate: 1500000, bookingEnabled: true,
       },
     });
     await prisma.storageUnit.createMany({ data: unitCodes.map((unitNumber, index) => ({ storageTypeId, unitNumber, row: 1, position: index + 1 })) });
     await prisma.user.createMany({ data: [
-      { id: customerId, email: `${customerId}@example.test`, fullName: 'Billing Customer', role: 'CUSTOMER', passwordHash: 'secret-hash' },
-      { id: otherCustomerId, email: `${otherCustomerId}@example.test`, fullName: 'Other Customer', role: 'CUSTOMER', passwordHash: 'secret-hash' },
-      { id: managerId, email: `${managerId}@example.test`, fullName: 'Billing Manager', role: 'MANAGER', passwordHash: 'secret-hash' },
-      { id: adminId, email: `${adminId}@example.test`, fullName: 'Billing Admin', role: 'ADMIN', passwordHash: 'secret-hash' },
-      { id: staffId, email: `${staffId}@example.test`, fullName: 'Billing Staff', role: 'STAFF', passwordHash: 'secret-hash' },
+      { id: customerId, email: `${customerId}@example.test`, fullName: 'Billing Customer', role: 'STORAGE_CUSTOMER', passwordHash: 'secret-hash' },
+      { id: otherCustomerId, email: `${otherCustomerId}@example.test`, fullName: 'Other Customer', role: 'STORAGE_CUSTOMER', passwordHash: 'secret-hash' },
+      { id: managerId, email: `${managerId}@example.test`, fullName: 'Billing Manager', role: 'FACILITY_MANAGER', passwordHash: 'secret-hash' },
+      { id: adminId, email: `${adminId}@example.test`, fullName: 'Billing Admin', role: 'SYSTEM_ADMINISTRATOR', passwordHash: 'secret-hash' },
+      { id: staffId, email: `${staffId}@example.test`, fullName: 'Billing Staff', role: 'FACILITY_STAFF', passwordHash: 'secret-hash' },
     ] });
+    await prisma.facilityAccess.create({ data: { userId: managerId, facilityId, grantedById: adminId,
+      activeKey: JSON.stringify([managerId, facilityId]) } });
+    await prisma.businessRule.create({ data: { key: 'monthlyPriceRange:small', facilityId, version: 1,
+      value: { min: 1_000_000, max: 5_000_000 }, effectiveFrom: new Date('2020-01-01'), createdById: adminId } });
   });
 
   afterEach(async () => {
+    await prisma.onlinePaymentReconciliation.deleteMany({ where: { paymentSubmission: { invoice: { reservation: { storageTypeId } } } } });
     await prisma.paymentSubmission.deleteMany({ where: { invoice: { reservation: { storageTypeId } } } });
     await prisma.payment.deleteMany({ where: { invoice: { reservation: { storageTypeId } } } });
     await prisma.invoice.deleteMany({ where: { reservation: { storageTypeId } } });
@@ -78,6 +88,8 @@ describe('Invoice and Payment V1', () => {
     await prisma.reservation.deleteMany({ where: { storageTypeId } });
     await prisma.storageUnit.deleteMany({ where: { storageTypeId } });
     await prisma.storageType.delete({ where: { id: storageTypeId } });
+    await prisma.businessRule.deleteMany({ where: { facilityId } });
+    await prisma.facilityAccess.deleteMany({ where: { facilityId } });
     await prisma.user.deleteMany({ where: { id: { in: [customerId, otherCustomerId, managerId, adminId, staffId] } } });
     await prisma.facility.delete({ where: { id: facilityId } });
     await prisma.$disconnect();
@@ -97,7 +109,10 @@ describe('Invoice and Payment V1', () => {
       periodMode: 'DURATION', durationMonths: 6, availabilitySnapshot: {}, quoteSnapshot: snapshot as Prisma.InputJsonValue,
       status: 'CONFIRMED', confirmedAt: new Date(), idempotencyKey: `billing-${randomUUID()}`,
     } });
-    const units = await prisma.storageUnit.findMany({ where: { storageTypeId }, orderBy: { unitNumber: 'asc' }, take: quantity });
+    const units = await prisma.storageUnit.findMany({ where: { storageTypeId, reservationUnits: { none: {
+      releasedAt: null, plannedStartDate: { lt: reservation.endDate }, plannedEndDate: { gt: reservation.startDate },
+    } } }, orderBy: { unitNumber: 'asc' }, take: quantity });
+    expect(units).toHaveLength(quantity);
     for (const [index, unit] of units.entries()) {
       const allocation = await prisma.reservationUnit.create({ data: { reservationId: reservation.id, storageUnitId: unit.id, plannedStartDate: reservation.startDate, plannedEndDate: reservation.endDate } });
       await prisma.rentalContract.create({ data: { contractCode: `${reference}-C${String(index + 1).padStart(2, '0')}`, reservationId: reservation.id, reservationUnitId: allocation.id, startDate: reservation.startDate, endDate: reservation.endDate, termsAcceptedAt: new Date(), termsAcceptedByUserId: customer } });
@@ -125,18 +140,18 @@ describe('Invoice and Payment V1', () => {
     expect(first).toMatchObject({ rentalAmount: 3000000n, depositAmount: 3000000n, totalAmount: 6000000n, balanceDue: 6000000n });
     const view = await service.getCustomerInvoice(customerId, first.id);
     expect(view.breakdown?.units.map(unit => [unit.unitCode, unit.rentalAmount, unit.depositAmount])).toEqual(unitCodes.map(code => [code, 1000000, 1000000]));
-    expect((await service.getManagerInvoice(first.id)).breakdown).toEqual(view.breakdown);
+    expect((await service.getManagerInvoice(first.id, {id:managerId,role:'FACILITY_MANAGER',fullName:'Isolated test',email:'test@example.test',phone:''})).breakdown).toEqual(view.breakdown);
     expect((await prisma.reservation.findUniqueOrThrow({ where: { id: reservation.id } })).quoteSnapshot).toEqual(snapshot);
   });
 
-  it.each([1, 2])('creates one invoice from the real booking flow for %i physical units', async quantity => {
+  it.each([1, 2])('creates one invoice from the real booking flow for %i physical units', async (quantity: any) => {
     const booking = new BookingService(prisma);
-    const order = await booking.createReservation(actor(customerId, 'CUSTOMER'), {
+    const order = await booking.createReservation(actor(customerId, 'STORAGE_CUSTOMER'), {
       productId: storageTypeId, startDate: '2032-11-01', periodMode: 'duration', durationMonths: 3,
       quantity, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY',
     });
     const reservation = await prisma.reservation.findUniqueOrThrow({ where: { reservationCode: order.id } });
-    if (reservation.status === 'PENDING') await booking.updateManagerReservationStatus(order.id, { status: 'CONFIRMED' }, actor(managerId, 'MANAGER'));
+    if (reservation.status === 'PENDING') await booking.updateManagerReservationStatus(order.id, { status: 'CONFIRMED' }, actor(managerId, 'FACILITY_MANAGER'));
     const invoices = await prisma.invoice.findMany({ where: { reservationId: reservation.id, type: 'INITIAL' } });
     expect(invoices).toHaveLength(1);
     expect(invoices[0].totalAmount).toBe(3000000n * BigInt(quantity));
@@ -175,7 +190,7 @@ describe('Invoice and Payment V1', () => {
   it('bills a missing future cycle only for the contract covering the period, using its effective rate', async () => {
     const reservation = await confirmedReservation(quote({ quantity: 2, monthlyUnitPrice: 1500000, depositAmount: 3000000 }), 2);
     const initial = await ensure(reservation.id);
-    await service.recordPayment(initial.id, { amount: 6000000, method: 'CASH' }, `completed-initial-${runId}`, actor(managerId, 'MANAGER'));
+    await service.recordPayment(initial.id, { amount: 6000000, method: 'CASH' }, `completed-initial-${runId}`, actor(managerId, 'FACILITY_MANAGER'));
     const contracts = await prisma.rentalContract.findMany({ where: { reservationId: reservation.id }, orderBy: { contractCode: 'asc' } });
     const boundary = new Date('2026-12-01');
     await prisma.rentalContract.update({ where: { id: contracts[0].id }, data: { status: 'COMPLETED', endDate: boundary, completedAt: boundary } });
@@ -199,7 +214,7 @@ describe('Invoice and Payment V1', () => {
     const contract = await prisma.rentalContract.findFirstOrThrow({ where: { reservationId: reservation.id } });
     const invoices = await prisma.invoice.count({ where: { reservationId: reservation.id } });
     const input = { reservationId: reservation.id, rentalContractId: contract.id };
-    await expect(new ReturnsService(prisma).createCustomerReturn(actor(customerId, 'CUSTOMER'), input, 'partial-return-test')).rejects.toThrow('hợp đồng đang sử dụng');
+    await expect(new ReturnsService(prisma).createCustomerReturn(actor(customerId, 'STORAGE_CUSTOMER'), input, 'partial-return-test')).rejects.toThrow('hợp đồng đang sử dụng');
     await expect(new RenewalsService(prisma).createCustomerRenewal(customerId, { ...input, termMonths: 2, paymentPlan: 'PREPAID' }, 'partial-renewal-test')).rejects.toThrow('chưa đủ điều kiện gia hạn');
     expect(await prisma.returnRequest.count({ where: { reservationId: reservation.id } })).toBe(0);
     expect(await prisma.renewalRequest.count({ where: { reservationId: reservation.id } })).toBe(0);
@@ -210,7 +225,7 @@ describe('Invoice and Payment V1', () => {
     ['PREPAID', quote({ paymentPlan: 'PREPAID' })],
     ['DAILY', quote({ billingMode: 'DAILY' })],
     ['one-month PAY_MONTHLY', quote({ termMonths: 1 })],
-  ])('does not create recurring invoices for %s', async (_label, snapshot) => {
+  ])('does not create recurring invoices for %s', async (_label: any, snapshot: any) => {
     const reservation = await confirmedReservation(snapshot);
     expect(await activate(reservation.id)).toHaveLength(0);
     expect(await prisma.invoice.count({ where: { reservationId: reservation.id, type: 'RECURRING' } })).toBe(0);
@@ -237,7 +252,7 @@ describe('Invoice and Payment V1', () => {
   it('supports early partial and full recurring payment while keeping contracts ACTIVE and units OCCUPIED', async () => {
     const reservation = await confirmedReservation(quote());
     const [invoice] = await activate(reservation.id);
-    const manager = actor(managerId, 'MANAGER');
+    const manager = actor(managerId, 'FACILITY_MANAGER');
     const partial = await service.recordPayment(invoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference: `REC-PART-${runId}` }, `rec-part-${runId}`, manager);
     expect(partial.invoice).toMatchObject({ status: 'PARTIALLY_PAID', amountPaid: 1000000, balanceDue: 1900000 });
     const full = await service.recordPayment(invoice.id, { amount: 1900000, method: 'CASH' }, `rec-full-${runId}`, manager);
@@ -258,9 +273,9 @@ describe('Invoice and Payment V1', () => {
     expect((await rentals.listCustomerRentals(otherCustomerId, { page: 1, limit: 20 })).total).toBe(0);
     await expect(rentals.getCustomerRental(otherCustomerId, reservation.id)).rejects.toBeInstanceOf(NotFoundException);
 
-    const managerView = await rentals.getManagerRental(reservation.id);
+    const managerView = await rentals.getManagerRental(reservation.id, {id:managerId,role:'FACILITY_MANAGER',fullName:'Isolated test',email:'test@example.test',phone:''});
     expect(managerView.invoices.find((invoice: { billingCycle: number }) => invoice.billingCycle === 2)?.isPastDue).toBe(true);
-    await expect(rentals.getStaffRental(actor('unassigned-staff', 'STAFF'), reservation.id)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(rentals.getStaffRental(actor('unassigned-staff', 'FACILITY_STAFF'), reservation.id)).rejects.toBeInstanceOf(NotFoundException);
     expect(JSON.stringify(managerView)).not.toContain('secret-hash');
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'ACTIVE' } })).toBe(2);
     expect(await prisma.storageUnit.count({ where: { reservationUnits: { some: { reservationId: reservation.id } }, status: 'OCCUPIED' } })).toBe(2);
@@ -278,12 +293,12 @@ describe('Invoice and Payment V1', () => {
 
     const guard = new RolesGuard(new Reflector());
     const allowed: Array<[typeof CustomerActiveRentalsController | typeof ManagerActiveRentalsController | typeof StaffActiveRentalsController, PublicUser['role'][]]> = [
-      [CustomerActiveRentalsController, ['CUSTOMER']],
-      [ManagerActiveRentalsController, ['MANAGER']],
-      [StaffActiveRentalsController, ['STAFF']],
+      [CustomerActiveRentalsController, ['STORAGE_CUSTOMER']],
+      [ManagerActiveRentalsController, ['FACILITY_MANAGER']],
+      [StaffActiveRentalsController, ['FACILITY_STAFF']],
     ];
     for (const [controller, roles] of allowed) {
-      for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const) {
+      for (const role of ['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'] as const) {
         const context = { getHandler: () => function activeRentalOperation() {}, getClass: () => controller, switchToHttp: () => ({ getRequest: () => ({ user: { role } }) }) } as unknown as ExecutionContext;
         if (roles.includes(role)) expect(guard.canActivate(context)).toBe(true);
         else expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
@@ -296,7 +311,7 @@ describe('Invoice and Payment V1', () => {
     ['daily Locker deposit zero', quote({ billingMode: 'DAILY', paymentPlan: 'PAY_MONTHLY', monthlyUnitPrice: 750000, rentalAmount: 175000, depositAmount: 0 }), 175000n, 0n, 175000n],
     ['monthly PREPAID historical discount', quote({ paymentPlan: 'PREPAID', monthlyUnitPrice: 1500000, rentalAmount: 8100000, depositAmount: 1500000 }), 8100000n, 1500000n, 9600000n],
     ['monthly PAY_MONTHLY first month only', quote(), 2900000n, 2900000n, 5800000n],
-  ])('uses historical snapshot for %s', async (_label, snapshot, rental, deposit, total) => {
+  ])('uses historical snapshot for %s', async (_label: any, snapshot: any, rental: any, deposit: any, total: any) => {
     const reservation = await confirmedReservation(snapshot);
     await prisma.storageType.update({ where: { id: storageTypeId }, data: { monthlyRate: 9999999 } });
     const invoice = await ensure(reservation.id);
@@ -320,10 +335,10 @@ describe('Invoice and Payment V1', () => {
   it('supports partial then final payment and transitions all contracts only to READY_FOR_HANDOVER', async () => {
     const reservation = await confirmedReservation(quote({ quantity: 2, monthlyUnitPrice: 1500000, rentalAmount: 18000000, depositAmount: 3000000 }), 2);
     const invoice = await ensure(reservation.id);
-    const manager = actor(managerId, 'MANAGER');
+    const manager = actor(managerId, 'FACILITY_MANAGER');
     const partial = await service.recordPayment(invoice.id, { amount: 3000000, method: 'BANK_TRANSFER', reference: 'PART-1' }, `partial-${runId}`, manager);
     expect(partial.invoice).toMatchObject({ status: 'PARTIALLY_PAID', amountPaid: 3000000, balanceDue: 3000000 });
-    expect(partial.contracts.every((contract) => contract.status === 'PENDING_PAYMENT')).toBe(true);
+    expect(partial.contracts.every((contract: any) => contract.status === 'PENDING_PAYMENT')).toBe(true);
     expect((await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } })).paidAt).toBeNull();
 
     const final = await service.recordPayment(invoice.id, { amount: 3000000, method: 'CASH' }, `final-${runId}`, manager);
@@ -332,7 +347,7 @@ describe('Invoice and Payment V1', () => {
     expect(replay.payment.id).toBe(final.payment.id);
     expect(await prisma.payment.count({ where: { invoiceId: invoice.id } })).toBe(2);
     expect(final.contracts).toHaveLength(2);
-    expect(final.contracts.every((contract) => contract.status === 'READY_FOR_HANDOVER')).toBe(true);
+    expect(final.contracts.every((contract: any) => contract.status === 'READY_FOR_HANDOVER')).toBe(true);
     expect((await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } })).paidAt).not.toBeNull();
     expect(await prisma.rentalContract.count({ where: { reservationId: reservation.id, status: 'ACTIVE' } })).toBe(0);
     expect(await prisma.storageUnit.count({ where: { reservationUnits: { some: { reservationId: reservation.id } }, status: 'AVAILABLE' } })).toBe(2);
@@ -341,7 +356,7 @@ describe('Invoice and Payment V1', () => {
   it('validates payment amount and prevents overpayment', async () => {
     const reservation = await confirmedReservation(quote());
     const invoice = await ensure(reservation.id);
-    const manager = actor(managerId, 'MANAGER');
+    const manager = actor(managerId, 'FACILITY_MANAGER');
     await expect(service.recordPayment(invoice.id, { amount: 0, method: 'CASH' }, `zero-${runId}`, manager)).rejects.toBeInstanceOf(BadRequestException);
     await expect(service.recordPayment(invoice.id, { amount: 5800001, method: 'CASH' }, `over-${runId}`, manager)).rejects.toBeInstanceOf(BadRequestException);
     expect(await prisma.payment.count({ where: { invoiceId: invoice.id } })).toBe(0);
@@ -350,7 +365,7 @@ describe('Invoice and Payment V1', () => {
   it('makes payment retries idempotent and audits the authenticated recorder', async () => {
     const reservation = await confirmedReservation(quote());
     const invoice = await ensure(reservation.id);
-    const manager = actor(managerId, 'MANAGER');
+    const manager = actor(managerId, 'FACILITY_MANAGER');
     const first = await service.recordPayment(invoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference: 'IDEM' }, `idem-${runId}`, manager);
     const retry = await service.recordPayment(invoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference: 'IDEM' }, `idem-${runId}`, manager);
     expect(retry.payment.id).toBe(first.payment.id);
@@ -362,7 +377,7 @@ describe('Invoice and Payment V1', () => {
   it('blocks a duplicate reconciled bank transaction with a different Idempotency-Key', async () => {
     const reservation = await confirmedReservation(quote());
     const invoice = await ensure(reservation.id);
-    const manager = actor(managerId, 'MANAGER');
+    const manager = actor(managerId, 'FACILITY_MANAGER');
     const reference = `BANK-DUP-${runId}`;
     const first = await service.recordPayment(invoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference }, `bank-dup-first-${runId}`, manager);
     await expect(service.recordPayment(invoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference }, `bank-dup-second-${runId}`, manager)).rejects.toBeInstanceOf(ConflictException);
@@ -372,13 +387,13 @@ describe('Invoice and Payment V1', () => {
   });
 
   it('serializes the same bank transaction across concurrent manual and submission verification paths', async () => {
-    const manager = actor(managerId, 'MANAGER');
+    const manager = actor(managerId, 'FACILITY_MANAGER');
     const manualReservation = await confirmedReservation(quote());
     const submissionReservation = await confirmedReservation(quote());
     const manualInvoice = await ensure(manualReservation.id);
     const submissionInvoice = await ensure(submissionReservation.id);
     const reference = `BANK-RACE-${runId}`;
-    const submission = await service.createCustomerPaymentSubmission(customerId, submissionInvoice.id, { amount: 1000000, transferReference: 'CUSTOMER-CLAIM-ONLY' }, `bank-race-submission-${runId}`);
+    const submission = await service.createCustomerPaymentSubmission(customerId, submissionInvoice.id, { amount: 1000000, transferReference: 'STORAGE_CUSTOMER-CLAIM-ONLY' }, `bank-race-submission-${runId}`);
     const outcomes = await Promise.allSettled([
       service.recordPayment(manualInvoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference }, `bank-race-manual-${runId}`, manager),
       service.verifyPaymentSubmission(submission.id, { reference }, manager),
@@ -391,10 +406,10 @@ describe('Invoice and Payment V1', () => {
   });
 
   it('blocks a bank reference shared between manual payment and verified submission in either order', async () => {
-    const manager = actor(managerId, 'MANAGER');
+    const manager = actor(managerId, 'FACILITY_MANAGER');
     const firstReservation = await confirmedReservation(quote());
     const firstInvoice = await ensure(firstReservation.id);
-    const firstSubmission = await service.createCustomerPaymentSubmission(customerId, firstInvoice.id, { amount: 1000000, transferReference: 'CUSTOMER-CLAIM-A' }, `cross-first-submission-${runId}`);
+    const firstSubmission = await service.createCustomerPaymentSubmission(customerId, firstInvoice.id, { amount: 1000000, transferReference: 'STORAGE_CUSTOMER-CLAIM-A' }, `cross-first-submission-${runId}`);
     const firstReference = `BANK-CROSS-MANUAL-FIRST-${runId}`;
     await service.recordPayment(firstInvoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference: firstReference }, `cross-first-manual-${runId}`, manager);
     await expect(service.verifyPaymentSubmission(firstSubmission.id, { reference: firstReference }, manager)).rejects.toBeInstanceOf(ConflictException);
@@ -402,7 +417,7 @@ describe('Invoice and Payment V1', () => {
     const secondReservation = await confirmedReservation(quote());
     const secondInvoice = await ensure(secondReservation.id);
     const secondReference = `BANK-CROSS-VERIFY-FIRST-${runId}`;
-    const secondSubmission = await service.createCustomerPaymentSubmission(customerId, secondInvoice.id, { amount: 1000000, transferReference: 'CUSTOMER-CLAIM-B' }, `cross-second-submission-${runId}`);
+    const secondSubmission = await service.createCustomerPaymentSubmission(customerId, secondInvoice.id, { amount: 1000000, transferReference: 'STORAGE_CUSTOMER-CLAIM-B' }, `cross-second-submission-${runId}`);
     await service.verifyPaymentSubmission(secondSubmission.id, { reference: secondReference }, manager);
     await expect(service.recordPayment(secondInvoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference: secondReference }, `cross-second-manual-${runId}`, manager)).rejects.toBeInstanceOf(ConflictException);
   });
@@ -410,7 +425,7 @@ describe('Invoice and Payment V1', () => {
   it('keeps partial bank payments and cash receipts valid with the authenticated recorder', async () => {
     const reservation = await confirmedReservation(quote());
     const invoice = await ensure(reservation.id);
-    const manager = actor(managerId, 'MANAGER');
+    const manager = actor(managerId, 'FACILITY_MANAGER');
     await service.recordPayment(invoice.id, { amount: 1000000, method: 'BANK_TRANSFER', reference: `BANK-PARTIAL-${runId}` }, `bank-partial-${runId}`, manager);
     const cash = await service.recordPayment(invoice.id, { amount: 1000000, method: 'CASH' }, `cash-receipt-${runId}`, manager);
     expect(cash.payment).toMatchObject({ method: 'CASH', paymentCode: expect.any(String), reference: null, recordedBy: { id: managerId } });
@@ -436,7 +451,7 @@ describe('Invoice and Payment V1', () => {
   it('verifies partial and final submissions through existing payment logic exactly once', async () => {
     const reservation = await confirmedReservation(quote({ quantity: 2, monthlyUnitPrice: 1450000, rentalAmount: 17400000, depositAmount: 2900000 }), 2);
     const invoice = await ensure(reservation.id);
-    const manager = actor(managerId, 'MANAGER');
+    const manager = actor(managerId, 'FACILITY_MANAGER');
     const firstNotice = await service.createCustomerPaymentSubmission(customerId, invoice.id, { amount: 3000000 }, `partial-notice-${runId}`);
     const [verified, retry] = await Promise.all([
       service.verifyPaymentSubmission(firstNotice.id, { reference: 'BANK-TXN-PART-01', note: 'Đã đối chiếu.' }, manager),
@@ -455,35 +470,36 @@ describe('Invoice and Payment V1', () => {
     const reservation = await confirmedReservation(quote());
     const invoice = await ensure(reservation.id);
     const notice = await service.createCustomerPaymentSubmission(customerId, invoice.id, { amount: 1000000 }, `reject-notice-${runId}`);
-    await expect(service.rejectPaymentSubmission(notice.id, { reason: 'Không tìm thấy giao dịch tương ứng.' }, actor(managerId, 'MANAGER'))).resolves.toMatchObject({ status: 'REJECTED', rejectionReason: 'Không tìm thấy giao dịch tương ứng.' });
-    await expect(service.rejectPaymentSubmission(notice.id, { reason: 'Không tìm thấy giao dịch tương ứng.' }, actor(managerId, 'MANAGER'))).resolves.toMatchObject({ status: 'REJECTED' });
+    await expect(service.rejectPaymentSubmission(notice.id, { reason: 'Không tìm thấy giao dịch tương ứng.' }, actor(managerId, 'FACILITY_MANAGER'))).resolves.toMatchObject({ status: 'REJECTED', rejectionReason: 'Không tìm thấy giao dịch tương ứng.' });
+    await expect(service.rejectPaymentSubmission(notice.id, { reason: 'Không tìm thấy giao dịch tương ứng.' }, actor(managerId, 'FACILITY_MANAGER'))).resolves.toMatchObject({ status: 'REJECTED' });
     expect(await prisma.payment.count({ where: { invoiceId: invoice.id } })).toBe(0);
     expect(await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } })).toMatchObject({ status: 'OPEN', amountPaid: 0n, balanceDue: 5800000n });
-    await expect(service.verifyPaymentSubmission(notice.id, { reference: 'BANK-TXN' }, actor(managerId, 'MANAGER'))).rejects.toBeInstanceOf(ConflictException);
-    await expect(service.rejectPaymentSubmission(notice.id, { reason: '' }, actor(managerId, 'MANAGER'))).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.verifyPaymentSubmission(notice.id, { reference: 'BANK-TXN' }, actor(managerId, 'FACILITY_MANAGER'))).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.rejectPaymentSubmission(notice.id, { reason: '' }, actor(managerId, 'FACILITY_MANAGER'))).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('blocks payment notices on paid invoices and restricts verification to managers and admins', async () => {
+  it('blocks payment notices on paid invoices and restricts verification to facility managers', async () => {
     const reservation = await confirmedReservation(quote());
     const invoice = await ensure(reservation.id);
-    const manager = actor(managerId, 'MANAGER');
+    const manager = actor(managerId, 'FACILITY_MANAGER');
     await service.recordPayment(invoice.id, { amount: 5800000, method: 'BANK_TRANSFER', reference: `PAID-BEFORE-NOTICE-${runId}` }, `paid-before-notice-${runId}`, manager);
     await expect(service.createCustomerPaymentSubmission(customerId, invoice.id, { amount: 1 }, `paid-notice-${runId}`)).rejects.toBeInstanceOf(ConflictException);
     const otherReservation = await confirmedReservation(quote(), 1);
     const otherInvoice = await ensure(otherReservation.id);
     const notice = await service.createCustomerPaymentSubmission(customerId, otherInvoice.id, { amount: 1 }, `role-notice-${runId}`);
-    await expect(service.verifyPaymentSubmission(notice.id, { reference: 'BANK' }, actor(customerId, 'CUSTOMER'))).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(service.verifyPaymentSubmission(notice.id, { reference: 'BANK' }, actor(staffId, 'STAFF'))).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.verifyPaymentSubmission(notice.id, { reference: 'BANK' }, actor(customerId, 'STORAGE_CUSTOMER'))).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.verifyPaymentSubmission(notice.id, { reference: 'BANK' }, actor(staffId, 'FACILITY_STAFF'))).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.verifyPaymentSubmission(notice.id, { reference: 'BANK' }, actor(adminId, 'SYSTEM_ADMINISTRATOR'))).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('restricts Customer and Manager payment-submission endpoints by controller role', () => {
     const guard = new RolesGuard(new Reflector());
     const controllers: Array<[typeof CustomerBillingController | typeof ManagerBillingController, PublicUser['role'][]]> = [
-      [CustomerBillingController, ['CUSTOMER']],
-      [ManagerBillingController, ['MANAGER']],
+      [CustomerBillingController, ['STORAGE_CUSTOMER']],
+      [ManagerBillingController, ['FACILITY_MANAGER']],
     ];
     for (const [controller, allowedRoles] of controllers) {
-      for (const role of ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'] as const) {
+      for (const role of ['STORAGE_CUSTOMER', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_OPERATIONS_MANAGER', 'SYSTEM_ADMINISTRATOR'] as const) {
         const context = { getHandler: () => function paymentSubmissionOperation() {}, getClass: () => controller, switchToHttp: () => ({ getRequest: () => ({ user: { role } }) }) } as unknown as ExecutionContext;
         if (allowedRoles.includes(role)) expect(guard.canActivate(context)).toBe(true);
         else expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
@@ -491,25 +507,27 @@ describe('Invoice and Payment V1', () => {
     }
   });
 
-  it('enforces payment mutation roles while allowing ADMIN', async () => {
+  it('allows a scoped Facility Manager to record payment and rejects SYSTEM_ADMINISTRATOR', async () => {
     const reservation = await confirmedReservation(quote());
     const invoice = await ensure(reservation.id);
-    await expect(service.recordPayment(invoice.id, { amount: 1, method: 'CASH' }, `customer-${runId}`, actor(customerId, 'CUSTOMER'))).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(service.recordPayment(invoice.id, { amount: 1, method: 'CASH' }, `staff-${runId}`, actor(staffId, 'STAFF'))).rejects.toBeInstanceOf(ForbiddenException);
-    expect((await service.recordPayment(invoice.id, { amount: 1, method: 'CASH' }, `admin-${runId}`, actor(adminId, 'ADMIN'))).payment.recordedBy.role).toBe('ADMIN');
+    await expect(service.recordPayment(invoice.id, { amount: 1, method: 'CASH' }, `customer-${runId}`, actor(customerId, 'STORAGE_CUSTOMER'))).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.recordPayment(invoice.id, { amount: 1, method: 'CASH' }, `staff-${runId}`, actor(staffId, 'FACILITY_STAFF'))).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.recordPayment(invoice.id, { amount: 1, method: 'CASH' }, `admin-${runId}`, actor(adminId, 'SYSTEM_ADMINISTRATOR'))).rejects.toBeInstanceOf(ForbiddenException);
+    const payment = await service.recordPayment(invoice.id, { amount: 1, method: 'CASH' }, `manager-${runId}`, actor(managerId, 'FACILITY_MANAGER'));
+    expect(payment.payment.recordedBy).toMatchObject({ id: managerId, role: 'FACILITY_MANAGER' });
   });
 
   it('keeps customer invoice and payment reads private and never exposes passwordHash', async () => {
     const reservation = await confirmedReservation(quote());
     const invoice = await ensure(reservation.id);
-    const payment = await service.recordPayment(invoice.id, { amount: 1, method: 'CASH' }, `privacy-${runId}`, actor(managerId, 'MANAGER'));
+    const payment = await service.recordPayment(invoice.id, { amount: 1, method: 'CASH' }, `privacy-${runId}`, actor(managerId, 'FACILITY_MANAGER'));
     expect((await service.listCustomerInvoices(customerId, 1, 20)).total).toBe(1);
     expect((await service.listCustomerPayments(customerId, 1, 20)).total).toBe(1);
     await expect(service.getCustomerInvoice(otherCustomerId, invoice.id)).rejects.toBeInstanceOf(NotFoundException);
     await expect(service.getCustomerPayment(otherCustomerId, payment.payment.id)).rejects.toBeInstanceOf(NotFoundException);
-    const managerDetail = await service.getManagerInvoice(invoice.id);
+    const managerDetail = await service.getManagerInvoice(invoice.id, {id:managerId,role:'FACILITY_MANAGER',fullName:'Isolated test',email:'test@example.test',phone:''});
     expect(JSON.stringify(managerDetail)).not.toContain('secret-hash');
-    expect((await service.listManagerInvoices({ page: 1, limit: 20, search: 'Billing Customer' })).total).toBe(1);
-    expect((await service.listManagerPayments({ page: 1, limit: 20, method: 'CASH' })).total).toBe(1);
+    expect((await service.listManagerInvoices({ page: 1, limit: 20, search: 'Billing Customer' }, {id:managerId,role:'FACILITY_MANAGER',fullName:'Isolated test',email:'test@example.test',phone:''})).total).toBe(1);
+    expect((await service.listManagerPayments({ page: 1, limit: 20, method: 'CASH' }, {id:managerId,role:'FACILITY_MANAGER',fullName:'Isolated test',email:'test@example.test',phone:''})).total).toBe(1);
   });
 });

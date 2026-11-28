@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiCreatedResponse, ApiForbiddenResponse, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { BookingAvailabilityRequestDto, GuestInquiryRequestDto } from '../../openapi/api-dtos.js';
 import { AuthGuard } from '../auth/auth.guard.js';
@@ -13,15 +13,15 @@ export class BookingController {
 
   @Get('booking/catalog')
   @ApiOperation({ summary: 'Catalog dùng cho wizard đặt kho', description: 'Guest access. Nguồn catalog hiện tại của frontend, gồm sản phẩm, quy tắc thuê tối thiểu và Pricing V1.' })
-  @ApiOkResponse({ description: 'Catalog WDP.', schema: { example: { products: [{ id: 'sm-b12', code: 'SM-B12', name: 'Kho nhỏ B12', sizeId: 'small', condition: 'standard', monthlyPrice: 1500000, minRentalDays: 7, allowDailyRental: true }], sizes: [{ id: 'small', name: 'Kho nhỏ', dimensions: '1,5 × 2,0 × 2,4 m', floorArea: '3 m²', volume: 'Khoảng 7,2 m³' }], approvedDurations: [1, 3, 6, 12], addons: [{ id: 'service-id', code: 'UTILITY_DOLLY', kind: 'RENTAL', billingUnit: 'DAY', unitPrice: 60000 }], pricingPolicy: 'PRICING_V1', inventoryPolicy: 'DATABASE_PHYSICAL_UNITS' } } })
-  catalog() {
-    return this.bookingService.getCatalog();
+  @ApiOkResponse({ description: 'Catalog WDP.', schema: { example: { products: [{ id: 'sm-b12', code: 'SM-B12', name: 'Kho nhỏ B12', sizeId: 'small', condition: 'standard', monthlyPrice: 1500000, minRentalDays: 7, allowDailyRental: true }], sizes: [{ id: 'small', name: 'Kho nhỏ', dimensions: '1,5 × 2,0 × 2,4 m', floorArea: '3 m²', volume: 'Khoảng 7,2 m³' }], suggestedRentalMonths: [1, 3, 6, 12], addons: [{ id: 'service-id', code: 'UTILITY_DOLLY', kind: 'RENTAL', billingUnit: 'DAY', unitPrice: 60000 }], pricingPolicy: 'PRICING_V1', inventoryPolicy: 'DATABASE_PHYSICAL_UNITS' } } })
+  catalog(@Query('facilityId') facilityId?: string) {
+    return this.bookingService.getCatalog(facilityId);
   }
 
   @Post('booking/availability')
   @ApiOperation({ summary: 'Kiểm tra khả dụng toàn kỳ', description: 'Guest access. Chỉ là kiểm tra thông tin, không giữ kho. Khi submit Inquiry hoặc Reservation, backend sẽ kiểm tra lại.' })
-  @ApiBody({ type: BookingAvailabilityRequestDto, examples: { duration: { summary: 'Thời hạn theo tháng', value: { productId: 'sm-b12', startDate: '2026-11-01', periodMode: 'duration', durationMonths: 3, quantity: 1, adjacencyPreference: false, addonIds: [], note: 'Cần tư vấn thời gian vào kho.', paymentChoice: 'pay-later', paymentPlan: 'PREPAID' } }, customDates: { summary: 'Thuê ngắn ngày hợp lệ', value: { productId: 'sm-b12', startDate: '2026-11-01', periodMode: 'dates', endDate: '2026-11-08', quantity: 1, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY' } } } })
-  @ApiOkResponse({ description: 'Kết quả availability cùng Pricing V1. Đây chưa phải giữ kho hoặc thanh toán.', schema: { example: { available: true, startDate: '2026-11-01', endDateExclusive: '2027-02-01', periodStatus: 'APPROVED_DURATION', reasonCode: 'AVAILABLE', message: 'Còn kho vật lý phù hợp cho toàn bộ khoảng thuê. Kết quả này chưa giữ kho.', quote: { currency: 'VND', billingMode: 'MONTHLY', termMonths: 3, paymentPlan: 'PREPAID', monthlyUnitPrice: 1500000, baseRentalAmount: 4500000, discountPercent: 5, discountAmount: 225000, rentalAmount: 4275000, depositAmount: 1500000, quotedTotalAmount: 5775000, amountPayableNow: null } } } })
+  @ApiBody({ type: BookingAvailabilityRequestDto, examples: { duration: { summary: 'Thời hạn theo tháng', value: { productId: 'sm-b12', startDate: '2026-11-01', periodMode: 'duration', durationMonths: 3, quantity: 1, adjacencyPreference: false, addonIds: [], note: 'Cần tư vấn thời gian vào kho.', paymentChoice: 'pay-later', paymentPlan: 'PREPAID' } }, customDates: { summary: 'Thuê ngắn ngày hợp lệ', value: { productId: 'sm-b12', startDate: '2026-11-01', periodMode: 'dates', endDate: '2026-11-08', quantity: 1, adjacencyPreference: false, addonIds: [], paymentChoice: 'pay-later', paymentPlan: 'PREPAID' } } } })
+  @ApiOkResponse({ description: 'Kết quả khả dụng cùng báo giá và serviceQuoteVersion để xác minh điều khoản khi đặt kho.', schema: { example: { available: true, startDate: '2026-11-01', endDateExclusive: '2027-02-01', periodStatus: 'APPROVED_DURATION', reasonCode: 'AVAILABLE', message: 'Còn kho vật lý phù hợp cho toàn bộ khoảng thuê. Kết quả này chưa giữ kho.', quote: { currency: 'VND', billingMode: 'MONTHLY', termMonths: 3, paymentPlan: 'PREPAID', monthlyUnitPrice: 1500000, baseRentalAmount: 4500000, discountPercent: 5, discountAmount: 225000, rentalAmount: 4275000, depositAmount: 1500000, quotedTotalAmount: 5775000, amountPayableNow: null } } } })
   @ApiBadRequestResponse({ description: 'Ngày, product, quantity, duration hoặc add-on không hợp lệ.' })
   availability(@Body() body: Record<string, unknown>) {
     return this.bookingService.checkAvailability(body);
@@ -38,14 +38,14 @@ export class BookingController {
 
   @Post('reservations')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('CUSTOMER')
+  @Roles('STORAGE_CUSTOMER')
   @ApiBearerAuth('bearerAuth')
   @ApiTags('Reservation')
-  @ApiOperation({ summary: 'Tạo Reservation', description: 'CUSTOMER tạo đơn; hệ thống kiểm tra lại khả dụng rồi thử xác nhận tự động để tạo phân bổ, hợp đồng và hóa đơn. Khách cần ký đủ hợp đồng và thanh toán trước khi nhận kho. Ngoại lệ có thể còn PENDING. Yêu cầu lặp cùng dữ liệu được khử trùng trên server.' })
+  @ApiOperation({ summary: 'Tạo Reservation', description: 'STORAGE_CUSTOMER tạo đơn; hệ thống kiểm tra lại khả dụng rồi thử xác nhận tự động để tạo phân bổ, hợp đồng và hóa đơn. Khách cần ký đủ hợp đồng và thanh toán trước khi nhận kho. Ngoại lệ có thể còn PENDING. Yêu cầu lặp cùng dữ liệu được khử trùng trên server.' })
   @ApiBody({ type: BookingAvailabilityRequestDto, examples: { payLater: { summary: 'Reservation chờ xử lý', value: { productId: 'sm-b12', startDate: '2026-11-01', periodMode: 'duration', durationMonths: 3, quantity: 1, adjacencyPreference: false, addonIds: [], note: 'Liên hệ vào buổi sáng.', paymentChoice: 'pay-later', paymentPlan: 'PAY_MONTHLY' } } } })
   @ApiCreatedResponse({ description: 'Đơn hiện hữu hoặc đơn mới sau khi thử xác nhận tự động. Đọc status, hạn giữ và hóa đơn từ phản hồi; CONFIRMED chưa đồng nghĩa đã thanh toán hay đã bàn giao.' })
   @ApiBadRequestResponse({ description: 'Payload không hợp lệ hoặc pay-now chưa được hỗ trợ.' })
-  @ApiConflictResponse({ description: 'Kho không đủ cho toàn bộ kỳ thuê khi backend kiểm tra lại.' })
+  @ApiConflictResponse({ description: 'Kho không đủ cho toàn bộ kỳ thuê hoặc cấu hình dịch vụ đã thay đổi kể từ báo giá.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   create(@Req() request: AuthenticatedRequest, @Body() body: Record<string, unknown>) {
     return this.bookingService.createReservation(request.user!, body);
@@ -64,10 +64,10 @@ export class BookingController {
 
   @Get('reservations')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('CUSTOMER')
+  @Roles('STORAGE_CUSTOMER')
   @ApiBearerAuth('bearerAuth')
   @ApiTags('Reservation')
-  @ApiOperation({ summary: 'Danh sách Reservation của khách hàng', description: 'Bearer required. CUSTOMER chỉ nhận Reservation thuộc về chính mình.' })
+  @ApiOperation({ summary: 'Danh sách Reservation của khách hàng', description: 'Bearer required. STORAGE_CUSTOMER chỉ nhận Reservation thuộc về chính mình.' })
   @ApiOkResponse({ description: 'Danh sách Reservation của user đã đăng nhập.', schema: { example: [{ id: 'WDP-2026-AB12CD34', status: 'PENDING', productId: 'sm-b12', quantity: 1, persistence: 'DATABASE' }] } })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
   list(@Req() request: AuthenticatedRequest) {
@@ -76,14 +76,14 @@ export class BookingController {
 
   @Get('reservations/:id')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('CUSTOMER', 'MANAGER')
+  @Roles('STORAGE_CUSTOMER', 'FACILITY_MANAGER')
   @ApiBearerAuth('bearerAuth')
   @ApiTags('Reservation')
   @ApiOperation({ summary: 'Chi tiết Reservation của khách thuê hoặc quản lý' })
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34', description: 'Reservation reference hoặc database id.' })
   @ApiOkResponse({ description: 'Reservation chi tiết.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'CUSTOMER cố xem Reservation của khách khác.' })
+  @ApiForbiddenResponse({ description: 'STORAGE_CUSTOMER cố xem Reservation của khách khác.' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy Reservation.' })
   get(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.bookingService.getReservation(request.user!, id);
@@ -91,9 +91,29 @@ export class BookingController {
 
   @Post('reservations/:id/cancel')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('CUSTOMER')
+  @Roles('STORAGE_CUSTOMER')
   cancel(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.bookingService.cancelCustomerReservation(request.user!, id);
+  }
+
+  @Get('reservations/:id/paid-cancellation')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('STORAGE_CUSTOMER', 'FACILITY_MANAGER')
+  cancellation(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.bookingService.handlePaidCancellation(request.user!, id, 'GET');
+  }
+
+  @Post('reservations/:id/paid-cancellation')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('STORAGE_CUSTOMER', 'FACILITY_MANAGER', 'FACILITY_STAFF')
+  cancellationAction(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() input: Record<string, unknown>) {
+    const actor = request.user!;
+    const action = input.action;
+    if (actor.role === 'STORAGE_CUSTOMER' && action === 'REQUEST' || actor.role === 'FACILITY_STAFF' && action === 'RECOVER' ||
+        actor.role === 'FACILITY_MANAGER' && (action === 'APPROVE' || action === 'REJECT' || action === 'REFUND' || action === 'ASSIGN_RECOVERY')) {
+      return this.bookingService.handlePaidCancellation(actor, id, action, input);
+    }
+    throw new BadRequestException('Thao tác hủy không hợp lệ cho vai trò hiện tại.');
   }
 
   @Get('inquiries/:id')

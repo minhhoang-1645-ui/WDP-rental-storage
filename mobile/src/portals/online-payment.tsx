@@ -12,13 +12,19 @@ import { Button, Navigation, styles } from '@/operations/ui';
 import { readPendingOnlinePayment, removePendingOnlinePayment } from '@/services/online-payment-session';
 import { vnpayDestination } from '@/utils/vnpay-destination';
 
-type Session = { transactionId: string; merchantOrderRef?: string; expiresAt: string; paymentUrl: string };
+type Session = { transactionId: string; merchantOrderRef?: string; expiresAt: string; paymentUrl: string; provider?: 'PAYOS' | 'VNPAY' };
 type Result = { transactionId: string; status: 'PENDING' | 'SUCCESS' | 'FAILED'; providerStatus: string; expiresAt: string; invoice: { id: string; type: string; status: string }; payment?: { id: string } | null; reconciliation?: { reconciliationCode: string; status: 'PENDING_REVIEW' | 'REFUND_REQUIRED' | 'RECONCILED'; resolutionNote?: string | null } | null };
-function destination(value: string) {
+function destination(value: string, provider?: Session['provider']) {
+  const url = new URL(value);
+  if (provider === 'PAYOS') {
+    if (url.origin === 'https://pay.payos.vn' && !url.username && !url.password
+      && /^\/web\/[a-f0-9]{32}$/i.test(url.pathname)) return url.href;
+    throw new Error('Đường dẫn thanh toán payOS không hợp lệ.');
+  }
   return vnpayDestination(value).href;
 }
 
-export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType, refresh, onWaitingChange, actionTitle = 'Thanh toán VNPay', hidePaidSummary = false, showStartAction = true }: { invoiceId: string; eligible: boolean; disabled: boolean; paid: boolean; invoiceType: string; refresh: () => void; onWaitingChange?: (waiting: boolean) => void; actionTitle?: string; hidePaidSummary?: boolean; showStartAction?: boolean }) {
+export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType, refresh, onWaitingChange, actionTitle = 'Thanh toán trực tuyến', hidePaidSummary = false, showStartAction = true }: { invoiceId: string; eligible: boolean; disabled: boolean; paid: boolean; invoiceType: string; refresh: () => void; onWaitingChange?: (waiting: boolean) => void; actionTitle?: string; hidePaidSummary?: boolean; showStartAction?: boolean }) {
   const { user } = useAuth();
   const [session, setSession] = useState<Session>(), [result, setResult] = useState<Result>(), [error, setError] = useState(''), [busy, setBusy] = useState(false), [restored, setRestored] = useState(false), [now, setNow] = useState(Date.now);
   const browserOpen = useRef(false);
@@ -38,7 +44,7 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
       if (!value) return;
       try {
         const saved = JSON.parse(value) as Session;
-        if (typeof saved.transactionId === 'string' && typeof saved.expiresAt === 'string' && typeof saved.paymentUrl === 'string') { destination(saved.paymentUrl); setSession(saved); }
+        if (typeof saved.transactionId === 'string' && typeof saved.expiresAt === 'string' && typeof saved.paymentUrl === 'string') { destination(saved.paymentUrl, saved.provider); setSession(saved); }
       } catch { /* Discard malformed local session, never infer payment success from it. */ }
     }).catch(() => { if (!stopped) setError('Không đọc được phiên thanh toán đã lưu.'); }).finally(() => { if (!stopped) setRestored(true); });
     return () => { stopped = true; };
@@ -64,7 +70,9 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
         }
         const returnHome = expoGoCheckout.current === session.transactionId &&
           status.status === 'SUCCESS' && status.payment && !status.reconciliation;
-        if (returnHome && AppState.currentState === 'background') {
+        // AppState can change while the polling request is awaiting the server.
+        const isBackground = () => AppState.currentState === 'background';
+        if (returnHome && isBackground()) {
           scheduleNext();
           return;
         }
@@ -112,13 +120,13 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
     try {
       let payment = session;
       if (!canResume) {
-        payment = await apiRequest<Session>(`/customer/invoices/${encodeURIComponent(invoiceId)}/online-payment`, { method: 'POST', headers: { 'Idempotency-Key': `mobile-vnpay-${Date.now()}-${Math.random().toString(36).slice(2)}` }, body: JSON.stringify({ locale: 'vn', ...(qr ? { bankCode: 'VNPAYQR' } : {}), ...(Platform.OS !== 'web' ? { channel: 'mobile' } : {}) }) });
-        destination(payment.paymentUrl);
+        payment = await apiRequest<Session>(`/customer/invoices/${encodeURIComponent(invoiceId)}/online-payment`, { method: 'POST', headers: { 'Idempotency-Key': `mobile-online-${Date.now()}-${Math.random().toString(36).slice(2)}` }, body: JSON.stringify({ locale: 'vn', ...(qr ? { bankCode: 'VNPAYQR' } : {}), ...(Platform.OS !== 'web' ? { channel: 'mobile' } : {}) }) });
+        destination(payment.paymentUrl, payment.provider);
         setSession(payment); setResult(undefined);
         await paymentStorage.set(key, JSON.stringify(payment));
       }
       if (!payment?.paymentUrl) return;
-      const url = destination(payment.paymentUrl);
+      const url = destination(payment.paymentUrl, payment.provider);
       if (Platform.OS === 'web' || Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
         browserOpen.current = true;
         if (Platform.OS !== 'web') expoGoCheckout.current = payment.transactionId;
@@ -132,23 +140,23 @@ export function OnlinePayment({ invoiceId, eligible, disabled, paid, invoiceType
       }
       await WebBrowser.openAuthSessionAsync(url, 'wdp-storage://customer/payment-result');
       router.navigate({ pathname: '/customer/payment-result', params: { invoiceId, transaction: payment.merchantOrderRef || payment.transactionId } } as Href);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không mở được VNPay.'); }
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không mở được trang thanh toán.'); }
     finally { lock.current = false; setBusy(false); }
   };
   const success = !reconciliation && (paid || result?.status === 'SUCCESS' && result.invoice.status === 'PAID');
   return <>
     {(!paid || Boolean(session)) && Boolean(error) && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
-    {waiting && <Text accessibilityLiveRegion="polite" style={styles.copy}>Đang chờ VNPay xác nhận. {paymentTimeLeft(result?.expiresAt || session?.expiresAt, now)}. Kết quả sẽ tự cập nhật khi bạn quay lại ứng dụng.</Text>}
+    {waiting && <Text accessibilityLiveRegion="polite" style={styles.copy}>Đang chờ xác minh giao dịch. {paymentTimeLeft(result?.expiresAt || session?.expiresAt, now)}. Kết quả sẽ tự cập nhật khi bạn quay lại ứng dụng.</Text>}
     {reconciliation ? unresolved ? <>
-      <Text accessibilityRole="alert" style={styles.error}>Khoản VNPay cần đối soát: {result?.reconciliation?.reconciliationCode}. {result?.reconciliation?.status === 'REFUND_REQUIRED' ? 'Đang chờ hoàn tiền và xác nhận kết quả.' : 'NestBox đang kiểm tra.'} Không thanh toán lại cho cùng khoản tiền này.</Text>
+      <Text accessibilityRole="alert" style={styles.error}>Khoản thanh toán cần đối soát: {result?.reconciliation?.reconciliationCode}. {result?.reconciliation?.status === 'REFUND_REQUIRED' ? 'Đang chờ hoàn tiền và xác nhận kết quả.' : 'NestBox đang kiểm tra.'} Không thanh toán lại cho cùng khoản tiền này.</Text>
       {Boolean(result?.reconciliation?.resolutionNote) && <Text style={styles.copy}>{result?.reconciliation?.resolutionNote}</Text>}
     </> : <>
       <Text accessibilityLiveRegion="polite" style={styles.success}>Đã hoàn tất đối soát {result?.reconciliation?.reconciliationCode}.</Text>
       <Text style={styles.copy}>{result?.reconciliation?.resolutionNote || 'Kết quả xử lý đã được lưu. Vui lòng kiểm tra hóa đơn và lịch sử thanh toán.'}</Text>
       <Navigation title="Xem lịch sử thanh toán" path="/customer/payment-history" />
       <Button title="Đóng kết quả đối soát" variant="secondary" onPress={() => { setSession(undefined); setResult(undefined); setError(''); }} />
-    </> : !paid && result?.status === 'FAILED' && <Text accessibilityRole="alert" style={styles.error}>{result.providerStatus === 'EXPIRED' ? 'Phiên thanh toán đã hết hạn.' : result.providerStatus === 'CANCELLED' ? 'Bạn đã hủy thanh toán VNPay.' : 'Chưa ghi nhận thanh toán thành công.'} {result.invoice.status === 'VOID' ? 'Hóa đơn đã hủy. Nếu đã bị trừ tiền, hãy gửi hỗ trợ.' : 'Kiểm tra hóa đơn trước khi thử lại; nếu đã bị trừ tiền, hãy gửi hỗ trợ.'}</Text>}
+    </> : !paid && result?.status === 'FAILED' && <Text accessibilityRole="alert" style={styles.error}>{result.providerStatus === 'EXPIRED' ? 'Phiên thanh toán đã hết hạn.' : result.providerStatus === 'CANCELLED' ? 'Phiên thanh toán đã được hủy.' : 'Chưa ghi nhận thanh toán thành công.'} {result.invoice.status === 'VOID' ? 'Hóa đơn đã hủy. Nếu đã bị trừ tiền, hãy gửi hỗ trợ.' : 'Kiểm tra hóa đơn trước khi thử lại; nếu đã bị trừ tiền, hãy gửi hỗ trợ.'}</Text>}
     {success && !hidePaidSummary && <><Text accessibilityLiveRegion="polite" style={styles.success}>Thanh toán đã được xác nhận.</Text><Navigation title={(result?.invoice.type || invoiceType) === 'INITIAL' ? 'Đặt lịch nhận kho' : (result?.invoice.type || invoiceType) === 'RENEWAL' ? 'Xem gia hạn và thời hạn mới' : 'Xem lịch sử thanh toán'} path={(result?.invoice.type || invoiceType) === 'INITIAL' ? '/customer/appointments' : (result?.invoice.type || invoiceType) === 'RENEWAL' ? '/customer/renewals' : '/customer/payment-history'} /></>}
-    {showStartAction && !success && !reconciliation && (eligible || waiting) && <Button title={busy ? 'Đang mở VNPay…' : canResume ? 'Mở lại VNPay' : waiting && !result ? 'Đang kiểm tra phiên VNPay…' : actionTitle} disabled={busy || !restored || !eligible || disabled || waiting && (!result || Date.parse(result.expiresAt) <= now)} onPress={() => void open()} />}
+    {showStartAction && !success && !reconciliation && (eligible || waiting) && <Button title={busy ? 'Đang mở trang thanh toán…' : canResume ? 'Mở lại trang thanh toán' : waiting && !result ? 'Đang kiểm tra phiên…' : actionTitle} disabled={busy || !restored || !eligible || disabled || waiting && (!result || Date.parse(result.expiresAt) <= now)} onPress={() => void open()} />}
   </>;
 }

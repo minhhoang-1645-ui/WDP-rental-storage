@@ -55,7 +55,9 @@ export function WorkspaceProfileDropdown({ user, roleLabel, theme, onToggleTheme
     <button ref={trigger} type="button" className="workspace-profile-trigger" aria-label="Menu tài khoản"
       aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(value => !value)}>
       <span className="workspace-profile-initials" aria-hidden="true">{initials || <UserRound size={17} />}</span>
-      <span className="workspace-profile-name" aria-hidden="true">{user.fullName}</span>
+      <span className="workspace-profile-name" aria-hidden="true">
+        {user.fullName}
+      </span>
       <ChevronDown size={14} aria-hidden="true" />
     </button>
     <div id={panelId} className="workspace-profile-panel" hidden={!open}>

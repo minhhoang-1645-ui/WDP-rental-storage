@@ -4,13 +4,13 @@ import { OnlinePaymentService } from './online-payment.service.js';
 import { closeoutPaymentAllowed, closeoutReservationSelect, invoicePaymentBlockedBySchedule, isScheduledRenewalInvoice } from './renewal-invoice-schedule.js';
 import type { PublicUser } from '../auth/auth.types.js';
 
-const manager = { id: 'manager', role: 'MANAGER' } as PublicUser;
-const customer = { id: 'customer', role: 'CUSTOMER' } as PublicUser;
+const manager = { id: 'manager', role: 'FACILITY_MANAGER' } as PublicUser;
+const customer = { id: 'customer', role: 'STORAGE_CUSTOMER' } as PublicUser;
 const now = new Date('2099-01-01');
 function reservation() {
   return { id: 'reservation', customerId: customer.id, status: 'CONFIRMED', quantity: 1, expiresAt: null,
     contracts: [{ id: 'contract', status: 'ACTIVE', endDate: new Date('2099-05-17') }],
-    supportRequests: [{ id: 'proposal', subject: 'Đề nghị trả kho trước hạn', category: 'OTHER', status: 'RESOLVED', lastAction: 'EARLY_RETURN_APPROVED', lastActionIdempotencyKey: 'early-return:proposal:2099-05-17', resolvedBy: { role: 'MANAGER' } }],
+    supportRequests: [{ id: 'proposal', subject: 'Đề nghị trả kho trước hạn', category: 'OTHER', status: 'RESOLVED', lastAction: 'EARLY_RETURN_APPROVED', lastActionIdempotencyKey: 'early-return:proposal:2099-05-17', resolvedBy: { role: 'FACILITY_MANAGER' } }],
   };
 }
 function scheduledInvoice() {
@@ -29,7 +29,7 @@ describe('Scheduled invoices for approved rental closeout', () => {
     const invoice = scheduledInvoice(), rental = invoice.reservation, approval = rental.supportRequests[0];
     if (condition === 'pending') approval.status = 'OPEN';
     if (condition === 'rejected') approval.lastAction = 'EARLY_RETURN_REJECTED';
-    if (condition === 'wrong-manager') approval.resolvedBy.role = 'STAFF';
+    if (condition === 'wrong-manager') approval.resolvedBy.role = 'FACILITY_STAFF';
     if (condition === 'stale-period') rental.contracts[0].endDate = new Date('2099-08-17');
     if (condition === 'different-periods') { rental.quantity = 2; rental.contracts.push({ id: 'second', status: 'ACTIVE', endDate: new Date('2099-06-17') }); }
     if (condition === 'wrong-quantity') rental.quantity = 2;
@@ -43,6 +43,10 @@ describe('Scheduled invoices for approved rental closeout', () => {
       const invoice = scheduledInvoice(), afterGuard = new Error('AFTER_SCHEDULE_CHECK');
       const tx = {
         $queryRaw: vi.fn(),
+        $queryRawUnsafe: vi.fn(),
+        reservation: { findUnique: vi.fn().mockResolvedValue({ facilityId: 'facility' }) },
+        user: { findFirst: vi.fn().mockResolvedValue({ id: manager.id }) },
+        facilityAccess: { findMany: vi.fn().mockResolvedValue([{ facilityId: 'facility' }]) },
         invoice: { findUnique: vi.fn().mockResolvedValue(invoice), findFirst: vi.fn().mockResolvedValue(invoice) },
         payment: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn() },
         paymentSubmission: { findUnique: vi.fn().mockResolvedValue(null), count: vi.fn().mockRejectedValue(afterGuard), create: vi.fn() },

@@ -8,8 +8,9 @@ import { Button } from '@/operations/ui';
 import { formatDate, formatMoney } from '@/utils/format';
 
 type Result = {
-  status: 'SUCCESS' | 'FAILED' | 'PENDING'; providerStatus: string; amount: number;
+  transactionId: string; merchantOrderRef: string; status: 'SUCCESS' | 'FAILED' | 'PENDING'; providerStatus: string; amount: number;
   invoice: { id: string; invoiceCode: string; status: string; balanceDue: number };
+  provider?: string;
   payment?: { amount: number; receivedAt: string; paymentCode: string } | null;
   reconciliation?: { status: string } | null;
 };
@@ -37,14 +38,13 @@ export default function PaymentResult() {
       try {
         const status = await apiRequest<Result>('/customer/online-payments/' + encodeURIComponent(transaction), { signal: controller.signal });
         if (controller.signal.aborted) return;
-        if (status.invoice.id !== invoiceId) { terminal = true; setError('Giao dịch không khớp với hóa đơn.'); return; }
+        if (!status || (status.transactionId !== transaction && status.merchantOrderRef !== transaction) || status.invoice?.id !== invoiceId) { terminal = true; setError('Giao dịch không khớp với hóa đơn.'); return; }
         setVerified({ key, result: status });
         setError('');
         if (status.status === 'SUCCESS' && status.payment && !status.reconciliation) {
           terminal = true;
           notifyDataChanged('/customer/invoices');
           notifyDataChanged('/customer/payments');
-          router.dismissTo('/customer');
           return;
         }
         terminal = status.status !== 'PENDING' && (!status.reconciliation || status.reconciliation.status === 'RECONCILED');
@@ -53,7 +53,7 @@ export default function PaymentResult() {
           notifyDataChanged('/customer/payments');
         }
       } catch {
-        if (!controller.signal.aborted) { terminal = true; setError('Chưa kiểm tra được giao dịch. Vui lòng thử lại.'); }
+        if (!controller.signal.aborted) setError('Chưa kiểm tra được giao dịch. Hệ thống sẽ thử lại nếu còn lượt kiểm tra.');
       } finally {
         active = false;
         if (!controller.signal.aborted) {
@@ -67,12 +67,13 @@ export default function PaymentResult() {
     void check();
     const listener = AppState.addEventListener('change', state => {
       clearTimeout(timer);
-      if (state === 'active') { attempts = 0; terminal = false; void check(); }
+      if (state === 'active' && !terminal) { attempts = 0; void check(); }
     });
     return () => { clearTimeout(timer); controller.abort(); listener.remove(); };
   }, [contextValid, transaction, invoiceId, key, revision]));
-  const success = result?.status === 'SUCCESS' && Boolean(result.payment);
-  const failed = result?.status === 'FAILED' || result?.status === 'SUCCESS' && !result.payment && result.reconciliation?.status === 'RECONCILED';
+  const awaitingReconciliation = Boolean(result?.reconciliation && result.reconciliation.status !== 'RECONCILED');
+  const success = result?.status === 'SUCCESS' && Boolean(result.payment) && !awaitingReconciliation;
+  const failed = !awaitingReconciliation && (result?.status === 'FAILED' || result?.status === 'SUCCESS' && !result.payment && result.reconciliation?.status === 'RECONCILED');
   const title = success ? 'Thanh toán thành công' : failed ? 'Thanh toán chưa hoàn tất' : checking ? 'Đang xác nhận thanh toán' : 'Chưa xác nhận thanh toán';
   const invoicePath = (contextValid ? '/customer/invoices/' + encodeURIComponent(invoiceId) : '/customer/invoices') as Href;
   return <ScrollView style={s.screen} contentContainerStyle={s.page}>
@@ -80,11 +81,11 @@ export default function PaymentResult() {
     <View style={[s.icon, success && s.green]}>{success ? <Check size={32} color="#18773A" /> : failed ? <Info size={30} color="#0758DC" /> : <Clock size={30} color="#0758DC" />}</View>
     <Text accessibilityRole="header" style={[s.title, success && { color: '#18773A' }]}>{title}</Text>
     {checking && !success && !failed ? <ActivityIndicator color="#0758DC" /> : null}
-    <Text style={s.copy}>{!contextValid ? 'Liên kết giao dịch chưa đầy đủ. Hãy kiểm tra trong mục hóa đơn.' : error || (success ? 'NestBox đã ghi nhận khoản thanh toán.' : failed ? (result?.providerStatus === 'CANCELLED' ? 'Bạn đã hủy phiên VNPay.' : result?.providerStatus === 'EXPIRED' ? 'Phiên thanh toán đã hết hạn.' : 'Giao dịch chưa được ghi nhận.') : result?.reconciliation ? 'NestBox đang đối chiếu giao dịch. Hãy theo dõi kết quả trước khi thanh toán lại.' : checking ? 'NestBox đang kiểm tra giao dịch. Vui lòng đợi trong giây lát.' : 'Bạn có thể kiểm tra lại hoặc trở về hóa đơn.')}</Text>
+    <Text style={s.copy}>{!contextValid ? 'Liên kết giao dịch chưa đầy đủ. Hãy kiểm tra trong mục hóa đơn.' : error || (success ? 'NestBox đã ghi nhận khoản thanh toán.' : failed ? (result?.providerStatus === 'CANCELLED' ? 'Phiên thanh toán đã được hủy.' : result?.providerStatus === 'EXPIRED' ? 'Phiên thanh toán đã hết hạn.' : 'Giao dịch chưa được ghi nhận.') : result?.reconciliation ? 'NestBox đang đối chiếu giao dịch. Hãy theo dõi kết quả trước khi thanh toán lại.' : checking ? 'NestBox đang kiểm tra giao dịch. Vui lòng đợi trong giây lát.' : 'Bạn có thể kiểm tra lại hoặc trở về hóa đơn.')}</Text>
     {result ? <View style={s.card}>
       <Text style={s.label}>{result.invoice.invoiceCode}</Text>
       <Text style={s.amount}>{formatMoney(result.payment?.amount ?? result.amount)}</Text>
-      <Text style={s.label}>VNPay</Text>
+      <Text style={s.label}>{result.provider === 'PAYOS' ? 'payOS' : 'VNPay'}</Text>
       {result.payment?.receivedAt ? <Text style={s.label}>{formatDate(result.payment.receivedAt, true)}</Text> : null}
       {result.payment?.paymentCode ? <Text selectable style={s.label}>{result.payment.paymentCode}</Text> : null}
       {success && result.invoice.status === 'PAID' ? <Text style={s.label}>Hóa đơn đã thanh toán</Text> :

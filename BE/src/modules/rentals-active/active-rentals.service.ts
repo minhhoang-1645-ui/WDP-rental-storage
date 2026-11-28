@@ -1,4 +1,8 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { managerReservationScope } from '../facility-access/record-access.js';
+import { staffContractScope as assignedContractScope } from '../facility-access/task-access.js';
+import { currentContractScope, currentRentalScope } from '../facility-access/task-access.js';
+import { facilityIds } from '../facility-access/facility-access.service.js';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { isScheduledRenewalInvoice } from '../billing/renewal-invoice-schedule.js';
@@ -6,14 +10,14 @@ import { deriveOverdueState } from './overdue-state.js';
 import { rentalAccountSummary } from '../billing/rental-account-summary.js';
 import { returnReadiness } from '../returns/early-return-finance.js';
 import { contractReturnReadiness, recordedContractDeposit, returnInvoiceFields } from '../returns/contract-return-finance.js';
-import { hasStartedUnissuedRenewal, planEarlyReturn, summarizeEarlyReturn, PERIOD_CLOSEOUT } from '../returns/return-period-closeout.js';
+import { hasStartedUnissuedRenewal, planEarlyReturn, protectedFacilityReturn, summarizeEarlyReturn, PERIOD_CLOSEOUT } from '../returns/return-period-closeout.js';
 import { EARLY_RETURN_SUBJECT, earlyReturnScope } from '../returns/early-return-classification.js';
-import { businessToday } from '../../business-date.js';
+import { businessToday, daysAfterRentalEnd } from '../../business-date.js';
 import { hasUnissuedRenewalInstallments, openRenewalStatuses, renewalAppliesTo } from '../renewals/renewal-scope.js';
 import type { PublicUser } from '../auth/auth.types.js';
-import { responsibleUnit } from '../unit-staff/operational-assignment.js';
-import { UnitStaffService } from '../unit-staff/unit-staff.service.js';
 import { staffRentalSelect, staffRentalView, staffRentalWhere } from './staff-active-rentals.js';
+import { contractReturnNoticeDays } from '../policies/pricing-policy.js';
+import { calculateOccupiedOverdue } from '../returns/overdue-return.js';
 
 export interface ActiveRentalListQuery {
   page: number;
@@ -25,15 +29,15 @@ export interface ActiveRentalListQuery {
   overdue?: boolean;
 }
 
-type ViewMode = 'CUSTOMER' | 'MANAGER';
+type ViewMode = 'STORAGE_CUSTOMER' | 'FACILITY_MANAGER';
 const activeContract = { status: 'ACTIVE', reservationUnit: { releasedAt: null } } satisfies Prisma.RentalContractWhereInput;
 
 @Injectable()
 export class ActiveRentalsService {
-  constructor(private readonly prisma: PrismaService, @Optional() private readonly unitStaff?: UnitStaffService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   listCustomerRentals(customerId: string, query: ActiveRentalListQuery) {
-    return this.page({ customerId }, query, 'CUSTOMER');
+    return this.page({ customerId }, query, 'STORAGE_CUSTOMER');
   }
 
   async getCustomerRental(customerId: string, id: string) {
@@ -46,7 +50,7 @@ export class ActiveRentalsService {
       select: { id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, storageTypeId: true },
     }) : [];
     return {
-      ...this.toRental(record, 'CUSTOMER', new Date()),
+      ...this.toRental(record, 'STORAGE_CUSTOMER', new Date()),
       unitLayouts: units.map(unit => ({
         unitId: unit.id,
         units: locationUnits.filter(other => other.storageTypeId === unit.storageTypeId && other.floor === unit.floor && other.zone === unit.zone)
@@ -55,14 +59,16 @@ export class ActiveRentalsService {
     };
   }
 
-  listManagerRentals(query: ActiveRentalListQuery) {
-    return this.page({}, query, 'MANAGER');
+  listManagerRentals(query: ActiveRentalListQuery, actor: PublicUser) {
+    managerReservationScope(actor);
+    return this.page(currentRentalScope(actor), query, 'FACILITY_MANAGER', actor);
   }
 
-  async getManagerRental(id: string) {
-    const record = await this.prisma.reservation.findFirst({ where: { ...this.activeWhere(), OR: [{ id }, { reservationCode: id }] }, include: this.include() });
+  async getManagerRental(id: string, actor: PublicUser) {
+    managerReservationScope(actor);
+    const record = await this.prisma.reservation.findFirst({ where: { ...this.activeWhere(), AND:[currentRentalScope(actor)], OR: [{ id }, { reservationCode: id }] }, include: this.include() });
     if (!record) throw new NotFoundException('Không tìm thấy Active Rental.');
-    return this.toRental(record, 'MANAGER', new Date());
+    return this.managerView(record, await facilityIds(this.prisma, actor), new Date());
   }
 
   async listStaffRentals(actor: PublicUser, query: ActiveRentalListQuery) {
@@ -83,7 +89,7 @@ export class ActiveRentalsService {
 
   async getStaffRental(actor: PublicUser, id: string) {
     const scope = this.staffContractScope(actor);
-    const notFound = () => new NotFoundException('Không tìm thấy hồ sơ thuê thuộc kho bạn phụ trách.');
+    const notFound = () => new NotFoundException('Không tìm thấy hồ sơ thuê thuộc nhiệm vụ được giao.');
     if (!scope) throw notFound();
     const record = await this.prisma.reservation.findFirst({
       where: { OR: [{ id }, { reservationCode: id }], contracts: { some: scope } },
@@ -94,42 +100,66 @@ export class ActiveRentalsService {
   }
 
   private staffContractScope(actor: PublicUser): Prisma.RentalContractWhereInput | null {
-    if (actor.role !== 'STAFF') throw new ForbiddenException('Chỉ nhân viên được dùng chức năng này.');
-    if (!this.unitStaff?.enabled()) return null;
-    return { status: 'ACTIVE', reservationUnit: { releasedAt: null, storageUnit: responsibleUnit(actor.id) } };
+    if (actor.role !== 'FACILITY_STAFF') throw new ForbiddenException('Chỉ nhân viên được dùng chức năng này.');
+    return { AND: [assignedContractScope(actor), activeContract] };
   }
 
-  private async page(baseWhere: Prisma.ReservationWhereInput, query: ActiveRentalListQuery, mode: ViewMode) {
+  private async page(baseWhere: Prisma.ReservationWhereInput, query: ActiveRentalListQuery, mode: ViewMode, actor?: PublicUser) {
     const now = new Date();
     const filters: Prisma.ReservationWhereInput[] = [];
+    const scoped = (condition: Prisma.RentalContractWhereInput): Prisma.RentalContractWhereInput => ({ AND: [activeContract, ...(actor ? [currentContractScope(actor)] : []), condition] });
     if (query.search) filters.push({ OR: [
       { reservationCode: { contains: query.search, mode: 'insensitive' } },
       { customer: { fullName: { contains: query.search, mode: 'insensitive' } } },
       { customer: { email: { contains: query.search, mode: 'insensitive' } } },
-      { contracts: { some: { ...activeContract, contractCode: { contains: query.search, mode: 'insensitive' } } } },
-      { contracts: { some: { ...activeContract, reservationUnit: { ...activeContract.reservationUnit, storageUnit: { unitNumber: { contains: query.search, mode: 'insensitive' } } } } } },
+      { contracts: { some: scoped({ contractCode: { contains: query.search, mode: 'insensitive' } }) } },
+      { contracts: { some: scoped({ reservationUnit: { storageUnit: { unitNumber: { contains: query.search, mode: 'insensitive' } } } }) } },
     ] });
-    if (query.storageType) filters.push({ contracts: { some: { ...activeContract, reservationUnit: { ...activeContract.reservationUnit, storageUnit: { OR: [
+    if (query.storageType) filters.push({ contracts: { some: scoped({ reservationUnit: { storageUnit: { OR: [
       { storageTypeId: query.storageType },
       { storageType: { code: { contains: query.storageType, mode: 'insensitive' } } },
-    ] } } } } });
-    if (query.unitCode) filters.push({ contracts: { some: { ...activeContract, reservationUnit: { ...activeContract.reservationUnit, storageUnit: { unitNumber: { contains: query.unitCode, mode: 'insensitive' } } } } } });
+    ] } } }) } });
+    if (query.unitCode) filters.push({ contracts: { some: scoped({ reservationUnit: { storageUnit: { unitNumber: { contains: query.unitCode, mode: 'insensitive' } } } }) } });
     if (query.customer) filters.push({ OR: [
       { customer: { fullName: { contains: query.customer, mode: 'insensitive' } } },
       { customer: { email: { contains: query.customer, mode: 'insensitive' } } },
     ] });
     if (query.overdue !== undefined) {
-      const hasLaterEnd = { ...activeContract, endDate: { gt: businessToday(now) } };
+      const hasLaterEnd = scoped({ endDate: { gte: businessToday(now) } });
       filters.push(query.overdue
         ? { contracts: { none: hasLaterEnd } }
         : { contracts: { some: hasLaterEnd } });
     }
-    const where: Prisma.ReservationWhereInput = { ...this.activeWhere(), ...baseWhere, ...(filters.length ? { AND: filters } : {}) };
+    const where: Prisma.ReservationWhereInput = { AND: [this.activeWhere(), baseWhere, ...filters] };
     const [total, records] = await this.prisma.$transaction([
       this.prisma.reservation.count({ where }),
       this.prisma.reservation.findMany({ where, skip: (query.page - 1) * query.limit, take: query.limit, orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], include: this.include() }),
     ], { isolationLevel: 'RepeatableRead' });
-    return { page: query.page, limit: query.limit, total, items: records.map((record) => this.toRental(record, mode, now)) };
+    const ids = actor ? await facilityIds(this.prisma, actor) : null;
+    return { page: query.page, limit: query.limit, total, items: records.map((record) => ids ? this.managerView(record, ids, now) : this.toRental(record, mode, now)) };
+  }
+
+  private managerView(record: Prisma.ReservationGetPayload<{ include: ReturnType<ActiveRentalsService['include']> }>, ids: string[], now: Date) {
+    const view = this.toRental(record, 'FACILITY_MANAGER', now);
+    const permitted = new Set(record.contracts.filter(contract => ids.includes(contract.reservationUnit.storageUnit.storageType.facility.id)).map(contract => contract.id));
+    const contracts = view.contracts.filter((contract: { id: string }) => permitted.has(contract.id));
+    const financialScope = ids.includes(record.facilityId);
+    const financialInvoices = record.invoices.filter(invoice => ids.includes(invoice.facilityIdSnapshot ?? record.facilityId));
+    const visibleInvoiceIds = new Set(financialInvoices.map(invoice=>invoice.id));
+    const invoices = view.invoices.filter((invoice: {id:string})=>visibleInvoiceIds.has(invoice.id));
+    const paid = financialInvoices.reduce((sum,invoice)=>sum+invoice.amountPaid,0n);
+    const billed = financialInvoices.reduce((sum,invoice)=>sum+invoice.totalAmount,0n);
+    const outstanding = financialInvoices.reduce((sum,invoice)=>sum+invoice.balanceDue,0n);
+    const scheduled = financialInvoices.reduce((sum,invoice)=>sum+(isScheduledRenewalInvoice(invoice,now)?invoice.balanceDue:0n),0n);
+    const next = financialInvoices.filter(invoice=>invoice.balanceDue>0n).sort((first,second)=>this.invoiceOrder(first,second))[0];
+    if (!contracts.length) throw new NotFoundException('Không tìm thấy kho đang thuê tại cơ sở được cấp quyền.');
+    return { ...view, contracts, quantity: contracts.length, contractCount: contracts.length, unitCount: contracts.length,
+      storageType: contracts[0]?.unit.storageType ?? view.storageType,
+      canRenewTogether: view.canRenewTogether && contracts.length === view.contracts.length,
+      renewalHistory: view.renewalHistory.filter((renewal: { rentalContractId: string | null }) => renewal.rentalContractId ? permitted.has(renewal.rentalContractId) : financialScope),
+      invoices, billingSummary: {totalInvoiced:this.money(billed),totalPaid:this.money(paid),totalOutstanding:this.money(outstanding),
+        payableBalance:this.money(outstanding-scheduled),scheduledBalance:this.money(scheduled),nextInvoice:next?this.invoiceSummary(next):null},
+      historicalPricing: financialScope ? view.historicalPricing : null, financialFacilityId: record.facilityId };
   }
 
   private activeWhere(): Prisma.ReservationWhereInput {
@@ -143,11 +173,11 @@ export class ActiveRentalsService {
       contracts: {
         include: {
           returnInspections: { where: { returnRequest: { status: { not: 'COMPLETED' as const } } }, take: 1, select: { id: true } },
-          storedItems: { where: { balance: { gt: 0 } }, select: { id: true, itemCode: true, name: true, unit: true, balance: true }, orderBy: { name: 'asc' as const } },
           transferRequests: { where: { status: 'COMPLETED' as const }, include: { fromStorageUnit: true, toStorageUnit: true }, orderBy: { completedAt: 'desc' as const } },
           reservationUnit: { include: { storageUnit: { select: {
           id: true, unitNumber: true, floor: true, zone: true, row: true, position: true, status: true, storageTypeId: true,
-          storageType: { select: { id: true, name: true } },
+          storageType: { select: { id: true, name: true, widthCm: true, lengthCm: true, heightCm: true,
+            facility: { select: { id: true, name: true, address: true, operationalStatus: true, closureMode: true } } } },
           reservationUnits: {
             where: { releasedAt: null, reservation: { status: 'CONFIRMED' as const } },
             select: { id: true, reservationId: true, plannedStartDate: true, plannedEndDate: true, reservation: { select: { reservationCode: true, customer: { select: { id: true, fullName: true, email: true, phone: true } } } } },
@@ -156,9 +186,9 @@ export class ActiveRentalsService {
         } } } } },
         orderBy: { contractCode: 'asc' as const },
       },
-      supportRequests: { where: { subject: EARLY_RETURN_SUBJECT, status: 'RESOLVED' as const, lastAction: 'EARLY_RETURN_APPROVED', resolvedBy: { role: 'MANAGER' as const } },
+      supportRequests: { where: { subject: EARLY_RETURN_SUBJECT, status: 'RESOLVED' as const, lastAction: 'EARLY_RETURN_APPROVED', resolvedBy: { role: 'FACILITY_MANAGER' as const } },
         select: { id: true, rentalContractId: true, lastActionIdempotencyKey: true, earlyReturnFinancialReview: true } },
-      services: { select: { id: true, serviceStartDate: true, serviceEndDate: true } },
+      services: { select: { id: true, serviceStartDate: true, serviceEndDate: true, fulfillmentStatus: true } },
       invoices: { include: { depositSettlement: returnInvoiceFields.depositSettlement, renewalRequest: returnInvoiceFields.renewalRequest,
         payments: { select: { id: true, paymentCode: true, amount: true, method: true, receivedAt: true }, orderBy: { receivedAt: 'asc' as const } } }, orderBy: { billingCycle: 'asc' as const } },
       renewals: { include: { invoices: { select: { status: true, totalAmount: true, amountPaid: true, balanceDue: true, renewalCycle: true }, orderBy: { renewalCycle: 'asc' as const } } }, orderBy: { createdAt: 'desc' as const } },
@@ -183,8 +213,9 @@ export class ActiveRentalsService {
     const pending = record.renewals.filter((renewal: { status: string }) => openRenewalStatuses.some(status => renewal.status === status));
     const pendingSummary = (renewal: any) => renewal ? { id: renewal.id, renewalCode: renewal.renewalCode, status: renewal.status, requestedEndDate: this.isoDate(renewal.requestedEndDate) } : null;
     const contracts = active.map((contract: any) => {
+      const cutoff = businessToday(now);
       const future = contract.reservationUnit.storageUnit.reservationUnits
-        .filter((allocation: any) => allocation.reservationId !== record.id && allocation.plannedEndDate > now)[0];
+        .find((allocation: any) => allocation.reservationId !== record.id && allocation.plannedEndDate > cutoff);
       const unit = {
         id: contract.reservationUnit.storageUnit.id,
         unitCode: contract.reservationUnit.storageUnit.unitNumber,
@@ -198,11 +229,13 @@ export class ActiveRentalsService {
       const nextConfirmedAllocation = future ? {
         reservationReference: future.reservation.reservationCode,
         startDate: this.isoDate(future.plannedStartDate), endDate: this.isoDate(future.plannedEndDate),
-        ...(mode === 'MANAGER' ? { customer: future.reservation.customer } : {}),
+        ...(mode === 'FACILITY_MANAGER' ? { customer: future.reservation.customer } : {}),
       } : null;
       const returnReadiness = contractReturnReadiness(record.invoices, [contract.id], allContractIds);
-      const cutoff = businessToday(now);
+      const terms = protectedFacilityReturn(contract.reservationUnit.storageUnit.storageType.facility) ? null :
+        calculateOccupiedOverdue(contract, record.quoteSnapshot, record.renewals, cutoff);
       const endDate = this.isoDate(contract.endDate)!;
+      const returnNoticeDays = contractReturnNoticeDays(snapshot, contract.startDate, contract.endDate);
       const approval = cutoff < contract.endDate ? record.supportRequests?.find((request: any) =>
         (request.rentalContractId === contract.id || (!request.rentalContractId && record.contracts.every((item: { endDate: Date }) => +item.endDate === +contract.endDate)))
         && request.lastActionIdempotencyKey === earlyReturnScope(request.id, endDate)) : null;
@@ -210,32 +243,35 @@ export class ActiveRentalsService {
       const pendingRenewal = pending.find((renewal: { rentalContractId: string | null }) => renewalAppliesTo(renewal, [contract.id]));
       const awaitingRenewalInvoices = !earlyApproved && hasUnissuedRenewalInstallments(record.renewals, [contract.id]);
       const depositVerified = allContractIds.length === record.quantity && recordedContractDeposit(record.invoices, [contract.id], allContractIds, record.quoteSnapshot, false) !== null;
-      if (returnReadiness.canReturn && !depositVerified) {
-        returnReadiness.canReturn = false;
-        returnReadiness.requiresReconciliation = true;
-      }
       let earlyReturnEstimate = null;
-      if (mode === 'CUSTOMER' && cutoff < contract.endDate && !hasStartedUnissuedRenewal(record.renewals, contract.id, cutoff)) {
-        try { earlyReturnEstimate = summarizeEarlyReturn(planEarlyReturn(record.invoices, contract.id, allContractIds, cutoff, false, record.services), this.isoDate(cutoff)!); }
+      if (mode === 'STORAGE_CUSTOMER' && cutoff < contract.endDate && !hasStartedUnissuedRenewal(record.renewals, contract.id, cutoff)) {
+        const facility = contract.reservationUnit.storageUnit.storageType.facility;
+        try { earlyReturnEstimate = summarizeEarlyReturn(planEarlyReturn(record.invoices, contract.id, allContractIds, cutoff, false, record.services, protectedFacilityReturn(facility)), this.isoDate(cutoff)!); }
         catch (error) { if (!(error instanceof ConflictException)) throw error; }
       }
       return {
         id: contract.id, contractCode: contract.contractCode, status: contract.status,
         startDate: this.isoDate(contract.startDate), endDate: this.isoDate(contract.endDate), activatedAt: contract.activatedAt?.toISOString() ?? null,
+        returnNoticeDays,
+        overdueDays: daysAfterRentalEnd(contract.endDate, cutoff),
+        overdueOccupancy: terms ? { days: terms.overdueDays, withinGrace: terms.billableDays === 0, estimatedAmount: terms.amount,
+          managerReviewOn: this.isoDate(new Date(+contract.endDate + terms.terms.managerDays * 86_400_000)),
+          managerReview: terms.overdueDays >= terms.terms.managerDays } : null,
         returnReadiness: {
           ...returnReadiness,
           awaitingRenewalInvoices,
+          requiresFullSettlement: false,
           ...(earlyApproved ? { policy: PERIOD_CLOSEOUT, requiresFullSettlement: false, earlyReturnBlockReason: pendingRenewal ? 'RENEWAL_IN_PROGRESS' : !depositVerified ? 'DEPOSIT_RECONCILIATION_REQUIRED' : null } : {}),
-          canReturn: earlyApproved ? depositVerified && !pendingRenewal : returnReadiness.canReturn && !awaitingRenewalInvoices,
+          canReturn: depositVerified && !pendingRenewal && !awaitingRenewalInvoices,
         },
         pendingRenewal: pendingSummary(pendingRenewal),
         returnInProgress: contract.returnInspections.length > 0,
-        unit: mode === 'CUSTOMER' ? unit : { ...unit, nextConfirmedAllocation },
-        ...(mode === 'CUSTOMER' ? { storedItems: contract.storedItems ?? [], earlyReturnEstimate,
+        unit: mode === 'STORAGE_CUSTOMER' ? unit : { ...unit, nextConfirmedAllocation },
+        ...(mode === 'STORAGE_CUSTOMER' ? { earlyReturnEstimate,
         transfers: (contract.transferRequests ?? []).map((transfer: any) => ({
           code: transfer.transferCode, from: transfer.fromStorageUnit.unitNumber, to: transfer.toStorageUnit?.unitNumber ?? '', completedAt: transfer.completedAt?.toISOString() ?? null,
         })) } : {}),
-        ...(mode === 'CUSTOMER' ? {} : { hasCurrentAllocationConflict: deriveOverdueState(contract.endDate, now).isOverdue && future !== undefined && future.plannedStartDate <= now }),
+        ...(mode === 'STORAGE_CUSTOMER' ? {} : { hasCurrentAllocationConflict: cutoff >= contract.endDate && future !== undefined && future.plannedStartDate <= cutoff }),
       };
     });
     const hasFutureAllocation = contracts.some((contract: any) => contract.unit.nextConfirmedAllocation !== null && contract.unit.nextConfirmedAllocation !== undefined);
@@ -269,7 +305,7 @@ export class ActiveRentalsService {
       historicalPricing: snapshot,
       invoices,
       pendingRenewal: pendingRenewalSummary,
-      ...(mode === 'MANAGER' ? { futureAllocationRisk: { hasFutureAllocation, hasCurrentAllocationConflict } } : {}),
+      ...(mode === 'FACILITY_MANAGER' ? { futureAllocationRisk: { hasFutureAllocation, hasCurrentAllocationConflict } } : {}),
       renewalHistory: record.renewals.map((renewal: any) => ({
         ...renewalHistory.find((item: any) => item.id === renewal.id), quoteSnapshot: renewal.quoteSnapshot,
         billingSummary: {
@@ -286,7 +322,7 @@ export class ActiveRentalsService {
         scheduledBalance: this.money(scheduledBalance),
         nextInvoice: nextInvoice ? this.invoiceSummary(nextInvoice) : null,
       },
-      ...(mode === 'CUSTOMER' ? rentalAccountSummary({ ...record, contracts: active }, now) : {}),
+      ...(mode === 'STORAGE_CUSTOMER' ? rentalAccountSummary({ ...record, contracts: active }, now) : {}),
     };
   }
 

@@ -164,7 +164,7 @@ try {
   else if (command === 'seed' || command === 'verify') {
     if (!apply && command === 'seed') {
       await client.query('BEGIN READ ONLY');
-      try { assertAccounts(await users(client)); console.log(JSON.stringify({ action: 'seed dry-run', fingerprint: target, planned: { StorageUnit: 12, UnitStaffAssignment: 12, Reservation: 5, ReservationUnit: 4, RentalContract: 4, Invoice: 6, Payment: 3, PaymentSubmission: 1, HandoverAppointment: 3, StoredItem: 1, StockMovement: 3, StockMovementLine: 3, RenewalRequest: 1, ReturnRequest: 1, ReturnInspection: 1, SupportRequest: 1, MaintenanceRequest: 1 }, note: 'First-run estimates; existing complete dataset is retained unchanged. No users/passwords/prices updated. Historical paper acceptance is explicitly simulated; no OTP/VNPay forged.' }, null, 2)); } finally { await client.query('ROLLBACK'); }
+      try { assertAccounts(await users(client)); console.log(JSON.stringify({ action: 'seed dry-run', fingerprint: target, planned: { StorageUnit: 12, Reservation: 5, ReservationUnit: 4, RentalContract: 4, Invoice: 6, Payment: 3, PaymentSubmission: 1, HandoverAppointment: 3, StoredItem: 1, StockMovement: 3, StockMovementLine: 3, RenewalRequest: 1, ReturnRequest: 1, ReturnInspection: 1, SupportRequest: 1, MaintenanceRequest: 1 }, note: 'First-run estimates; existing complete dataset is retained unchanged. No users/passwords/prices updated. Historical paper acceptance is explicitly simulated; no OTP/VNPay forged.' }, null, 2)); } finally { await client.query('ROLLBACK'); }
     } else {
       if (command === 'seed') guard(targetUrl, process.env, option('confirm'));
       process.env.DATABASE_URL = targetUrl;

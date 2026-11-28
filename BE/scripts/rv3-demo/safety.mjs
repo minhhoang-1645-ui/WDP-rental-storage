@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 
-export const accounts = Object.freeze({ CUSTOMER: 'customer@wdp.test', STAFF: 'staff@wdp.test', MANAGER: 'manager@wdp.test', ADMIN: 'admin@wdp.test' });
+export const accounts = Object.freeze({ STORAGE_CUSTOMER: 'customer@wdp.test', FACILITY_STAFF: 'staff@wdp.test', FACILITY_MANAGER: 'manager@wdp.test', SYSTEM_ADMINISTRATOR: 'admin@wdp.test' });
 export const prefix = 'rv3-demo-v1';
 export const marker = '[RV3 DEMO - MO PHONG, KHONG CO TIEN THAT]';
 export const catalogCodes = ['LK-A01', 'SM-B12', 'MD-D04', 'LG-F02'];
-export const protectedTables = new Set(['User', 'AuthSession', 'AccountFlowToken', 'AccountFlowLimit', 'SigningChallenge', 'AuditEvent', 'BusinessPolicy', 'Facility', 'StorageType', 'AdditionalService', 'AdditionalServiceInventory', '_prisma_migrations']);
+export const protectedTables = new Set(['User', 'AuthSession', 'AccountFlowToken', 'AccountFlowLimit', 'SigningChallenge', 'AuditEvent', 'FacilityAccess', 'BusinessRule', 'BusinessPolicy', 'Facility', 'StorageType', 'AdditionalService', 'AdditionalServiceInventory', '_prisma_migrations']);
 export const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 export const quoteIdentifier = name => '"' + name.replaceAll('"', '""') + '"';
 export function identity(raw) {

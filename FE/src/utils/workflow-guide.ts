@@ -41,12 +41,6 @@ export function workflowGuide(resource: string, status: unknown, audience: 'inte
       COMPLETED: 'Đã bàn giao. Xem biên bản và người nhận bên dưới.',
       CANCELLED: 'Lịch đã hủy. Khách có thể đặt lại nếu còn đủ điều kiện.',
     },
-    'stock-movements': {
-      REQUESTED: 'Quản lý phân công nhân viên giao nhận hàng.',
-      ASSIGNED: 'Kiểm đếm từng mặt hàng và nhập số lượng thực tế trước khi hoàn tất.',
-      COMPLETED: 'Đã cập nhật số lượng hàng theo kết quả giao nhận.',
-      CANCELLED: 'Phiếu đã hủy. Số lượng hàng không thay đổi.',
-    },
     renewals: {
       PENDING: 'Kiểm tra hạn thuê, kho trống và số tiền gia hạn trước khi duyệt.',
       APPROVED_PENDING_PAYMENT: 'Chờ khách ký phụ lục và thanh toán hóa đơn gia hạn.',
@@ -54,7 +48,7 @@ export function workflowGuide(resource: string, status: unknown, audience: 'inte
       REJECTED: 'Yêu cầu đã từ chối. Khách xem được lý do trong hồ sơ.',
     },
     returns: {
-      REQUESTED: 'Nhân viên kiểm tra hàng đã xuất hết và số tiền còn phải trả trước khi nhận kho.',
+      REQUESTED: 'Nhân viên xác nhận kho đã dọn trống, kiểm tra hiện trạng và thu hồi quyền ra vào.',
       INSPECTION_IN_PROGRESS: 'Ghi tình trạng từng kho. Khoản khấu trừ và hoàn cọc do quản lý duyệt.',
       ISSUE_FOUND: 'Quản lý xem kết quả kiểm tra và quyết định khoản cần thu hoặc khấu trừ.',
       PENDING_SETTLEMENT: 'Quản lý kiểm tra và duyệt tiền cọc được hoàn.',

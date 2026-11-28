@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { evidencePhotos } from '../../evidence-photos.js';
 
 type PhysicalUnit = { id: string; unitNumber: string };
 
@@ -34,6 +35,21 @@ function checkedUnits(report: Record<string, unknown>, units: readonly PhysicalU
   });
 }
 
+function handoverEvidence(report: Record<string, unknown>) {
+  function entries(value: unknown, label: string): unknown[] {
+    if (value === undefined) return [];
+    if (!Array.isArray(value) || value.length > 3) throw new BadRequestException('Chỉ được gửi tối đa 3 ' + label + '.');
+    return value;
+  }
+  const photos = evidencePhotos(report.photos);
+  const photoLinks = entries(report.photoLinks, 'link ảnh').map(value => {
+    const link = typeof value === 'string' && value.length <= 2000 && !/\s/.test(value) ? URL.parse(value) : null;
+    if (link?.protocol !== 'https:' || link.username || link.password) throw new BadRequestException('Link ảnh phải là đường dẫn HTTPS hợp lệ.');
+    return link.href;
+  });
+  return { ...(photos.length ? { photos } : {}), ...(photoLinks.length ? { photoLinks } : {}) };
+}
+
 export function handoverReport(input: Record<string, unknown>, customer?: { id: string; fullName: string }, units: readonly PhysicalUnit[] = []) {
   return parseHandoverReport(input, customer, units).text;
 }
@@ -56,6 +72,7 @@ export function parseHandoverReport(input: Record<string, unknown>, customer?: {
   const count = report.accessItemCount;
   if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0 || count > 50) throw new BadRequestException('Số chìa khóa/thẻ bàn giao phải là số nguyên từ 0 đến 50.');
   const unitChecks = checkedUnits(report, units);
+  const evidence = handoverEvidence(report);
   const text = [
     'BIÊN BẢN BÀN GIAO KHO',
     `Người nhận: ${recipientName}`,
@@ -74,6 +91,6 @@ export function parseHandoverReport(input: Record<string, unknown>, customer?: {
     recipientType, recipientName, customerName: customer?.fullName ?? '',
     authorizationBasis: recipientType === 'AUTHORIZED' ? authorizationBasis : null,
     condition, accessItemCount: count, identityVerified: true, unitInspected: true, accessDelivered: true,
-    documentsDelivered: report.documentsDelivered === true, note, ...(unitChecks ? { unitChecks } : {}),
+    documentsDelivered: report.documentsDelivered === true, note, ...evidence, ...(unitChecks ? { unitChecks } : {}),
   } };
 }

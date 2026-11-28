@@ -29,36 +29,40 @@ describe('RV3 Manager report, no database writes', () => {
     for (const query of [{ from: '2026-02-30' }, { to: '2026-13-01' }, { from: '2026-11-10', to: '2026-11-09' }, { from: ['2026-01-01'] }]) expect(() => analyticsPeriod(query)).toThrow();
   });
   it('counts all physical units, actual contracts and scoped staff workload', async () => {
-    const { service } = setup(); const data = await service.report({});
+    const { service, tx } = setup(); const data = await service.report({}, {id:'manager',role:'FACILITY_MANAGER'} as never);
     expect(data.units).toMatchObject({ total: 120, occupied: 30, reserved: 0, utilizationPercent: 25 });
     expect(data.activeContracts).toBe(31);
-    expect(data.workload).toEqual([expect.objectContaining({ stock: 3, support: 0, maintenance: 0 })]);
+    expect(data.queue).not.toHaveProperty('unassignedStock');
+    expect(data.workload[0]).not.toHaveProperty('stock');
+    expect(tx.stockMovement.count).not.toHaveBeenCalled();
+    expect(tx.stockMovement.groupBy).not.toHaveBeenCalled();
+    expect(data.workload).toEqual([expect.objectContaining({ support: 0, maintenance: 0 })]);
   });
   it('does not label an empty denominator as zero utilization or suppress API failures', async () => {
     const { service, tx } = setup(); tx.storageUnit.groupBy.mockResolvedValue([]);
-    expect((await service.report({})).units.utilizationPercent).toBeNull();
+    expect((await service.report({}, {id:'manager',role:'FACILITY_MANAGER'} as never)).units.utilizationPercent).toBeNull();
     tx.payment.aggregate.mockRejectedValue(new Error('unavailable'));
-    await expect(service.report({})).rejects.toThrow('unavailable');
+    await expect(service.report({}, {id:'manager',role:'FACILITY_MANAGER'} as never)).rejects.toThrow('unavailable');
   });
   it('sums only confirmed Payment cashflow, excludes pending VNPay and never sums submissions', async () => {
-    const { service, tx } = setup(); const data = await service.report({ from: '2026-11-10', to: '2026-11-10' });
-    expect(tx.payment.aggregate).toHaveBeenCalledWith(expect.objectContaining({ where: { receivedAt: { gte: new Date('2026-11-09T17:00:00Z'), lt: new Date('2026-11-10T17:00:00Z') }, OR: [{ onlinePaymentTransactionId: null }, { onlinePaymentTransaction: { is: { status: 'SUCCESS' } } }] } }));
-    expect(tx.paymentSubmission.count).toHaveBeenCalledWith({ where: { status: 'PENDING_VERIFICATION' } });
+    const { service, tx } = setup(); const data = await service.report({ from: '2026-11-10', to: '2026-11-10' }, {id:'manager',role:'FACILITY_MANAGER'} as never);
+    expect(tx.payment.aggregate).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ receivedAt: { gte: new Date('2026-11-09T17:00:00Z'), lt: new Date('2026-11-10T17:00:00Z') }, OR: [{ onlinePaymentTransactionId: null }, { onlinePaymentTransaction: { is: { status: 'SUCCESS' } } }] }) }));
+    expect(tx.paymentSubmission.count).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'PENDING_VERIFICATION' }) }));
     expect(data.finance.collectedAmount).toBe(3000000);
     expect(data.finance.depositOnFullyPaidInvoices).toBe(1500000);
     expect(data.finance).not.toHaveProperty('revenue');
   });
   it('excludes VOID and PAID invoices from current debt and uses paidAt only for paid deposit snapshots', async () => {
-    const { service, tx } = setup(); await service.report({});
-    expect(tx.invoice.aggregate).toHaveBeenCalledWith(expect.objectContaining({ where: { status: { in: ['OPEN', 'PARTIALLY_PAID'] }, balanceDue: { gt: 0 } } }));
-    expect(tx.invoice.aggregate).toHaveBeenCalledWith({ where: { status: 'PAID', paidAt: { not: null } }, _sum: { depositAmount: true } });
-    expect(tx.depositSettlement.aggregate).toHaveBeenCalledWith(expect.objectContaining({ where: { status: { in: ['APPROVED', 'AWAITING_OUTSTANDING_PAYMENT'] }, refundedAt: null } }));
+    const { service, tx } = setup(); await service.report({}, {id:'manager',role:'FACILITY_MANAGER'} as never);
+    expect(tx.invoice.aggregate).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: { in: ['OPEN', 'PARTIALLY_PAID'] }, balanceDue: { gt: 0 } }) }));
+    expect(tx.invoice.aggregate).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'PAID', paidAt: { not: null } }), _sum: { depositAmount: true } }));
+    expect(tx.depositSettlement.aggregate).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: { in: ['APPROVED', 'AWAITING_OUTSTANDING_PAYMENT'] }, refundedAt: null }) }));
   });
   it('counts decision work independently of the assignments it supersedes', async () => {
-    const { service, tx } = setup(); await service.report({});
-    expect(tx.damageClaim.count).toHaveBeenCalledWith({ where: { status: 'INVESTIGATING', staffFacts: { not: null } } });
-    expect(tx.damageClaim.count).toHaveBeenCalledWith({ where: expect.objectContaining({ status: { in: ['REPORTED', 'INVESTIGATING'] }, staffFacts: null }) });
-    expect(tx.supportRequest.count).toHaveBeenCalledWith({ where: expect.objectContaining({ status: 'ESCALATED', transferRequests: { none: { status: { in: ['REQUESTED', 'APPROVED', 'COMPLETED'] } } } }) });
-    expect(tx.maintenanceRequest.count).toHaveBeenCalledWith({ where: expect.objectContaining({ status: { in: ['OPEN', 'IN_PROGRESS'] } }) });
+    const { service, tx } = setup(); await service.report({}, {id:'manager',role:'FACILITY_MANAGER'} as never);
+    expect(tx.damageClaim.count).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'INVESTIGATING', staffFacts: { not: null } }) }));
+    expect(tx.damageClaim.count).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: { in: ['REPORTED', 'INVESTIGATING'] }, staffFacts: null }) }));
+    expect(tx.supportRequest.count).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'ESCALATED', transferRequests: { none: { status: { in: ['REQUESTED', 'APPROVED', 'COMPLETED'] } } } }) }));
+    expect(tx.maintenanceRequest.count).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: { in: ['OPEN', 'IN_PROGRESS'] } }) }));
   });
 });

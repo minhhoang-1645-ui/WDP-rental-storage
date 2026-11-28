@@ -8,10 +8,10 @@ async function main() {
   const reporterEmail = process.env.MAINTENANCE_BACKFILL_REPORTER_EMAIL ?? process.env.SEED_MANAGER_EMAIL;
   if (!reporterEmail) throw new Error('MAINTENANCE_BACKFILL_REPORTER_EMAIL or SEED_MANAGER_EMAIL is required.');
   const reporter = await prisma.user.findFirst({
-    where: { email: reporterEmail.trim().toLowerCase(), role: { in: ['MANAGER', 'ADMIN'] } },
+    where: { email: reporterEmail.trim().toLowerCase(), role: { in: ['FACILITY_MANAGER', 'SYSTEM_ADMINISTRATOR'] } },
     select: { id: true },
   });
-  if (!reporter) throw new Error('Configured maintenance backfill reporter must be an existing MANAGER or ADMIN.');
+  if (!reporter) throw new Error('Configured maintenance backfill reporter must be an existing FACILITY_MANAGER or SYSTEM_ADMINISTRATOR.');
 
   const candidates = await prisma.storageUnit.findMany({
     where: { status: 'MAINTENANCE', maintenanceRequests: { none: { status: { in: ['OPEN', 'IN_PROGRESS', 'AWAITING_VERIFICATION'] } } } },

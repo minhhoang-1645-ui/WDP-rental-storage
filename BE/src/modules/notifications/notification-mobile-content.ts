@@ -37,7 +37,26 @@ export function customerMobileNotices(notices: Notice[], data: NotificationData,
     let { title, summary, actionLabel } = notice;
     let target = detail(notice.kind === 'transfers' && source === 'support-requests' ? 'transfers' : notice.kind, id);
     switch (source) {
+      case 'policy-effective':
+        target = notice.target;
+        break;
+      case 'rental-overdue':
+        target = '/customer/rentals?' + new URLSearchParams({ rentalContractId: id });
+        break;
+      case 'contract-expiry':
+        target = detail('contracts', id);
+        break;
+      case 'payment-due-reminder':
+        target = detail('invoices', id);
+        break;
+      case 'closure-relocations':
+        target = str(row.action).startsWith('CLOSURE_BOOKING_') ? detail('support-requests', str(obj(row.metadata).caseId)) : '/customer/rentals';
+        break;
+      case 'facility-lifecycle':
+        target = '/customer/rentals';
+        break;
       case 'invoices': {
+        if (obj(row.historicalPricing).adjustment === 'PAYMENT_OVERDUE' && notice.actionLabel === 'Xem hóa đơn') { target = detail('invoices', id); break; }
         const renewal = row.type === 'RENEWAL';
         const subject = renewal ? 'Hóa đơn gia hạn' : 'Hóa đơn';
         const outstanding = payableStates.includes(str(row.status)) && Number(row.balanceDue) > 0;
@@ -53,7 +72,8 @@ export function customerMobileNotices(notices: Notice[], data: NotificationData,
           const waiting = waitingInvoices.has(id);
           title = subject + (waiting ? ' chờ xác nhận chuyển khoản'
             : !usable ? ' đã hết hạn thanh toán'
-              : scheduled ? ' chưa đến kỳ thanh toán' : !signed ? ' chờ ký tài liệu' : ' còn phải thanh toán');
+              : scheduled ? ' chưa đến kỳ thanh toán' : !signed ? ' chờ ký tài liệu'
+                : Number(obj(row.overduePayment).days) > 0 ? ' quá hạn thanh toán' : ' còn phải thanh toán');
           if (usable && !waiting && !scheduled && signed) actionLabel = 'Xem hóa đơn';
           if (usable && signed) summary = [summary, currency.format(Number(row.balanceDue))].filter(Boolean).join(' · ');
         }

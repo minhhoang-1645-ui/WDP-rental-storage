@@ -33,8 +33,17 @@ export class PdfDocumentService {
     return this.render('HỢP ĐỒNG THUÊ KHO', contract.contractCode, issuer, pdf => {
       if (document.legacySnapshotUnavailable) this.paragraph(pdf, 'BẢN ĐỐI CHIẾU HỒ SƠ CŨ: phiên bản trước chưa lưu bản nội dung gốc được ký. File này tổng hợp dữ liệu hiện có, không xác nhận lại điều khoản hoặc tính toàn vẹn của nội dung ký trước đây.');
       this.party(pdf, issuer, document.customer ?? contract.reservation.customer);
+      if (document.facility?.name) {
+        this.section(pdf, 'Cơ sở thuê kho');
+        this.rows(pdf, [['Cơ sở', [document.facility.name, document.facility.code].filter(Boolean).join(' · ')],
+          ['Địa chỉ kho', document.facility.address], ['Giờ làm việc', document.facility.officeHours], ['Giờ khách truy cập kho', document.facility.accessHours]]
+          .filter(([, value]) => value));
+      }
       this.section(pdf, 'Thông tin kho và thời hạn');
-      this.rows(pdf, [['Mã đặt kho', document.reservationReference], ['Kho thuê', `${document.storage?.name ?? contract.storageType.name} - ${document.storage?.unitCode ?? contract.storageUnit.unitCode}`], ['Bắt đầu thuê', date(document.startDate)], ['Kết thúc kỳ thuê', `${date(document.endDate)} (không bao gồm ngày này)`], ['Phiên bản nội dung', document.version]]);
+      const storage = document.storage;
+      const location = [storage?.floor, storage?.zone, storage?.row != null ? 'Hàng ' + storage.row : '',
+        storage?.position != null ? 'Vị trí ' + storage.position : ''].filter(Boolean).join(' · ');
+      this.rows(pdf, [['Mã đặt kho', document.reservationReference], ['Kho thuê', `${document.storage?.name ?? contract.storageType.name} - ${document.storage?.unitCode ?? contract.storageUnit.unitCode}`], ...(location ? [['Vị trí trong cơ sở', location]] : []), ['Bắt đầu thuê', date(document.startDate)], ['Kết thúc kỳ thuê', `${date(document.endDate)} (không bao gồm ngày này)`], ['Phiên bản nội dung', document.version]]);
       this.quote(pdf, document.pricing, document.quantity);
       if (Array.isArray(document.clauses)) for (const clause of document.clauses) { pdf.font('Regular').fontSize(10); this.ensure(pdf, pdf.heightOfString(text(clause.text), { width: 499, lineGap: 4 }) + 45); this.section(pdf, text(clause.title)); this.paragraph(pdf, text(clause.text)); }
       else this.paragraph(pdf, 'Hồ sơ phiên bản trước: tài liệu này thể hiện đúng các thông tin đã lưu. Không bổ sung điều khoản hoặc xác thực OTP hồi tố vào nội dung khách đã xác nhận.');
@@ -176,6 +185,29 @@ export class PdfDocumentService {
     if (total !== undefined) this.rows(pdf, [['Tổng cả kỳ, gồm cọc nếu có', money(total)]]);
     const initial = quote.initialPaymentBreakdown?.totalAmount ?? quote.estimatedInitialAmountDue ?? quote.initialInvoiceEstimate?.totalAmount ?? quote.initialInvoiceEstimate?.amountDue;
     if (initial !== undefined) this.rows(pdf, [['Dự kiến thanh toán lần đầu', money(initial)]]);
+    const notice = quote.pricingPolicy?.returnNotice?.value;
+    if (Number.isSafeInteger(notice) && notice > 0 && notice <= 30) {
+      this.paragraph(pdf, `Báo trước tối đa ${notice} ngày để bố trí lịch trả kho, giới hạn theo thời hạn thuê. Trả kho đúng hạn không phát sinh phí do báo muộn.`);
+    }
+    const early = quote.pricingPolicy?.earlyReturn?.value;
+    if (early) {
+      const fee = early.feeMethod === 'FIXED_AMOUNT' ? money(early.feeAmount)
+        : early.feeMethod === 'UNUSED_RENT_PERCENTAGE' ? `${early.feeAmount}% tiền thuê chưa sử dụng` : 'miễn phí';
+      const refund = early.refundMode === 'NONE' ? 'không hoàn tiền thuê trả trước'
+        : early.refundMode === 'ORIGINAL_DISCOUNT' ? 'hoàn tiền thuê chưa sử dụng theo giá đã giảm'
+        : 'quyết toán ưu đãi theo bảng đã cam kết và số kỳ đã sử dụng';
+      this.paragraph(pdf, `Khách chủ động trả kho trước hạn: ${fee}, ${refund}. Không áp dụng phí trả sớm hoặc thu hồi ưu đãi khi NestBox phải thu hồi kho.`);
+    }
+    const late = quote.pricingPolicy?.paymentOverdue?.value;
+    const cancellation = quote.pricingPolicy?.cancellation?.value;
+    if (cancellation) this.paragraph(pdf, `Tiền thuê đã thanh toán được hoàn ${cancellation.farPercent}% nếu gửi yêu cầu trước ít nhất ${cancellation.farDays} ngày, ${cancellation.middlePercent}% từ ${cancellation.nearDays} đến dưới ${cancellation.farDays} ngày, ${cancellation.nearPercent}% sát ngày thuê, hoặc ${cancellation.startedPercent}% từ ngày thuê khi chưa sử dụng kho. Cọc và dịch vụ được đối soát riêng. Hạn hoàn ${cancellation.refundDays} ngày sau khi duyệt.`);
+    const overdueReturn = quote.pricingPolicy?.returnOverdue?.value;
+    if (overdueReturn) this.paragraph(pdf, `Trả kho quá hạn: sau ${overdueReturn.graceDays} ngày cho phép quá hạn, phí sử dụng mỗi ngày bằng giá thuê tháng chia 30 nhân ${overdueReturn.multiplier}%. Số ngày tính đến ngày nhận kho thực tế.`);
+    if (late) {
+      const fee = late.feeMethod === 'FIXED_AMOUNT' ? money(late.feeAmount)
+        : late.feeMethod === 'RENT_DEBT_PERCENTAGE' ? `${late.feeAmount}% tiền thuê còn nợ có căn cứ đối soát` : 'miễn phí';
+      this.paragraph(pdf, `Cho phép quá hạn thanh toán ${late.graceDays} ngày. Sau thời gian cho phép quá hạn, phí chậm thanh toán của hóa đơn định kỳ hoặc gia hạn đủ điều kiện được tính một lần: ${fee}.`);
+    }
     this.paragraph(pdf, 'Số cần thanh toán thực tế theo từng hóa đơn và số dư còn lại tại thời điểm trả tiền. Dịch vụ tính theo lần/ngày/tháng theo đơn vị đã ghi trong báo giá.');
   }
   private signature(pdf: PDFKit.PDFDocument, terms: any) {

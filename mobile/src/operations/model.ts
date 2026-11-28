@@ -11,7 +11,6 @@ export const codeOf = (row: Row) => text(row, 'reconciliationCode', 'movementCod
 
 export interface ResourceDefinition { title: string; path: string; shape?: 'catalog' | 'array'; statuses?: string[] }
 export const resources: Record<string, ResourceDefinition> = {
-  'stock-movements': { title: 'Nhập – xuất hàng', path: '/manager/stock-movements', statuses: ['REQUESTED', 'ASSIGNED', 'COMPLETED', 'CANCELLED'] },
   inquiries: { title: 'Yêu cầu tư vấn', path: '/manager/inquiries', statuses: ['PENDING_CONTACT', 'CONTACTED', 'IN_REVIEW', 'CLOSED', 'CANCELLED'] },
   reservations: { title: 'Yêu cầu đặt kho', path: '/manager/reservations', statuses: ['PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED', 'EXPIRED'] },
   units: { title: 'Kho vật lý', path: '/manager/units', statuses: ['AVAILABLE', 'RESERVED', 'OCCUPIED', 'MAINTENANCE'] },
@@ -40,14 +39,14 @@ export const adminSections = [
 const labels: Record<string, string> = {
   REFUND_REQUIRED: 'Cần hoàn tiền', RECONCILED: 'Đã đối soát',
   VOID: 'Đã hủy', UNINSPECTED: 'Chưa kiểm tra',
-  LOCK_OR_KEY_ISSUE: 'Vấn đề khóa/chìa khóa', ACCESS_CODE_ISSUE: 'Vấn đề mã truy cập', PAYMENT_SUPPORT: 'Hỗ trợ thanh toán', STORED_ITEM_CONCERN: 'Vấn đề hàng đang gửi', DAILY: 'Theo ngày', MONTHLY: 'Theo tháng',
+  LOCK_OR_KEY_ISSUE: 'Vấn đề khóa/chìa khóa', ACCESS_CODE_ISSUE: 'Vấn đề mã truy cập', PAYMENT_SUPPORT: 'Hỗ trợ thanh toán', STORED_ITEM_CONCERN: 'Sự cố với đồ lưu trữ', DAILY: 'Theo ngày', MONTHLY: 'Theo tháng',
   INITIAL: 'Hóa đơn ban đầu', RECURRING: 'Hóa đơn định kỳ', RENEWAL: 'Hóa đơn gia hạn', SETTLEMENT: 'Hóa đơn quyết toán', INCLUDED: 'Đã tính trong báo giá', PRICED: 'Đã có báo giá', QUOTE_REQUIRED: 'Cần xác nhận báo giá', dates: 'Chọn khoảng ngày', duration: 'Chọn số tháng', INQUIRY: 'Yêu cầu tư vấn', RESERVATION: 'Yêu cầu đặt kho', ok: 'Đã kết nối',
   PENDING_CONTACT: 'Chờ liên hệ', CONTACTED: 'Đã liên hệ', IN_REVIEW: 'Đang xem xét', CLOSED: 'Đã đóng', PENDING: 'Chờ duyệt', CONFIRMED: 'Đã xác nhận', REJECTED: 'Đã từ chối', CANCELLED: 'Đã hủy', EXPIRED: 'Đã hết hạn',
   AVAILABLE: 'Sẵn sàng', RESERVED: 'Đã phân bổ', OCCUPIED: 'Đang sử dụng', MAINTENANCE: 'Đang bảo trì', ACTIVE: 'Đang hoạt động', DISABLED: 'Đã vô hiệu hóa', OVERDUE: 'Quá hạn', REQUESTED: 'Chờ xử lý', COMPLETED: 'Hoàn tất',
   PENDING_PAYMENT: 'Chờ thanh toán', READY_FOR_HANDOVER: 'Sẵn sàng bàn giao', OPEN: 'Đang mở', PARTIALLY_PAID: 'Đã trả một phần', PAID: 'Đã thanh toán', APPROVED: 'Đã duyệt', APPROVED_PENDING_PAYMENT: 'Đã duyệt, chờ thanh toán',
   PENDING_VERIFICATION: 'Chờ xác nhận', VERIFIED: 'Đã xác nhận', INSPECTION_IN_PROGRESS: 'Đang kiểm tra', ISSUE_FOUND: 'Có vấn đề', PASS: 'Đạt', PENDING_SETTLEMENT: 'Chờ quyết toán', PENDING_REVIEW: 'Chờ duyệt', AWAITING_OUTSTANDING_PAYMENT: 'Chờ thu bổ sung', SETTLED: 'Đã quyết toán',
   IN_PROGRESS: 'Đang xử lý', AWAITING_VERIFICATION: 'Chờ nghiệm thu', ASSIGNED: 'Đã phân công', ESCALATED: 'Chờ xem xét', RESOLVED: 'Đã giải quyết', LOW: 'Thấp', MEDIUM: 'Trung bình', HIGH: 'Cao',
-  CUSTOMER: 'Khách hàng', STAFF: 'Nhân viên', MANAGER: 'Quản lý', ADMIN: 'Quản trị viên', BANK_TRANSFER: 'Chuyển khoản', CASH: 'Tiền mặt', VNPAY: 'VNPay', PURCHASE: 'Mua', RENTAL: 'Thuê', ONE_TIME: 'Một lần', DAY: 'Ngày', MONTH: 'Tháng',
+  STORAGE_CUSTOMER: 'Khách hàng', FACILITY_STAFF: 'Nhân viên', FACILITY_MANAGER: 'Quản lý', SYSTEM_ADMINISTRATOR: 'Quản trị viên', BANK_TRANSFER: 'Chuyển khoản', CASH: 'Tiền mặt', VNPAY: 'VNPay', PAYOS: 'payOS', PURCHASE: 'Mua', RENTAL: 'Thuê', ONE_TIME: 'Một lần', DAY: 'Ngày', MONTH: 'Tháng',
   STANDARD: 'Tiêu chuẩn', AIR_CONDITIONED: 'Điều hòa', standard: 'Tiêu chuẩn', climate: 'Điều hòa', PAY_MONTHLY: 'Hàng tháng', PREPAID: 'Trả trước',
   UNIT_ISSUE: 'Vấn đề kho', FACILITY_EQUIPMENT_FAILURE: 'Lỗi thiết bị cơ sở', OPERATIONAL_RELOCATION: 'Điều chuyển vận hành', OTHER: 'Khác', UNIT_DAMAGE: 'Hư hỏng kho', CLEANING: 'Vệ sinh', LOCK_OR_ACCESS: 'Khóa hoặc truy cập', FACILITY_EQUIPMENT: 'Thiết bị cơ sở',
   NORMAL_WEAR: 'Hao mòn thông thường', FACILITY_FAULT: 'Lỗi cơ sở', CUSTOMER_DAMAGE: 'Hư hỏng do khách', CLEANING_REQUIRED: 'Cần vệ sinh', LOST_KEY_OR_ACCESS_ITEM: 'Mất khóa/vật phẩm truy cập',
@@ -55,4 +54,4 @@ const labels: Record<string, string> = {
 };
 export const label = (value: unknown) => typeof value === 'string' ? labels[value] ?? value : '—';
 export const options = (values: string[]) => values.map(value => ({ value, label: label(value) }));
-export const operationRoot = (role: string) => role === 'ADMIN' ? '/admin' : role === 'STAFF' ? '/staff' : '/manager';
+export const operationRoot = (role: string) => role === 'SYSTEM_ADMINISTRATOR' ? '/admin' : role === 'FACILITY_STAFF' ? '/staff' : '/manager';

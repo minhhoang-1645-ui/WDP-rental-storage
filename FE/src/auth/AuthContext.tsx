@@ -13,7 +13,7 @@ function validUser(user: PublicUser) {
     typeof user.id === "string" &&
     typeof user.fullName === "string" &&
     typeof user.email === "string" &&
-    ["CUSTOMER", "STAFF", "MANAGER", "ADMIN"].includes(user.role),
+    ["STORAGE_CUSTOMER", "FACILITY_STAFF", "FACILITY_MANAGER", "BUSINESS_OPERATIONS_MANAGER", "SYSTEM_ADMINISTRATOR"].includes(user.role),
   );
 }
 

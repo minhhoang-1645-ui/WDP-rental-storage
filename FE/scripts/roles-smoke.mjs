@@ -1,3 +1,4 @@
+import { chooseDate } from './browser-test.mjs';
 import { selectChoice } from './select-choice.mjs';
 // All /api/ calls are intercepted, including writes. No real database mutations.
 import assert from "node:assert/strict";
@@ -662,7 +663,7 @@ try {
   await savedLogin(
     "STAFF",
     "/staff/maintenance?mine=true#work",
-    "/portal/login",
+    "/account/login",
   );
   await savedLogin(
     "CUSTOMER",
@@ -691,9 +692,7 @@ try {
   await staff.page.getByText("MNT-5", { exact: true }).waitFor();
   await open(staff.page, "/staff/appointments?date=2030-11-01");
   await staff.page.getByText("APP-STAFF", { exact: true }).waitFor();
-  await staff.page
-    .getByLabel("Ngày", { exact: true })
-    .fill("2030-11-02");
+  await chooseDate(staff.page, "Ngày", "2030-11-02");
   await staff.page
     .getByText("Không tìm thấy lịch bàn giao phù hợp.", { exact: true })
     .waitFor();

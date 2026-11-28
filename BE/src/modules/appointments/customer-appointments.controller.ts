@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiConflictResponse, ApiCreatedResponse, ApiForbiddenResponse, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { CreateHandoverAppointmentRequestDto } from '../../openapi/api-dtos.js';
 import { AuthGuard } from '../auth/auth.guard.js';
@@ -8,7 +8,7 @@ import { AppointmentsService } from './appointments.service.js';
 
 @Controller('customer/appointments')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('CUSTOMER')
+@Roles('STORAGE_CUSTOMER')
 @ApiTags('Customer Appointment')
 @ApiBearerAuth('bearerAuth')
 export class CustomerAppointmentsController {
@@ -22,7 +22,7 @@ export class CustomerAppointmentsController {
   @ApiBadRequestResponse({ description: 'Timestamp, startDate hoặc payload không hợp lệ.' })
   @ApiConflictResponse({ description: 'Chưa thanh toán đủ, contract chưa sẵn sàng hoặc đã có active appointment.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ CUSTOMER được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ STORAGE_CUSTOMER được phép.' })
   @ApiNotFoundResponse({ description: 'Reservation không tồn tại hoặc không thuộc Customer.' })
   create(@Req() request: AuthenticatedRequest, @Headers('idempotency-key') idempotencyKey: string | undefined, @Body() body: Record<string, unknown>) {
     return this.appointments.createCustomerAppointment(request.user!, body, idempotencyKey);
@@ -34,7 +34,7 @@ export class CustomerAppointmentsController {
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   @ApiOkResponse({ description: 'Chỉ trả lịch thuộc Reservation của Customer.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ CUSTOMER được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ STORAGE_CUSTOMER được phép.' })
   list(@Req() request: AuthenticatedRequest, @Query('page') page = '1', @Query('limit') limit = '20') {
     return this.appointments.listCustomerAppointments(request.user!.id, this.pagination(page, limit));
   }
@@ -44,10 +44,15 @@ export class CustomerAppointmentsController {
   @ApiParam({ name: 'id', example: 'WDP-2026-AB12CD34-A01' })
   @ApiOkResponse({ description: 'Lịch, contracts và allocated units.' })
   @ApiUnauthorizedResponse({ description: 'Thiếu hoặc sai bearer token.' })
-  @ApiForbiddenResponse({ description: 'Chỉ CUSTOMER được phép.' })
+  @ApiForbiddenResponse({ description: 'Chỉ STORAGE_CUSTOMER được phép.' })
   @ApiNotFoundResponse({ description: 'Không tồn tại hoặc không thuộc Customer.' })
   get(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
     return this.appointments.getCustomerAppointment(request.user!.id, id);
+  }
+
+  @Patch(':id/reschedule')
+  reschedule(@Req() request: AuthenticatedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.appointments.rescheduleCustomerAppointment(id, body, request.user!);
   }
 
   private pagination(pageInput: string, limitInput: string) {

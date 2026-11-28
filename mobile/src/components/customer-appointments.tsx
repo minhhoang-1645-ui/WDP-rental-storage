@@ -8,7 +8,7 @@ import { operationMutate } from '@/operations/mutate';
 import { idOf, object, rows, text, type Row } from '@/operations/model';
 import { formatDate } from '@/utils/format';
 import { customerAppointmentBookingPath, handoverWindow, keyCollectionStartDate, vietnamLocalMinute } from '@/utils/handover';
-import { ErrorState, LoadingState } from './screen-state';
+import { EmptyState, ErrorState, LoadingState } from './screen-state';
 import { StatusBadge } from './customer-ui';
 
 const root = '/customer/appointments';
@@ -24,7 +24,8 @@ const locationOf = (unit: Row) => {
   const zone = text(unit, 'zone');
   return [floor, zone && (/^khu\b/i.test(zone) ? zone : 'Khu ' + zone)].filter(Boolean).join(' · ');
 };
-const status = (row: Row) => row.status === 'COMPLETED' ? 'Đã bàn giao' : row.status === 'CONFIRMED' ? 'Đã xác nhận' : row.status === 'CANCELLED' ? 'Đã hủy' : 'Chờ xác nhận';
+const status = (row: Row) => row.status === 'COMPLETED' ? 'Đã bàn giao' : row.status === 'CONFIRMED' ? 'Đã xác nhận lịch' : row.status === 'CANCELLED' ? 'Đã hủy' : 'Chờ xác nhận lịch';
+const unitCodes = (units: Row[]) => units.map(unit => text(unit, 'unitCode')).filter(Boolean).join(', ');
 
 function Page({ title, children, refresh, loading }: { title: string; children: ReactNode; refresh?: () => void; loading?: boolean }) {
   return <ScrollView style={s.screen} contentContainerStyle={s.page} contentInsetAdjustmentBehavior="automatic"
@@ -122,8 +123,12 @@ function Detail({ id }: { id: string }) {
   const row = source.data;
   const completed = row?.status === 'COMPLETED';
   const title = completed ? 'Bàn giao kho' : 'Chi tiết lịch nhận';
-  if (!row) return <Page title={title}>{source.error ? <ErrorState message={source.error} onRetry={source.refresh} /> : <LoadingState layout="detail" />}</Page>;
+  if (!row) return <Page title={title}>{source.error ? <ErrorState message={source.error} onRetry={source.refresh} />
+    : source.loading ? <LoadingState layout="detail" />
+    : <EmptyState title="Không tìm thấy lịch nhận kho" message="Mở danh sách lịch nhận để chọn lịch khác." />}</Page>;
   const units = rows(row.allocatedUnits);
+  const reference = text(row, 'reservation.reference');
+  const codes = unitCodes(units);
   const group = rows(contracts.data?.items).filter(item => reservationOf(item) === reservationOf(row));
   const start = units.map(unit => text(unit, 'contractStartDate')).filter(Boolean).sort().at(-1);
   const date = local(text(row, 'scheduledAt'));
@@ -133,7 +138,7 @@ function Detail({ id }: { id: string }) {
   const rid = encodeURIComponent(reservationOf(row));
   return <Page title={title} refresh={() => { source.refresh(); contracts.refresh(); }} loading={source.loading}>
     {completed ? <View style={s.successHero}><View style={s.check}><Check size={24} color="white" /></View>
-      <Text style={s.successTitle}>Đã bàn giao chìa khóa</Text>
+      <Text style={s.successTitle}>Đã bàn giao</Text>
       {row.completedAt ? <Text style={s.copy}>{formatDate(text(row, 'completedAt'), true)}</Text> : null}
     </View> : <View style={[s.card, s.tint, s.row]}><CalendarDays size={28} color={C.cobalt} /><View style={s.grow}>
       <Text style={s.title}>{date ? weekday(date.slice(0, 10)) + ', ' + formatDate(date.slice(0, 10)) : 'Ngày nhận kho'}</Text>
@@ -142,6 +147,9 @@ function Detail({ id }: { id: string }) {
     </View></View>}
     <View style={s.section}>
       <Text style={s.title}>{nameOf(group)}{units.length > 1 ? ' · ' + units.length + ' ô kho' : ''}</Text>
+      {reference ? <Text style={s.copy}>Mã đơn · {reference}</Text> : null}
+      {!active && codes ? <Text style={s.copy}>Ô kho · {codes}</Text> : null}
+      {completed && date ? <Text style={s.copy}>Lịch hẹn · {formatDate(date.slice(0, 10))} lúc {date.slice(11)}</Text> : null}
       {active ? units.map(unit => {
         const unitId = text(unit, 'unitId');
         const contract = group.find(item => text(item, 'contractCode') === text(unit, 'contractCode') && text(item, 'storageUnit.id') === unitId);
@@ -156,7 +164,6 @@ function Detail({ id }: { id: string }) {
         </View></View>;
       }) : null}
       {start ? <Text style={s.copy}>Bắt đầu thuê · {formatDate(start)}</Text> : null}
-      {waiting ? <StatusBadge status="REQUESTED" tone="warning" displayLabel="Chờ nhân viên bàn giao" /> : null}
     </View>
     {early ? <Notice warm>Bạn có thể sử dụng kho từ {formatDate(start)}.</Notice> : null}
     {completed ? <View style={s.section}><Text style={s.title}>Tiến trình</Text>
@@ -173,7 +180,7 @@ function Detail({ id }: { id: string }) {
       </Pressable>
       {showLocations ? <View style={s.section}>{units.map(unit => <Text key={text(unit, 'unitId')} style={s.copy}>{[text(unit, 'unitCode'), locationOf(unit)].filter(Boolean).join(' · ')}</Text>)}</View> : null}
     </> : null}
-    <Pressable accessibilityRole="button" onPress={() => open('/customer/support-requests')} style={s.link}><Headphones size={18} color={C.cobalt} /><Text style={[s.label, s.grow]}>Liên hệ nhân viên</Text><ChevronRight size={16} color={C.muted} /></Pressable>
+    <Pressable accessibilityRole="button" onPress={() => open('/customer/support-requests')} style={s.link}><Headphones size={18} color={C.cobalt} /><Text style={[s.label, s.grow]}>Liên hệ hỗ trợ</Text><ChevronRight size={16} color={C.muted} /></Pressable>
     {rid ? <Button label="Xem đơn đặt" outline onPress={() => open('/customer/reservations/' + rid)} /> : null}
   </Page>;
 }
@@ -237,17 +244,20 @@ function Overview() {
       <View style={s.tabs}>{(['Sắp tới (' + pending.length + ')', 'Đã bàn giao']).map((label, index) =>
         <Pressable key={index} accessibilityRole="tab" accessibilityState={{ selected: history === Boolean(index) }} onPress={() => setHistory(Boolean(index))}
           style={[s.tab, history === Boolean(index) && s.selected]}><Text style={[s.label, history === Boolean(index) && s.white]}>{label}</Text></Pressable>)}</View>
-      {!visible.length ? <Text style={s.copy}>{history ? 'Chưa có lịch đã bàn giao.' : 'Bạn chưa có lịch nhận kho sắp tới.'}</Text> : null}
+      {!visible.length && (history || !eligible.length) ? <Text style={s.copy}>{history ? 'Chưa có lịch đã bàn giao.' : 'Bạn chưa có lịch nhận kho sắp tới.'}</Text> : null}
       {[...visible, ...cancelled].map(item => {
         const date = local(text(item, 'scheduledAt'));
         const units = rows(item.allocatedUnits);
+        const reference = text(item, 'reservation.reference');
+        const codes = unitCodes(units);
         const name = nameOf(groups.get(reservationOf(item)) ?? []);
         return <Pressable key={idOf(item)} accessibilityRole="button" onPress={() => open(root + '/' + encodeURIComponent(idOf(item)))} style={[s.card, s.row, !history && item.status !== 'CANCELLED' && s.tint]}>
           {date ? <Day date={date.slice(0, 10)} /> : null}<View style={s.grow}>
             <Text style={s.title}>{name}{units.length > 1 ? ' · ' + units.length + ' ô kho' : ''}</Text>
             <StatusBadge status={String(item.status)} tone={item.status === 'CONFIRMED' ? 'success' : undefined} displayLabel={status(item)} />
             {date ? <View style={s.row}><Clock size={14} color={C.muted} /><Text style={s.copy}>{date.slice(11)}</Text></View> : null}
-            {item.status === 'CONFIRMED' ? <Text style={s.copy}>Bàn giao · Chờ nhân viên</Text> : null}
+            {reference ? <Text style={s.copy}>Mã đơn · {reference}</Text> : null}
+            {codes ? <Text style={s.copy}>Ô kho · {codes}</Text> : null}
           </View><ChevronRight size={18} color={C.muted} />
         </Pressable>;
       })}

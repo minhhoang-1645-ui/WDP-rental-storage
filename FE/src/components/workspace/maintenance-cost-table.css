@@ -1,0 +1,44 @@
+.maintenance-report-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  margin-top: 12px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+}
+
+.maintenance-report-table.manager-table {
+  width: 100%;
+  min-width: 34rem;
+  border-collapse: collapse;
+}
+
+.maintenance-report-scroll .maintenance-report-table :is(th, td) {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--workspace-border);
+  vertical-align: middle;
+}
+
+.maintenance-report-scroll .maintenance-report-table :is(thead, tfoot) { background: var(--workspace-table); }
+.maintenance-report-scroll .maintenance-report-table tfoot :is(th, td) { border-bottom: 0; font-weight: 700; }
+.maintenance-report-scroll .maintenance-report-table .maintenance-report-number {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.maintenance-report-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+}
+
+.maintenance-report-kpis > div {
+  padding: 10px 12px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 8px;
+  background: var(--workspace-table);
+}
+
+.maintenance-report-kpis dt { color: var(--workspace-secondary); }
+.maintenance-report-kpis dd { margin: 4px 0 0; font-weight: 700; font-variant-numeric: tabular-nums; }

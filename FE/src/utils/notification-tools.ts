@@ -6,8 +6,9 @@ export const DATA_PULSE_KEY = 'nestbox-data-updated-v1';
 export const notificationKinds: Record<string, string> = {
   reservations: 'Đặt kho', contracts: 'Hợp đồng', invoices: 'Hóa đơn', 'payment-submissions': 'Xác nhận chuyển khoản',
   appointments: 'Bàn giao', renewals: 'Gia hạn', 'stock-movements': 'Nhập – xuất hàng', returns: 'Trả kho',
+  'catalog-changes': 'Danh mục bổ trợ',
   'deposit-settlements': 'Tiền cọc', 'support-requests': 'Hỗ trợ và yêu cầu', maintenance: 'Bảo trì',
-  inquiries: 'Tư vấn', transfers: 'Chuyển kho', users: 'Tài khoản', 'online-payment-reconciliations': 'Đối soát VNPay',
+  inquiries: 'Tư vấn', transfers: 'Chuyển kho', users: 'Tài khoản', 'online-payment-reconciliations': 'Đối soát thanh toán',
   'early-return-requests': 'Trả trước hạn',
 };
 export function notificationGroup(item: ActivityEntry) {
